@@ -1,23 +1,23 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     FromSample, SizedSample,
 };
 
+use eframe::egui::{panel::Side, SidePanel};
 use tokio::runtime::Runtime;
 
 use crate::{
-    dsp::{
-        generators::{SineOsc, SineOscA},
-        AudioProcessor, AudioSignal, SignalImpl,
+    dsp::{basic::UiInputC, generators::SineOsc, AudioSignal, ControlSignal, SignalImpl},
+    graph::{
+        AudioConnection, AudioGraph, ControlConnection, ControlGraph, ControlNode, ControlOutput,
+        CreateNodes,
     },
-    graph::{AudioConnection, AudioGraph, ControlGraph, CreateNode},
     Scalar,
 };
 
 pub struct AudioContext {
-    host: cpal::Host,
     out_device: cpal::Device,
 }
 
@@ -48,37 +48,41 @@ impl AudioContext {
     where
         T: SizedSample + FromSample<Scalar>,
     {
-        std::thread::spawn(move || {
-            let config = self.out_device.default_output_config().unwrap();
-            let sample_rate = config.sample_rate().0 as Scalar;
-            let channels = config.channels() as usize;
+        std::thread::Builder::new()
+            .name("PAPR Audio".into())
+            .spawn(move || {
+                let config = self.out_device.default_output_config().unwrap();
+                let sample_rate = config.sample_rate().0 as Scalar;
+                let channels = config.channels() as usize;
 
-            let mut sample_clock = 0 as Scalar;
-            let err_fn = |err| eprintln!("Error occurred on stream: {err}");
+                let mut sample_clock = 0 as Scalar;
+                let err_fn = |err| eprintln!("Error occurred on stream: {err}");
 
-            let stream = self
-                .out_device
-                .build_output_stream(
-                    &config.into(),
-                    move |data: &mut [T], _info: &cpal::OutputCallbackInfo| {
-                        sample_clock += (data.len() as Scalar / channels as Scalar) / sample_rate;
-                        Self::write_data(
-                            sample_rate as Scalar,
-                            &mut graph,
-                            data,
-                            channels,
-                            sample_clock,
-                        );
-                    },
-                    err_fn,
-                    None,
-                )
-                .unwrap();
-            stream.play().unwrap();
-            loop {
-                std::thread::sleep(Duration::from_secs(1));
-            }
-        });
+                let stream = self
+                    .out_device
+                    .build_output_stream(
+                        &config.into(),
+                        move |data: &mut [T], _info: &cpal::OutputCallbackInfo| {
+                            sample_clock +=
+                                (data.len() as Scalar / channels as Scalar) / sample_rate;
+                            Self::write_data(
+                                sample_rate as Scalar,
+                                &mut graph,
+                                data,
+                                channels,
+                                sample_clock,
+                            );
+                        },
+                        err_fn,
+                        None,
+                    )
+                    .unwrap();
+                stream.play().unwrap();
+                loop {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            })
+            .expect("AudioContext::run(): error spawning audio rate thread");
     }
 }
 
@@ -86,6 +90,7 @@ pub struct PaprApp {
     audio_cx: Option<AudioContext>,
     audio_graph: Option<AudioGraph>,
     control_graph: Option<ControlGraph>,
+    ui_control_inputs: Vec<Arc<ControlNode>>,
     rt: Option<Runtime>,
     control_rate: Scalar,
 }
@@ -96,6 +101,7 @@ impl PaprApp {
             audio_cx: None,
             audio_graph: None,
             control_graph: None,
+            ui_control_inputs: Vec::new(),
             rt: None,
             control_rate,
         }
@@ -107,13 +113,12 @@ impl PaprApp {
             let out_device = host
                 .default_output_device()
                 .expect("PaprApp::init(): failed to find output device");
-            let inner = AudioContext { host, out_device };
+            let inner = AudioContext { out_device };
             self.audio_cx = Some(inner);
         } else {
             eprintln!("PaprApp::init(): audio context already initialized");
         }
 
-        // if self.audio_graph.is_none() {
         let mut audio_graph = AudioGraph::new();
         let mut control_graph = ControlGraph::new();
 
@@ -143,17 +148,51 @@ impl PaprApp {
         );
         let sine_cn = control_graph.add_node(cn);
 
+        let sine_amp_inp = Arc::new(ControlNode {
+            inputs: vec![],
+            outputs: vec![ControlOutput::new(Some("amp"))],
+            processor: Box::new(UiInputC {
+                name: "sine amp".to_owned(),
+                minimum: 0.0.into(),
+                maximum: 1.0.into(),
+                value: ControlSignal(0.5).into(),
+            }),
+        });
+        let sine_freq_inp = Arc::new(ControlNode {
+            inputs: vec![],
+            outputs: vec![ControlOutput::new(Some("freq"))],
+            processor: Box::new(UiInputC {
+                name: "sine freq".to_owned(),
+                minimum: 20.0.into(),
+                maximum: 880.0.into(),
+                value: ControlSignal(440.0).into(),
+            }),
+        });
+        self.ui_control_inputs.push(sine_amp_inp.clone());
+        self.ui_control_inputs.push(sine_freq_inp.clone());
+        let sine_amp_cn = control_graph.add_node(sine_amp_inp);
+        let sine_freq_cn = control_graph.add_node(sine_freq_inp);
+        control_graph.add_edge(
+            sine_amp_cn,
+            sine_cn,
+            ControlConnection {
+                source_output_index: 0,
+                sink_input_index: 0,
+            },
+        );
+        control_graph.add_edge(
+            sine_freq_cn,
+            sine_cn,
+            ControlConnection {
+                source_output_index: 0,
+                sink_input_index: 1,
+            },
+        );
+
         // end test stuff
-
-        // }
-
-        // if self.control_graph.is_none() {
 
         self.audio_graph = Some(audio_graph);
         self.control_graph = Some(control_graph);
-        // } else {
-        // eprintln!("PaprApp::init(): graph already initialized");
-        // }
 
         if self.rt.is_none() {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -206,9 +245,10 @@ impl PaprApp {
         }
         let control_rate = self.control_rate;
         std::thread::Builder::new()
-            .name("PAPR I/O".into())
+            .name("PAPR Control".into())
             .spawn(move || {
-                rt.block_on(async move {
+                rt.block_on(async {
+                    #[allow(clippy::unnecessary_cast)]
                     let mut clk = tokio::time::interval(Duration::from_secs_f64(
                         (control_rate as f64).recip(),
                     ));
@@ -220,12 +260,17 @@ impl PaprApp {
                     }
                 });
             })
-            .expect("PaprApp::spawn(): error spawning I/O worker thread");
+            .expect("PaprApp::spawn(): error spawning control rate thread");
     }
 }
 
 impl eframe::App for PaprApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint();
+        SidePanel::new(Side::Left, "inputs").show(ctx, |ui| {
+            for inp in self.ui_control_inputs.iter() {
+                inp.processor.ui_update(ui);
+            }
+        });
     }
 }

@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use crate::{
-    graph::{AudioNode, AudioOutput, ControlInput, ControlNode, ControlOutput, CreateNode},
+    graph::{AudioNode, AudioOutput, ControlInput, ControlNode, ControlOutput, CreateNodes},
     Scalar, PI,
 };
 
 use super::{AudioProcessor, AudioSignal, ControlProcessor, ControlSignal, SignalImpl};
 
 pub struct SineOsc;
-impl CreateNode for SineOsc {
+impl CreateNodes for SineOsc {
     fn create_nodes() -> (AudioNode, Arc<ControlNode>) {
         let cn = Arc::new(ControlNode {
             inputs: vec![

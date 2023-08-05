@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use eframe::egui::Ui;
+
 use crate::{
-    graph::{AudioNode, ControlNode, ControlOutput},
+    graph::{ControlNode, ControlOutput},
     Scalar,
 };
 
@@ -59,4 +61,5 @@ where
     Self: Send + Sync,
 {
     fn process_control(&self, t: Scalar, inputs: &[ControlSignal], outputs: &[ControlOutput]);
+    fn ui_update(&self, ui: &mut Ui) {}
 }

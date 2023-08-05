@@ -6,7 +6,7 @@ use tokio::sync::watch;
 
 use crate::{
     dsp::{
-        basic::{Dac, DummyControlNode},
+        basic::{Dac, DummyC},
         AudioProcessor, AudioSignal, ControlProcessor, ControlSignal,
     },
     Scalar,
@@ -23,7 +23,6 @@ pub struct AudioInput {
     pub default: AudioSignal,
 }
 
-#[derive(Clone)]
 pub struct AudioOutput {
     pub name: Option<String>,
 }
@@ -163,6 +162,7 @@ impl ControlInput {
     }
 }
 
+#[non_exhaustive]
 pub struct ControlOutput {
     pub name: Option<String>,
     pub tx: watch::Sender<ControlSignal>,
@@ -179,6 +179,10 @@ impl ControlOutput {
     pub fn subscribe(&self) -> watch::Receiver<ControlSignal> {
         self.tx.subscribe()
     }
+
+    pub fn send(&self, value: ControlSignal) {
+        self.tx.send_replace(value);
+    }
 }
 
 pub struct ControlNode {
@@ -192,7 +196,7 @@ impl ControlNode {
         Self {
             inputs: vec![],
             outputs: vec![],
-            processor: Box::new(DummyControlNode),
+            processor: Box::new(DummyC),
         }
     }
 
@@ -270,6 +274,6 @@ impl ControlGraph {
     }
 }
 
-pub trait CreateNode {
+pub trait CreateNodes {
     fn create_nodes() -> (AudioNode, Arc<ControlNode>);
 }
