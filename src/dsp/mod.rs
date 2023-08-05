@@ -1,4 +1,14 @@
-use crate::Scalar;
+use std::sync::Arc;
+
+
+
+use crate::{
+    graph::{AudioNode, ControlNode, ControlOutput},
+    Scalar,
+};
+
+pub mod basic;
+pub mod generators;
 
 pub trait SignalImpl {
     fn value(self) -> Scalar;
@@ -31,4 +41,26 @@ impl From<Scalar> for ControlSignal {
     fn from(value: Scalar) -> Self {
         Self(value)
     }
+}
+
+pub trait AudioProcessor
+where
+    Self: Send + Sync,
+{
+    fn into_node(self) -> AudioNode;
+
+    fn process_audio(
+        &mut self,
+        t: Scalar,
+        inputs: &[AudioSignal],
+        control_node: &Arc<ControlNode>,
+        outputs: &mut [AudioSignal],
+    );
+}
+
+pub trait ControlProcessor
+where
+    Self: Send + Sync,
+{
+    fn process_control(&self, t: Scalar, inputs: &[ControlSignal], outputs: &[ControlOutput]);
 }

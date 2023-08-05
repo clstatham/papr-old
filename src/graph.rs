@@ -5,8 +5,11 @@ use rustc_hash::FxHashMap;
 use tokio::sync::watch;
 
 use crate::{
-    dsp::{AudioSignal, ControlSignal, SignalImpl},
-    Scalar, PI,
+    dsp::{
+        basic::{Dac, DummyControlNode},
+        AudioProcessor, AudioSignal, ControlProcessor, ControlSignal,
+    },
+    Scalar,
 };
 
 #[derive(Clone, Copy)]
@@ -58,12 +61,7 @@ impl AudioGraph {
             outputs: vec![AudioOutput {
                 name: Some("out".to_owned()),
             }],
-            control_node: Arc::new(ControlNode {
-                inputs: vec![],
-                params: FxHashMap::default(),
-                outputs: vec![],
-                processor: Box::new(DummyControlNode),
-            }),
+            control_node: Arc::new(ControlNode::new_dummy()),
             processor: Box::new(Dac),
         });
         self.input_cache
@@ -74,7 +72,8 @@ impl AudioGraph {
         idx
     }
 
-    pub fn add_node(&mut self, node: AudioNode) -> NodeIndex {
+    pub fn add_node(&mut self, a: impl AudioProcessor) -> NodeIndex {
+        let node = a.into_node();
         let n_outs = node.outputs.len();
         let ins = node.inputs.iter().map(|inp| inp.default).collect();
         let idx = self.digraph.add_node(node);
@@ -96,7 +95,7 @@ impl AudioGraph {
     pub fn process_audio(
         &mut self,
         t: Scalar,
-        inputs: &[AudioSignal],
+        _inputs: &[AudioSignal],
         outputs: &mut [AudioSignal],
     ) {
         if self.digraph.node_count() == 0 {
@@ -142,8 +141,9 @@ pub struct ControlConnection {
 
 pub struct ControlInput {
     pub name: Option<String>,
-    pub rx: RwLock<Option<watch::Receiver<ControlSignal>>>,
+    rx: RwLock<Option<watch::Receiver<ControlSignal>>>,
     pub default: ControlSignal,
+    pub cached_value: RwLock<ControlSignal>,
 }
 
 impl ControlInput {
@@ -152,6 +152,7 @@ impl ControlInput {
             name: name.map(|s| s.to_owned()),
             rx: RwLock::new(None),
             default,
+            cached_value: RwLock::new(default),
         }
     }
 
@@ -183,9 +184,44 @@ impl ControlOutput {
 
 pub struct ControlNode {
     pub inputs: Vec<ControlInput>,
-    pub params: FxHashMap<String, ControlSignal>,
     pub outputs: Vec<ControlOutput>,
     pub processor: Box<dyn ControlProcessor>,
+}
+
+impl ControlNode {
+    pub fn new_dummy() -> Self {
+        Self {
+            inputs: vec![],
+            outputs: vec![],
+            processor: Box::new(DummyControlNode),
+        }
+    }
+
+    pub fn read_input(&self, index: usize) -> ControlSignal {
+        *self.inputs[index]
+            .cached_value
+            .read()
+            .expect("ControlNode::read_input(): couldn't acquire read lock on input cached_value")
+    }
+
+    pub fn process_control(&self, t: Scalar) {
+        let mut inputs = Vec::new();
+        for i in 0..self.inputs.len() {
+            let val = self.inputs[i]
+                .rx
+                .read()
+                .expect("ControlNode::read_input(): couldn't acquire read lock on input rx")
+                .as_ref()
+                .map(|rx| *rx.borrow())
+                .unwrap_or(self.inputs[i].default);
+            inputs.push(val);
+            *self.inputs[i].cached_value.write().expect(
+                "ControlNode::process_control(): couldn't acquire write lock on input cached_value",
+            ) = val;
+        }
+        let outputs = &self.outputs;
+        self.processor.process_control(t, &inputs, outputs);
+    }
 }
 
 pub struct ControlGraph {
@@ -230,123 +266,7 @@ impl ControlGraph {
         }
 
         while let Some(node) = bfs.next(&self.digraph) {
-            let inputs = &self.digraph[node].inputs;
-            let params = &self.digraph[node].params;
-            let outputs = &self.digraph[node].outputs;
-            self.digraph[node]
-                .processor
-                .process_control(t, inputs, params, outputs);
+            self.digraph[node].process_control(t);
         }
-    }
-}
-
-pub trait AudioProcessor
-where
-    Self: Send + Sync,
-{
-    fn process_audio(
-        &mut self,
-        t: Scalar,
-        inputs: &[AudioSignal],
-        control_node: &Arc<ControlNode>,
-        outputs: &mut [AudioSignal],
-    );
-}
-
-pub trait ControlProcessor
-where
-    Self: Send + Sync,
-{
-    fn process_control(
-        &self,
-        t: Scalar,
-        inputs: &[ControlInput],
-        params: &FxHashMap<String, ControlSignal>,
-        outputs: &[ControlOutput],
-    );
-}
-
-pub struct DummyControlNode;
-impl ControlProcessor for DummyControlNode {
-    fn process_control(
-        &self,
-        _t: Scalar,
-        _inputs: &[ControlInput],
-        _params: &FxHashMap<String, ControlSignal>,
-        _outputs: &[ControlOutput],
-    ) {
-    }
-}
-
-pub struct DebugControlNode {
-    pub name: &'static str,
-}
-
-impl ControlProcessor for DebugControlNode {
-    fn process_control(
-        &self,
-        t: Scalar,
-        inputs: &[ControlInput],
-        _params: &FxHashMap<String, ControlSignal>,
-        outputs: &[ControlOutput],
-    ) {
-        println!("Debug: {} (t={t})", self.name);
-
-        for (inp, out) in inputs.iter().zip(outputs.iter()) {
-            let val = inp
-                .rx
-                .read()
-                .unwrap()
-                .as_ref()
-                .map(|rx| *rx.borrow())
-                .unwrap_or(inp.default);
-            println!(
-                "{} = {}",
-                inp.name.as_ref().unwrap_or(&"(unknown)".to_owned()),
-                val.value()
-            );
-            out.tx.send_replace(val);
-        }
-    }
-}
-
-pub struct Dac;
-
-impl AudioProcessor for Dac {
-    fn process_audio(
-        &mut self,
-        t: Scalar,
-        inputs: &[AudioSignal],
-        control_node: &Arc<ControlNode>,
-        outputs: &mut [AudioSignal],
-    ) {
-        // dbg!(inputs[0].value());
-        outputs.copy_from_slice(inputs);
-    }
-}
-
-pub struct SineOscA;
-pub struct SineOscC;
-
-impl AudioProcessor for SineOscA {
-    fn process_audio(
-        &mut self,
-        t: Scalar,
-        inputs: &[AudioSignal],
-        control_node: &Arc<ControlNode>,
-        outputs: &mut [AudioSignal],
-    ) {
-        outputs[0] = AudioSignal(Scalar::sin(t * PI * 2.0 * 440.0));
-    }
-}
-
-impl ControlProcessor for SineOscC {
-    fn process_control(
-        &self,
-        t: Scalar,
-        inputs: &[ControlInput],
-        params: &FxHashMap<String, ControlSignal>,
-        outputs: &[ControlOutput],
-    ) {
     }
 }

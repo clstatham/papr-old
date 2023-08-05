@@ -1,18 +1,20 @@
-use std::{sync::Arc, time::Duration};
+use std::{time::Duration};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     FromSample, SizedSample,
 };
 
-use rustc_hash::FxHashMap;
+
 use tokio::runtime::Runtime;
 
 use crate::{
-    dsp::{AudioSignal, SignalImpl},
+    dsp::{
+        generators::{SineOsc},
+        AudioProcessor, AudioSignal, SignalImpl,
+    },
     graph::{
-        AudioConnection, AudioGraph, AudioNode, AudioOutput, ControlGraph, ControlNode,
-        DummyControlNode, SineOscA,
+        AudioConnection, AudioGraph, ControlGraph,
     },
     Scalar,
 };
@@ -120,19 +122,7 @@ impl PaprApp {
             // test stuff follows
             let dac0 = graph.add_dac();
             let dac1 = graph.add_dac();
-            let sine = graph.add_node(AudioNode {
-                inputs: vec![],
-                outputs: vec![AudioOutput {
-                    name: Some("sine".to_owned()),
-                }],
-                control_node: Arc::new(ControlNode {
-                    inputs: vec![],
-                    outputs: vec![],
-                    params: FxHashMap::default(),
-                    processor: Box::new(DummyControlNode),
-                }),
-                processor: Box::new(SineOscA),
-            });
+            let sine = graph.add_node(SineOsc);
             graph.add_edge(
                 sine,
                 dac0,
