@@ -31,10 +31,6 @@ impl ControlProcessor for DebugControlNode {
 pub struct Dac;
 
 impl AudioProcessor for Dac {
-    fn into_node(self) -> AudioNode {
-        unimplemented!("Use AudioGraph::add_dac() instead of Dac.into_node()")
-    }
-
     fn process_audio(
         &mut self,
         _t: Scalar,

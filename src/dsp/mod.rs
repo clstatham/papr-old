@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-
-
 use crate::{
     graph::{AudioNode, ControlNode, ControlOutput},
     Scalar,
@@ -47,8 +45,6 @@ pub trait AudioProcessor
 where
     Self: Send + Sync,
 {
-    fn into_node(self) -> AudioNode;
-
     fn process_audio(
         &mut self,
         t: Scalar,

@@ -1,21 +1,18 @@
-use std::{time::Duration};
+use std::time::Duration;
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     FromSample, SizedSample,
 };
 
-
 use tokio::runtime::Runtime;
 
 use crate::{
     dsp::{
-        generators::{SineOsc},
+        generators::{SineOsc, SineOscA},
         AudioProcessor, AudioSignal, SignalImpl,
     },
-    graph::{
-        AudioConnection, AudioGraph, ControlGraph,
-    },
+    graph::{AudioConnection, AudioGraph, ControlGraph, CreateNode},
     Scalar,
 };
 
@@ -116,40 +113,47 @@ impl PaprApp {
             eprintln!("PaprApp::init(): audio context already initialized");
         }
 
-        if self.audio_graph.is_none() {
-            let mut graph = AudioGraph::new();
+        // if self.audio_graph.is_none() {
+        let mut audio_graph = AudioGraph::new();
+        let mut control_graph = ControlGraph::new();
 
-            // test stuff follows
-            let dac0 = graph.add_dac();
-            let dac1 = graph.add_dac();
-            let sine = graph.add_node(SineOsc);
-            graph.add_edge(
-                sine,
-                dac0,
-                AudioConnection {
-                    source_output_index: 0,
-                    sink_input_index: 0,
-                },
-            );
-            graph.add_edge(
-                sine,
-                dac1,
-                AudioConnection {
-                    source_output_index: 0,
-                    sink_input_index: 0,
-                },
-            );
-            // end test stuff
+        // test stuff follows
 
-            self.audio_graph = Some(graph);
-        }
+        let dac0 = audio_graph.add_dac();
+        let dac1 = audio_graph.add_dac();
 
-        if self.control_graph.is_none() {
-            let graph = ControlGraph::new();
-            self.control_graph = Some(graph);
-        } else {
-            eprintln!("PaprApp::init(): graph already initialized");
-        }
+        let (an, cn) = SineOsc::create_nodes();
+
+        let sine_an = audio_graph.add_node(an);
+        audio_graph.add_edge(
+            sine_an,
+            dac0,
+            AudioConnection {
+                source_output_index: 0,
+                sink_input_index: 0,
+            },
+        );
+        audio_graph.add_edge(
+            sine_an,
+            dac1,
+            AudioConnection {
+                source_output_index: 0,
+                sink_input_index: 0,
+            },
+        );
+        let sine_cn = control_graph.add_node(cn);
+
+        // end test stuff
+
+        // }
+
+        // if self.control_graph.is_none() {
+
+        self.audio_graph = Some(audio_graph);
+        self.control_graph = Some(control_graph);
+        // } else {
+        // eprintln!("PaprApp::init(): graph already initialized");
+        // }
 
         if self.rt.is_none() {
             let rt = tokio::runtime::Builder::new_current_thread()

@@ -72,8 +72,7 @@ impl AudioGraph {
         idx
     }
 
-    pub fn add_node(&mut self, a: impl AudioProcessor) -> NodeIndex {
-        let node = a.into_node();
+    pub fn add_node(&mut self, node: AudioNode) -> NodeIndex {
         let n_outs = node.outputs.len();
         let ins = node.inputs.iter().map(|inp| inp.default).collect();
         let idx = self.digraph.add_node(node);
@@ -235,8 +234,8 @@ impl ControlGraph {
         }
     }
 
-    pub fn add_node(&mut self, node: ControlNode) -> NodeIndex {
-        self.digraph.add_node(Arc::new(node))
+    pub fn add_node(&mut self, node: Arc<ControlNode>) -> NodeIndex {
+        self.digraph.add_node(node)
     }
 
     pub fn add_edge(
@@ -269,4 +268,8 @@ impl ControlGraph {
             self.digraph[node].process_control(t);
         }
     }
+}
+
+pub trait CreateNode {
+    fn create_nodes() -> (AudioNode, Arc<ControlNode>);
 }

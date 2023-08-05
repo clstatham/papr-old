@@ -1,34 +1,39 @@
 use std::sync::Arc;
 
 use crate::{
-    graph::{AudioNode, AudioOutput, ControlInput, ControlNode, ControlOutput},
+    graph::{AudioNode, AudioOutput, ControlInput, ControlNode, ControlOutput, CreateNode},
     Scalar, PI,
 };
 
 use super::{AudioProcessor, AudioSignal, ControlProcessor, ControlSignal, SignalImpl};
 
 pub struct SineOsc;
-pub struct SineOscC;
-
-impl AudioProcessor for SineOsc {
-    fn into_node(self) -> AudioNode {
-        AudioNode {
-            control_node: Arc::new(ControlNode {
-                inputs: vec![
-                    ControlInput::new(Some("amp"), 1.0.into()),
-                    ControlInput::new(Some("freq"), 440.0.into()),
-                ],
-                outputs: vec![],
-                processor: Box::new(SineOscC),
-            }),
+impl CreateNode for SineOsc {
+    fn create_nodes() -> (AudioNode, Arc<ControlNode>) {
+        let cn = Arc::new(ControlNode {
+            inputs: vec![
+                ControlInput::new(Some("amp"), 1.0.into()),
+                ControlInput::new(Some("freq"), 440.0.into()),
+            ],
+            outputs: vec![],
+            processor: Box::new(SineOscC),
+        });
+        let an = AudioNode {
+            control_node: cn.clone(),
             inputs: vec![],
             outputs: vec![AudioOutput {
                 name: Some("out".to_owned()),
             }],
-            processor: Box::new(self),
-        }
+            processor: Box::new(SineOscA),
+        };
+        (an, cn)
     }
+}
 
+pub struct SineOscA;
+pub struct SineOscC;
+
+impl AudioProcessor for SineOscA {
     fn process_audio(
         &mut self,
         t: Scalar,
