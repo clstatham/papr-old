@@ -37,6 +37,7 @@ impl AudioProcessor for SineOscA {
     fn process_audio(
         &mut self,
         t: Scalar,
+        _sample_rate: Scalar,
         _inputs: &[AudioSignal],
         control_node: &Arc<ControlNode>,
         outputs: &mut [AudioSignal],
@@ -48,5 +49,12 @@ impl AudioProcessor for SineOscA {
 }
 
 impl ControlProcessor for SineOscC {
-    fn process_control(&self, _t: Scalar, _inputs: &[ControlSignal], _outputs: &[ControlOutput]) {}
+    fn process_control(
+        &self,
+        _t: Scalar,
+        _control_rate: Scalar,
+        _inputs: &[ControlSignal],
+        _outputs: &[ControlOutput],
+    ) {
+    }
 }

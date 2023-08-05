@@ -93,6 +93,7 @@ impl AudioGraph {
     pub fn process_audio(
         &mut self,
         t: Scalar,
+        sample_rate: Scalar,
         _inputs: &[AudioSignal],
         outputs: &mut [AudioSignal],
     ) {
@@ -120,6 +121,7 @@ impl AudioGraph {
             let node = &mut self.digraph[node_id];
             node.processor.process_audio(
                 t,
+                sample_rate,
                 &self.input_cache[&node_id],
                 &node.control_node,
                 self.output_cache.get_mut(&node_id).unwrap(),
@@ -132,11 +134,18 @@ impl AudioGraph {
     }
 }
 
+impl Default for AudioGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct ControlConnection {
     pub source_output_index: usize,
     pub sink_input_index: usize,
 }
 
+#[non_exhaustive]
 pub struct ControlInput {
     pub name: Option<String>,
     rx: RwLock<Option<watch::Receiver<ControlSignal>>>,
@@ -207,7 +216,7 @@ impl ControlNode {
             .expect("ControlNode::read_input(): couldn't acquire read lock on input cached_value")
     }
 
-    pub fn process_control(&self, t: Scalar) {
+    pub fn process_control(&self, t: Scalar, control_rate: Scalar) {
         let mut inputs = Vec::new();
         for i in 0..self.inputs.len() {
             let val = self.inputs[i]
@@ -223,7 +232,8 @@ impl ControlNode {
             ) = val;
         }
         let outputs = &self.outputs;
-        self.processor.process_control(t, &inputs, outputs);
+        self.processor
+            .process_control(t, control_rate, &inputs, outputs);
     }
 }
 
@@ -253,7 +263,7 @@ impl ControlGraph {
         self.digraph.add_edge(source, sink, connection)
     }
 
-    pub fn process_control(&mut self, t: Scalar) {
+    pub fn process_control(&mut self, t: Scalar, control_rate: Scalar) {
         if self.digraph.node_count() == 0 {
             return;
         }
@@ -269,8 +279,14 @@ impl ControlGraph {
         }
 
         while let Some(node) = bfs.next(&self.digraph) {
-            self.digraph[node].process_control(t);
+            self.digraph[node].process_control(t, control_rate);
         }
+    }
+}
+
+impl Default for ControlGraph {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

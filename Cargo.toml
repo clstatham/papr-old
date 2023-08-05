@@ -13,7 +13,8 @@ double = []
 anyhow = "1.0.72"
 cfg-if = "1.0.0"
 clap = { version = "4.3.19", features = ["derive"] }
-cpal = "0.15.2"
+cpal = { version = "0.15.2", features = ["jack"] }
+derive_more = "0.99.17"
 dyn-clone = "1.0.12"
 eframe = "0.22.0"
 nom = "7.1.3"

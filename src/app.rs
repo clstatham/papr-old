@@ -5,14 +5,13 @@ use cpal::{
     FromSample, SizedSample,
 };
 
-use eframe::egui::{panel::Side, SidePanel};
+use eframe::egui::CentralPanel;
 use tokio::runtime::Runtime;
 
 use crate::{
-    dsp::{basic::UiInputC, generators::SineOsc, AudioSignal, ControlSignal, SignalImpl},
+    dsp::{basic::UiInput, generators::SineOsc, AudioSignal, SignalImpl},
     graph::{
-        AudioConnection, AudioGraph, ControlConnection, ControlGraph, ControlNode, ControlOutput,
-        CreateNodes,
+        AudioConnection, AudioGraph, ControlConnection, ControlGraph, ControlNode, CreateNodes,
     },
     Scalar,
 };
@@ -35,6 +34,7 @@ impl AudioContext {
             let mut out = vec![AudioSignal(0 as Scalar); channels];
             graph.process_audio(
                 t as Scalar + frame_idx as Scalar / sample_rate,
+                sample_rate,
                 &[],
                 &mut out,
             );
@@ -109,7 +109,8 @@ impl PaprApp {
 
     pub fn init(&mut self) {
         if self.audio_cx.is_none() {
-            let host = cpal::default_host();
+            let host = cpal::host_from_id(cpal::HostId::Jack)
+                .expect("PaprApp::init(): no JACK host available");
             let out_device = host
                 .default_output_device()
                 .expect("PaprApp::init(): failed to find output device");
@@ -148,30 +149,16 @@ impl PaprApp {
         );
         let sine_cn = control_graph.add_node(cn);
 
-        let sine_amp_inp = Arc::new(ControlNode {
-            inputs: vec![],
-            outputs: vec![ControlOutput::new(Some("amp"))],
-            processor: Box::new(UiInputC {
-                name: "sine amp".to_owned(),
-                minimum: 0.0.into(),
-                maximum: 1.0.into(),
-                value: ControlSignal(0.5).into(),
-            }),
-        });
-        let sine_freq_inp = Arc::new(ControlNode {
-            inputs: vec![],
-            outputs: vec![ControlOutput::new(Some("freq"))],
-            processor: Box::new(UiInputC {
-                name: "sine freq".to_owned(),
-                minimum: 20.0.into(),
-                maximum: 880.0.into(),
-                value: ControlSignal(440.0).into(),
-            }),
-        });
-        self.ui_control_inputs.push(sine_amp_inp.clone());
-        self.ui_control_inputs.push(sine_freq_inp.clone());
-        let sine_amp_cn = control_graph.add_node(sine_amp_inp);
-        let sine_freq_cn = control_graph.add_node(sine_freq_inp);
+        let (sine_amp_inp_an, sine_amp_inp_cn) =
+            UiInput::create_nodes("sine amp", 0.0.into(), 1.0.into(), 0.5.into());
+        let (sine_freq_inp_an, sine_freq_inp_cn) =
+            UiInput::create_nodes("sine freq", 20.0.into(), 2000.0.into(), 440.0.into());
+        self.ui_control_inputs.push(sine_amp_inp_cn.clone());
+        self.ui_control_inputs.push(sine_freq_inp_cn.clone());
+        let sine_amp_cn = control_graph.add_node(sine_amp_inp_cn);
+        let sine_freq_cn = control_graph.add_node(sine_freq_inp_cn);
+        audio_graph.add_node(sine_amp_inp_an);
+        audio_graph.add_node(sine_freq_inp_an);
         control_graph.add_edge(
             sine_amp_cn,
             sine_cn,
@@ -254,7 +241,7 @@ impl PaprApp {
                     ));
                     let mut t = 0 as Scalar;
                     loop {
-                        control_graph.process_control(t);
+                        control_graph.process_control(t, control_rate);
                         clk.tick().await;
                         t += control_rate.recip();
                     }
@@ -266,8 +253,9 @@ impl PaprApp {
 
 impl eframe::App for PaprApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        ctx.request_repaint();
-        SidePanel::new(Side::Left, "inputs").show(ctx, |ui| {
+        // ctx.request_repaint();
+
+        CentralPanel::default().show(ctx, |ui| {
             for inp in self.ui_control_inputs.iter() {
                 inp.processor.ui_update(ui);
             }

@@ -2,11 +2,11 @@ use app::PaprApp;
 use clap::Parser;
 use eframe::{egui::Visuals, NativeOptions};
 
-mod app;
-mod dsp;
-mod graph;
-mod io;
-mod parser;
+pub mod app;
+pub mod dsp;
+pub mod graph;
+pub mod io;
+pub mod parser;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "double")] {
