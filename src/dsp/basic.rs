@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use eframe::egui::{Slider, Ui};
+use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::SignalImpl,
@@ -16,9 +17,9 @@ impl AudioProcessor for DummyA {
         &mut self,
         _t: Scalar,
         _sample_rate: Scalar,
-        _inputs: &[AudioSignal],
+        _inputs: &FxHashMap<String, AudioSignal>,
         _control_node: &Arc<ControlNode>,
-        _outputs: &mut [AudioSignal],
+        _outputs: &mut FxHashMap<String, AudioSignal>,
     ) {
     }
 }
@@ -29,8 +30,8 @@ impl ControlProcessor for DummyC {
         &self,
         _t: Scalar,
         _control_rate: Scalar,
-        _inputs: &[ControlSignal],
-        _outputs: &[ControlOutput],
+        _inputs: &FxHashMap<String, ControlSignal>,
+        _outputs: &FxHashMap<String, ControlOutput>,
     ) {
     }
 }
@@ -44,14 +45,14 @@ impl ControlProcessor for DebugC {
         &self,
         t: Scalar,
         _control_rate: Scalar,
-        inputs: &[ControlSignal],
-        outputs: &[ControlOutput],
+        inputs: &FxHashMap<String, ControlSignal>,
+        outputs: &FxHashMap<String, ControlOutput>,
     ) {
         println!("Debug: {} (t={t})", self.name);
 
-        for (inp, out) in inputs.iter().zip(outputs.iter()) {
-            println!("{}", inp.value());
-            out.tx.send_replace(*inp);
+        for ((inp_name, inp), (_out_name, out)) in inputs.iter().zip(outputs.iter()) {
+            println!("{inp_name} = {}", inp.value());
+            out.send(*inp);
         }
     }
 }
@@ -63,11 +64,11 @@ impl AudioProcessor for Dac {
         &mut self,
         _t: Scalar,
         _sample_rate: Scalar,
-        inputs: &[AudioSignal],
+        inputs: &FxHashMap<String, AudioSignal>,
         _control_node: &Arc<ControlNode>,
-        outputs: &mut [AudioSignal],
+        outputs: &mut FxHashMap<String, AudioSignal>,
     ) {
-        outputs.copy_from_slice(inputs);
+        *outputs.get_mut("out").unwrap() = inputs["in"];
     }
 }
 
@@ -87,9 +88,9 @@ impl AudioProcessor for UiInputA {
         &mut self,
         _t: Scalar,
         _sample_rate: Scalar,
-        _inputs: &[AudioSignal],
+        _inputs: &FxHashMap<String, AudioSignal>,
         _control_node: &Arc<ControlNode>,
-        _outputs: &mut [AudioSignal],
+        _outputs: &mut FxHashMap<String, AudioSignal>,
     ) {
         self.value.write().unwrap().next_value();
     }
@@ -100,10 +101,10 @@ impl ControlProcessor for UiInputC {
         &self,
         _t: Scalar,
         _control_rate: Scalar,
-        _inputs: &[ControlSignal],
-        outputs: &[ControlOutput],
+        _inputs: &FxHashMap<String, ControlSignal>,
+        outputs: &FxHashMap<String, ControlOutput>,
     ) {
-        outputs[0].send(self.value.read().unwrap().current_value());
+        outputs[&self.name].send(self.value.read().unwrap().current_value());
     }
 
     fn ui_update(&self, ui: &mut Ui) {
@@ -123,8 +124,10 @@ impl UiInput {
     ) -> (crate::graph::AudioNode, Arc<ControlNode>) {
         let value = Arc::new(RwLock::new(SmoothControlSignal::new(initial_value, 4)));
         let cn = Arc::new(ControlNode {
-            inputs: vec![],
-            outputs: vec![ControlOutput::new(Some(name))],
+            inputs: FxHashMap::default(),
+            outputs: FxHashMap::from_iter(
+                [(name.to_owned(), ControlOutput::new(name))].into_iter(),
+            ),
             processor: Box::new(UiInputC {
                 maximum,
                 minimum,
@@ -134,8 +137,8 @@ impl UiInput {
         });
         let an = AudioNode {
             control_node: cn.clone(),
-            inputs: vec![],
-            outputs: vec![],
+            inputs: FxHashMap::default(),
+            outputs: FxHashMap::default(),
             processor: Box::new(UiInputA { value }),
         };
         (an, cn)

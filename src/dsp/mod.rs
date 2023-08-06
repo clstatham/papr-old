@@ -1,4 +1,5 @@
 use derive_more::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
 use eframe::egui::Ui;
@@ -80,9 +81,9 @@ where
         &mut self,
         t: Scalar,
         sample_rate: Scalar,
-        inputs: &[AudioSignal],
+        inputs: &FxHashMap<String, AudioSignal>,
         control_node: &Arc<ControlNode>,
-        outputs: &mut [AudioSignal],
+        outputs: &mut FxHashMap<String, AudioSignal>,
     );
 }
 
@@ -94,10 +95,12 @@ where
         &self,
         t: Scalar,
         control_rate: Scalar,
-        inputs: &[ControlSignal],
-        outputs: &[ControlOutput],
+        inputs: &FxHashMap<String, ControlSignal>,
+        outputs: &FxHashMap<String, ControlOutput>,
     );
-    fn ui_update(&self, _ui: &mut Ui) {}
+
+    #[allow(unused_variables)]
+    fn ui_update(&self, ui: &mut Ui) {}
 }
 
 #[non_exhaustive]

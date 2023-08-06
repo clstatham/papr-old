@@ -12,32 +12,32 @@ use crate::{
     Scalar,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct AudioConnection {
-    pub source_output_index: usize,
-    pub sink_input_index: usize,
+    pub source_output: String,
+    pub sink_input: String,
 }
 
 pub struct AudioInput {
-    pub name: Option<String>,
+    pub name: String,
     pub default: AudioSignal,
 }
 
 pub struct AudioOutput {
-    pub name: Option<String>,
+    pub name: String,
 }
 
 pub struct AudioNode {
     pub control_node: Arc<ControlNode>,
-    pub inputs: Vec<AudioInput>,
-    pub outputs: Vec<AudioOutput>,
+    pub inputs: FxHashMap<String, AudioInput>,
+    pub outputs: FxHashMap<String, AudioOutput>,
     pub processor: Box<dyn AudioProcessor>,
 }
 
 pub struct AudioGraph {
     digraph: DiGraph<AudioNode, AudioConnection>,
-    input_cache: FxHashMap<NodeIndex, Vec<AudioSignal>>,
-    output_cache: FxHashMap<NodeIndex, Vec<AudioSignal>>,
+    input_cache: FxHashMap<NodeIndex, FxHashMap<String, AudioSignal>>,
+    output_cache: FxHashMap<NodeIndex, FxHashMap<String, AudioSignal>>,
     dac_nodes: Vec<NodeIndex>,
 }
 
@@ -53,31 +53,62 @@ impl AudioGraph {
 
     pub fn add_dac(&mut self) -> NodeIndex {
         let idx = self.digraph.add_node(AudioNode {
-            inputs: vec![AudioInput {
-                name: Some("in".to_owned()),
-                default: AudioSignal(0 as Scalar),
-            }],
-            outputs: vec![AudioOutput {
-                name: Some("out".to_owned()),
-            }],
+            inputs: FxHashMap::from_iter(
+                [(
+                    "in".to_owned(),
+                    AudioInput {
+                        name: "in".to_owned(),
+                        default: AudioSignal(0 as Scalar),
+                    },
+                )]
+                .into_iter(),
+            ),
+            outputs: FxHashMap::from_iter(
+                [(
+                    "out".to_owned(),
+                    AudioOutput {
+                        name: "out".to_owned(),
+                    },
+                )]
+                .into_iter(),
+            ),
             control_node: Arc::new(ControlNode::new_dummy()),
             processor: Box::new(Dac),
         });
-        self.input_cache
-            .insert(idx, vec![AudioSignal(0 as Scalar); 1]);
-        self.output_cache
-            .insert(idx, vec![AudioSignal(0 as Scalar); 1]);
+        self.input_cache.insert(
+            idx,
+            self.digraph[idx]
+                .inputs
+                .iter()
+                .map(|inp| (inp.0.to_owned(), inp.1.default))
+                .collect(),
+        );
+        self.output_cache.insert(
+            idx,
+            self.digraph[idx]
+                .outputs
+                .iter()
+                .map(|out| (out.0.to_owned(), AudioSignal(0.0)))
+                .collect(),
+        );
         self.dac_nodes.push(idx);
         idx
     }
 
     pub fn add_node(&mut self, node: AudioNode) -> NodeIndex {
-        let n_outs = node.outputs.len();
-        let ins = node.inputs.iter().map(|inp| inp.default).collect();
+        let outs = node
+            .outputs
+            .keys()
+            .map(|out_name| (out_name.to_owned(), AudioSignal(0.0)))
+            .collect();
+        let ins = node
+            .inputs
+            .iter()
+            .map(|(inp_name, inp)| (inp_name.to_owned(), inp.default))
+            .collect();
         let idx = self.digraph.add_node(node);
         self.input_cache.insert(idx, ins);
-        self.output_cache
-            .insert(idx, vec![AudioSignal(0 as Scalar); n_outs]);
+        self.output_cache.insert(idx, outs);
         idx
     }
 
@@ -115,8 +146,13 @@ impl AudioGraph {
         while let Some(node_id) = bfs.next(&self.digraph) {
             // let inputs =
             for edge in self.digraph.edges_directed(node_id, Direction::Incoming) {
-                let out = self.output_cache[&edge.source()][edge.weight().source_output_index];
-                self.input_cache.get_mut(&node_id).unwrap()[edge.weight().sink_input_index] = out;
+                let out = self.output_cache[&edge.source()][&edge.weight().source_output];
+                *self
+                    .input_cache
+                    .get_mut(&node_id)
+                    .unwrap()
+                    .get_mut(&edge.weight().sink_input)
+                    .unwrap() = out;
             }
             let node = &mut self.digraph[node_id];
             node.processor.process_audio(
@@ -129,7 +165,7 @@ impl AudioGraph {
         }
 
         for (i, dac_idx) in self.dac_nodes.iter().enumerate() {
-            outputs[i] = self.output_cache[dac_idx][0];
+            outputs[i] = self.output_cache[dac_idx]["out"];
         }
     }
 }
@@ -140,23 +176,24 @@ impl Default for AudioGraph {
     }
 }
 
+#[derive(Clone)]
 pub struct ControlConnection {
-    pub source_output_index: usize,
-    pub sink_input_index: usize,
+    pub source_output: String,
+    pub sink_input: String,
 }
 
 #[non_exhaustive]
 pub struct ControlInput {
-    pub name: Option<String>,
+    pub name: String,
     rx: RwLock<Option<watch::Receiver<ControlSignal>>>,
     pub default: ControlSignal,
     pub cached_value: RwLock<ControlSignal>,
 }
 
 impl ControlInput {
-    pub fn new(name: Option<&str>, default: ControlSignal) -> Self {
+    pub fn new(name: &str, default: ControlSignal) -> Self {
         Self {
-            name: name.map(|s| s.to_owned()),
+            name: name.to_owned(),
             rx: RwLock::new(None),
             default,
             cached_value: RwLock::new(default),
@@ -173,15 +210,15 @@ impl ControlInput {
 
 #[non_exhaustive]
 pub struct ControlOutput {
-    pub name: Option<String>,
+    pub name: String,
     pub tx: watch::Sender<ControlSignal>,
 }
 
 impl ControlOutput {
-    pub fn new(name: Option<&str>) -> Self {
+    pub fn new(name: &str) -> Self {
         let (tx, _rx) = watch::channel(ControlSignal(0 as Scalar));
         Self {
-            name: name.map(|s| s.to_owned()),
+            name: name.to_owned(),
             tx,
         }
     }
@@ -195,30 +232,30 @@ impl ControlOutput {
 }
 
 pub struct ControlNode {
-    pub inputs: Vec<ControlInput>,
-    pub outputs: Vec<ControlOutput>,
+    pub inputs: FxHashMap<String, ControlInput>,
+    pub outputs: FxHashMap<String, ControlOutput>,
     pub processor: Box<dyn ControlProcessor>,
 }
 
 impl ControlNode {
     pub fn new_dummy() -> Self {
         Self {
-            inputs: vec![],
-            outputs: vec![],
+            inputs: FxHashMap::default(),
+            outputs: FxHashMap::default(),
             processor: Box::new(DummyC),
         }
     }
 
-    pub fn read_input(&self, index: usize) -> ControlSignal {
-        *self.inputs[index]
+    pub fn read_input(&self, name: &str) -> ControlSignal {
+        *self.inputs[name]
             .cached_value
             .read()
             .expect("ControlNode::read_input(): couldn't acquire read lock on input cached_value")
     }
 
     pub fn process_control(&self, t: Scalar, control_rate: Scalar) {
-        let mut inputs = Vec::new();
-        for i in 0..self.inputs.len() {
+        let mut inputs = FxHashMap::default();
+        for i in self.inputs.keys() {
             let val = self.inputs[i]
                 .rx
                 .read()
@@ -226,7 +263,7 @@ impl ControlNode {
                 .as_ref()
                 .map(|rx| *rx.borrow())
                 .unwrap_or(self.inputs[i].default);
-            inputs.push(val);
+            inputs.insert(i.to_owned(), val);
             *self.inputs[i].cached_value.write().expect(
                 "ControlNode::process_control(): couldn't acquire write lock on input cached_value",
             ) = val;
@@ -258,8 +295,8 @@ impl ControlGraph {
         sink: NodeIndex,
         connection: ControlConnection,
     ) -> EdgeIndex {
-        let rx = self.digraph[source].outputs[connection.source_output_index].subscribe();
-        self.digraph[sink].inputs[connection.sink_input_index].connect(rx);
+        let rx = self.digraph[source].outputs[&connection.source_output].subscribe();
+        self.digraph[sink].inputs[&connection.sink_input].connect(rx);
         self.digraph.add_edge(source, sink, connection)
     }
 

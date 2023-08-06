@@ -107,46 +107,36 @@ impl PaprApp {
         }
     }
 
-    pub fn init(&mut self) {
-        if self.audio_cx.is_none() {
-            let host = cpal::host_from_id(cpal::HostId::Jack)
-                .expect("PaprApp::init(): no JACK host available");
-            let out_device = host
-                .default_output_device()
-                .expect("PaprApp::init(): failed to find output device");
-            let inner = AudioContext { out_device };
-            self.audio_cx = Some(inner);
-        } else {
-            eprintln!("PaprApp::init(): audio context already initialized");
-        }
-
+    pub fn create_graphs(&mut self, n_dacs: usize) {
         let mut audio_graph = AudioGraph::new();
         let mut control_graph = ControlGraph::new();
 
         // test stuff follows
 
-        let dac0 = audio_graph.add_dac();
-        let dac1 = audio_graph.add_dac();
+        let mut dacs = Vec::new();
+        for _ in 0..n_dacs {
+            dacs.push(audio_graph.add_dac());
+        }
 
         let (an, cn) = SineOsc::create_nodes();
 
         let sine_an = audio_graph.add_node(an);
         audio_graph.add_edge(
             sine_an,
-            dac0,
+            dacs[0],
             AudioConnection {
-                source_output_index: 0,
-                sink_input_index: 0,
+                source_output: "out".to_owned(),
+                sink_input: "in".to_owned(),
             },
         );
-        audio_graph.add_edge(
-            sine_an,
-            dac1,
-            AudioConnection {
-                source_output_index: 0,
-                sink_input_index: 0,
-            },
-        );
+        // audio_graph.add_edge(
+        //     sine_an,
+        //     dac1,
+        //     AudioConnection {
+        //         source_output_index: 0,
+        //         sink_input_index: 0,
+        //     },
+        // );
         let sine_cn = control_graph.add_node(cn);
 
         let (sine_amp_inp_an, sine_amp_inp_cn) =
@@ -163,16 +153,16 @@ impl PaprApp {
             sine_amp_cn,
             sine_cn,
             ControlConnection {
-                source_output_index: 0,
-                sink_input_index: 0,
+                source_output: "sine amp".to_owned(),
+                sink_input: "amp".to_owned(),
             },
         );
         control_graph.add_edge(
             sine_freq_cn,
             sine_cn,
             ControlConnection {
-                source_output_index: 0,
-                sink_input_index: 1,
+                source_output: "sine freq".to_owned(),
+                sink_input: "freq".to_owned(),
             },
         );
 
@@ -180,6 +170,20 @@ impl PaprApp {
 
         self.audio_graph = Some(audio_graph);
         self.control_graph = Some(control_graph);
+    }
+
+    pub fn init(&mut self) {
+        if self.audio_cx.is_none() {
+            let host = cpal::host_from_id(cpal::HostId::Jack)
+                .expect("PaprApp::init(): no JACK host available");
+            let out_device = host
+                .default_output_device()
+                .expect("PaprApp::init(): failed to find output device");
+            let inner = AudioContext { out_device };
+            self.audio_cx = Some(inner);
+        } else {
+            eprintln!("PaprApp::init(): audio context already initialized");
+        }
 
         if self.rt.is_none() {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -191,6 +195,16 @@ impl PaprApp {
         } else {
             eprintln!("PaprApp::init(): tokio runtime already initialized");
         }
+
+        self.create_graphs(
+            self.audio_cx
+                .as_ref()
+                .unwrap()
+                .out_device
+                .default_output_config()
+                .unwrap()
+                .channels() as usize,
+        );
     }
 
     pub fn spawn(&mut self) {

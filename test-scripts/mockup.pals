@@ -1,0 +1,42 @@
+/* comment */
+/* @ means audio-rate, # means control-rate */
+/* ~ indicates a series of connections and node instantiations */
+
+/* nodes contain audio/control inputs, outputs, and connections */
+node foo {
+    @in
+    {
+        @audio_input0 @audio_input1
+    }
+    @out { @audio_output0 @audio_output1 }
+    #in { #control_input0: 420.0 } /* default value, only works for control inputs */
+    #out {
+        #control_output0
+        #control_output1
+    }
+    ~ {
+        /* todo: processing connections/instantiations */
+    }
+}
+
+~ {
+    /* instantiating an instance of a node */
+    let f = foo {
+        @in {
+            @something_else -> @audio_input0;
+            @something_else -> @audio_input1;
+        }
+        @in {
+            /* using global-scope i/o */
+            @audio_output0 -> dac0.@in;
+            @audio_output1 -> dac1.@in;
+        }
+        #in {
+            /* default will be used for inputs if no connection specified */
+        }
+        #out {
+            /* outputs are left unconnected if no connection specified */
+            #control_output1 -> other_node.#control_input1;
+        }
+    }
+}
