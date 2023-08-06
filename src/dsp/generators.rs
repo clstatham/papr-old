@@ -1,42 +1,46 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use rustc_hash::FxHashMap;
 
 use crate::{
-    graph::{AudioNode, AudioOutput, ControlInput, ControlNode, ControlOutput, CreateNodes},
+    graph::{AudioRate, ControlRate, CreateNodes, Input, InputName, Node, Output, OutputName},
     Scalar, PI,
 };
 
-use super::{AudioProcessor, AudioSignal, ControlProcessor, ControlSignal, SignalImpl};
+use super::{Processor, Signal};
 
 pub struct SineOsc;
 impl CreateNodes for SineOsc {
-    fn create_nodes() -> (AudioNode, Arc<ControlNode>) {
-        let cn = Arc::new(ControlNode {
-            inputs: FxHashMap::from_iter(
+    fn create_nodes() -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+        let cn = Arc::new(Node::new(
+            FxHashMap::from_iter(
                 [
-                    ("amp".to_owned(), ControlInput::new("amp", 1.0.into())),
-                    ("freq".to_owned(), ControlInput::new("freq", 440.0.into())),
+                    (InputName("amp".to_owned()), Input::new("amp", 1.0.into())),
+                    (
+                        InputName("freq".to_owned()),
+                        Input::new("freq", 440.0.into()),
+                    ),
                 ]
                 .into_iter(),
             ),
-            outputs: FxHashMap::default(),
-            processor: Box::new(SineOscC),
-        });
-        let an = AudioNode {
-            control_node: cn.clone(),
-            inputs: FxHashMap::default(),
-            outputs: FxHashMap::from_iter(
+            FxHashMap::default(),
+            Box::new(SineOscC),
+            None,
+        ));
+        let an = Arc::new(Node::new(
+            FxHashMap::default(),
+            FxHashMap::from_iter(
                 [(
-                    "out".to_owned(),
-                    AudioOutput {
-                        name: "out".to_owned(),
+                    OutputName("out".to_owned()),
+                    Output {
+                        name: OutputName("out".to_owned()),
                     },
                 )]
                 .into_iter(),
             ),
-            processor: Box::new(SineOscA),
-        };
+            Box::new(SineOscA),
+            Some(cn.clone()),
+        ));
         (an, cn)
     }
 }
@@ -44,28 +48,37 @@ impl CreateNodes for SineOsc {
 pub struct SineOscA;
 pub struct SineOscC;
 
-impl AudioProcessor for SineOscA {
-    fn process_audio(
-        &mut self,
+impl Processor<AudioRate> for SineOscA {
+    fn process(
+        &self,
         t: Scalar,
         _sample_rate: Scalar,
-        _inputs: &FxHashMap<String, AudioSignal>,
-        control_node: &Arc<ControlNode>,
-        outputs: &mut FxHashMap<String, AudioSignal>,
+        sibling_node: Option<&Arc<Node<ControlRate>>>,
+        _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
-        let amp = control_node.read_input("amp").value();
-        let freq = control_node.read_input("freq").value();
-        *outputs.get_mut("out").unwrap() = AudioSignal(Scalar::sin(t * PI * 2.0 * freq) * amp);
+        let sibling_node = sibling_node.as_ref().unwrap();
+        let amp = sibling_node
+            .cached_input(&InputName("amp".to_owned()))
+            .unwrap()
+            .value();
+        let freq = sibling_node
+            .cached_input(&InputName("freq".to_owned()))
+            .unwrap()
+            .value();
+        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
+            Signal::new_audio(Scalar::sin(t * PI * 2.0 * freq) * amp);
     }
 }
 
-impl ControlProcessor for SineOscC {
-    fn process_control(
+impl Processor<ControlRate> for SineOscC {
+    fn process(
         &self,
         _t: Scalar,
-        _control_rate: Scalar,
-        _inputs: &FxHashMap<String, ControlSignal>,
-        _outputs: &FxHashMap<String, ControlOutput>,
+        _sample_rate: Scalar,
+        _control_node: Option<&Arc<Node<AudioRate>>>,
+        _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
     }
 }

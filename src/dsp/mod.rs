@@ -1,106 +1,91 @@
-use derive_more::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use eframe::egui::Ui;
 
 use crate::{
-    graph::{ControlNode, ControlOutput},
+    graph::{AudioRate, ControlRate, GraphKind, InputName, OutputName},
     Scalar, PI,
 };
 
 pub mod basic;
 pub mod generators;
+pub mod graph_util;
 
-pub trait SignalImpl {
-    fn value(self) -> Scalar;
-}
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct Signal<T: GraphKind>(Scalar, PhantomData<T>);
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    PartialOrd,
-    Add,
-    AddAssign,
-    Sub,
-    SubAssign,
-    Mul,
-    MulAssign,
-    Div,
-    DivAssign,
-)]
-pub struct AudioSignal(pub Scalar);
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    PartialOrd,
-    Add,
-    AddAssign,
-    Sub,
-    SubAssign,
-    Mul,
-    MulAssign,
-    Div,
-    DivAssign,
-)]
-pub struct ControlSignal(pub Scalar);
+impl<T: GraphKind> Signal<T> {
+    pub const fn new(val: Scalar) -> Self {
+        Self(val, PhantomData)
+    }
 
-impl SignalImpl for AudioSignal {
-    fn value(self) -> Scalar {
+    pub const fn value(&self) -> Scalar {
         self.0
     }
 }
 
-impl SignalImpl for ControlSignal {
-    fn value(self) -> Scalar {
-        self.0
+impl Signal<ControlRate> {
+    pub const fn new_control(val: Scalar) -> Signal<ControlRate> {
+        Self(val, PhantomData)
     }
 }
 
-impl From<Scalar> for AudioSignal {
+impl Signal<AudioRate> {
+    pub const fn new_audio(val: Scalar) -> Signal<AudioRate> {
+        Self(val, PhantomData)
+    }
+}
+
+impl<T: GraphKind> From<Scalar> for Signal<T> {
     fn from(value: Scalar) -> Self {
-        Self(value)
+        Self::new(value)
     }
 }
 
-impl From<Scalar> for ControlSignal {
-    fn from(value: Scalar) -> Self {
-        Self(value)
+impl<T: GraphKind> std::ops::Add<Self> for Signal<T> {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.value() + rhs.value())
     }
 }
 
-pub trait AudioProcessor
+impl<T: GraphKind> std::ops::Sub<Self> for Signal<T> {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(self.value() - rhs.value())
+    }
+}
+
+impl<T: GraphKind> std::ops::Mul<Self> for Signal<T> {
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self::new(self.value() * rhs.value())
+    }
+}
+
+impl<T: GraphKind> std::ops::Div<Self> for Signal<T> {
+    type Output = Self;
+    fn div(self, rhs: Self) -> Self::Output {
+        Self::new(self.value() / rhs.value())
+    }
+}
+
+pub trait Processor<T: GraphKind>
 where
     Self: Send + Sync,
 {
-    fn process_audio(
-        &mut self,
-        t: Scalar,
-        sample_rate: Scalar,
-        inputs: &FxHashMap<String, AudioSignal>,
-        control_node: &Arc<ControlNode>,
-        outputs: &mut FxHashMap<String, AudioSignal>,
-    );
-}
-
-pub trait ControlProcessor
-where
-    Self: Send + Sync,
-{
-    fn process_control(
+    fn process(
         &self,
         t: Scalar,
-        control_rate: Scalar,
-        inputs: &FxHashMap<String, ControlSignal>,
-        outputs: &FxHashMap<String, ControlOutput>,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<T::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<T>>,
+        outputs: &mut FxHashMap<OutputName, Signal<T>>,
     );
 
-    #[allow(unused_variables)]
-    fn ui_update(&self, ui: &mut Ui) {}
+    fn ui_update(&self, _ui: &mut Ui) {}
 }
 
 #[non_exhaustive]
@@ -113,7 +98,7 @@ pub struct SmoothControlSignal {
 }
 
 impl SmoothControlSignal {
-    pub fn new(initial_value: ControlSignal, filter_time_samples: usize) -> Self {
+    pub fn new(initial_value: Signal<ControlRate>, filter_time_samples: usize) -> Self {
         let cosf = 2.0 - Scalar::cos(2.0 * PI * (2.0 / filter_time_samples as Scalar));
         let cb1 = cosf - Scalar::sqrt(cosf * cosf - 1.0);
         let mut this = Self {
@@ -127,21 +112,21 @@ impl SmoothControlSignal {
         this
     }
 
-    pub fn set_target(&mut self, new_value: ControlSignal) {
+    pub fn set_target(&mut self, new_value: Signal<ControlRate>) {
         self.target = new_value.value();
         self.xv = self.a0 * new_value.value();
     }
 
-    pub fn next_value(&mut self) -> AudioSignal {
+    pub fn next_value(&mut self) -> Signal<AudioRate> {
         self.current = self.xv + (self.b1 * self.current);
-        AudioSignal(self.current)
+        Signal::new_audio(self.current)
     }
 
-    pub fn current_value(&self) -> ControlSignal {
-        ControlSignal(self.current)
+    pub fn current_value(&self) -> Signal<ControlRate> {
+        Signal::new_control(self.current)
     }
 
-    pub fn target_value(&self) -> ControlSignal {
-        ControlSignal(self.target)
+    pub fn target_value(&self) -> Signal<ControlRate> {
+        Signal::new_control(self.target)
     }
 }

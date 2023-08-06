@@ -6,12 +6,18 @@ use cpal::{
 };
 
 use eframe::egui::CentralPanel;
+use rustc_hash::FxHashMap;
 use tokio::runtime::Runtime;
 
 use crate::{
-    dsp::{basic::UiInput, generators::SineOsc, AudioSignal, SignalImpl},
+    dsp::{
+        basic::{Dac, UiInput},
+        generators::SineOsc,
+        Signal,
+    },
     graph::{
-        AudioConnection, AudioGraph, ControlConnection, ControlGraph, ControlNode, CreateNodes,
+        AudioRate, Connection, ControlRate, CreateNodes, Graph, InputName, Node, NodeName,
+        OutputName,
     },
     Scalar,
 };
@@ -23,28 +29,38 @@ pub struct AudioContext {
 impl AudioContext {
     fn write_data<T>(
         sample_rate: Scalar,
-        graph: &mut AudioGraph,
+        graph: &mut Graph<AudioRate>,
         output: &mut [T],
         channels: usize,
         t: Scalar,
     ) where
         T: SizedSample + FromSample<Scalar>,
     {
+        let mut out = FxHashMap::default();
+        for i in 0..channels {
+            out.insert(
+                NodeName(format!("dac{i}")),
+                FxHashMap::from_iter(
+                    [(OutputName("out".to_owned()), Signal::new_audio(0.0))].into_iter(),
+                ),
+            );
+        }
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
-            let mut out = vec![AudioSignal(0 as Scalar); channels];
-            graph.process_audio(
+            graph.process(
                 t as Scalar + frame_idx as Scalar / sample_rate,
                 sample_rate,
-                &[],
+                &FxHashMap::default(),
                 &mut out,
             );
             for (c, sample) in frame.iter_mut().enumerate() {
-                *sample = T::from_sample(out[c].value());
+                *sample = T::from_sample(
+                    out[&NodeName(format!("dac{c}"))][&OutputName("out".to_owned())].value(),
+                );
             }
         }
     }
 
-    pub fn run<T>(self, mut graph: AudioGraph)
+    pub fn run<T>(self, mut graph: Graph<AudioRate>)
     where
         T: SizedSample + FromSample<Scalar>,
     {
@@ -88,9 +104,9 @@ impl AudioContext {
 
 pub struct PaprApp {
     audio_cx: Option<AudioContext>,
-    audio_graph: Option<AudioGraph>,
-    control_graph: Option<ControlGraph>,
-    ui_control_inputs: Vec<Arc<ControlNode>>,
+    audio_graph: Option<Graph<AudioRate>>,
+    control_graph: Option<Graph<ControlRate>>,
+    ui_control_inputs: Vec<Arc<Node<ControlRate>>>,
     rt: Option<Runtime>,
     control_rate: Scalar,
 }
@@ -108,61 +124,56 @@ impl PaprApp {
     }
 
     pub fn create_graphs(&mut self, n_dacs: usize) {
-        let mut audio_graph = AudioGraph::new();
-        let mut control_graph = ControlGraph::new();
+        let mut audio_graph = Graph::new();
+        let mut control_graph = Graph::new();
 
         // test stuff follows
 
         let mut dacs = Vec::new();
-        for _ in 0..n_dacs {
-            dacs.push(audio_graph.add_dac());
+        for i in 0..n_dacs {
+            let (an, cn) = Dac::create_nodes();
+            let dac = audio_graph.add_node(an, &format!("dac{i}"));
+            dacs.push(dac);
+            // dacs.push(audio_graph.add_dac(&format!("dac{i}")));
         }
 
         let (an, cn) = SineOsc::create_nodes();
 
-        let sine_an = audio_graph.add_node(an);
+        let sine_an = audio_graph.add_node(an, "sine");
         audio_graph.add_edge(
             sine_an,
             dacs[0],
-            AudioConnection {
-                source_output: "out".to_owned(),
-                sink_input: "in".to_owned(),
+            Connection {
+                source_output: OutputName("out".to_owned()),
+                sink_input: InputName("in".to_owned()),
             },
         );
-        // audio_graph.add_edge(
-        //     sine_an,
-        //     dac1,
-        //     AudioConnection {
-        //         source_output_index: 0,
-        //         sink_input_index: 0,
-        //     },
-        // );
-        let sine_cn = control_graph.add_node(cn);
+        let sine_cn = control_graph.add_node(cn, "sine");
 
         let (sine_amp_inp_an, sine_amp_inp_cn) =
-            UiInput::create_nodes("sine amp", 0.0.into(), 1.0.into(), 0.5.into());
+            UiInput::create_nodes("sine_amp", 0.0.into(), 1.0.into(), 0.5.into());
         let (sine_freq_inp_an, sine_freq_inp_cn) =
-            UiInput::create_nodes("sine freq", 20.0.into(), 2000.0.into(), 440.0.into());
+            UiInput::create_nodes("sine_freq", 20.0.into(), 2000.0.into(), 440.0.into());
         self.ui_control_inputs.push(sine_amp_inp_cn.clone());
         self.ui_control_inputs.push(sine_freq_inp_cn.clone());
-        let sine_amp_cn = control_graph.add_node(sine_amp_inp_cn);
-        let sine_freq_cn = control_graph.add_node(sine_freq_inp_cn);
-        audio_graph.add_node(sine_amp_inp_an);
-        audio_graph.add_node(sine_freq_inp_an);
+        let sine_amp_cn = control_graph.add_node(sine_amp_inp_cn, "sine_amp");
+        let sine_freq_cn = control_graph.add_node(sine_freq_inp_cn, "sine_freq");
+        audio_graph.add_node(sine_amp_inp_an, "sine_amp");
+        audio_graph.add_node(sine_freq_inp_an, "sine_freq");
         control_graph.add_edge(
             sine_amp_cn,
             sine_cn,
-            ControlConnection {
-                source_output: "sine amp".to_owned(),
-                sink_input: "amp".to_owned(),
+            Connection {
+                source_output: OutputName("sine_amp".to_owned()),
+                sink_input: InputName("amp".to_owned()),
             },
         );
         control_graph.add_edge(
             sine_freq_cn,
             sine_cn,
-            ControlConnection {
-                source_output: "sine freq".to_owned(),
-                sink_input: "freq".to_owned(),
+            Connection {
+                source_output: OutputName("sine_freq".to_owned()),
+                sink_input: InputName("freq".to_owned()),
             },
         );
 
@@ -255,7 +266,12 @@ impl PaprApp {
                     ));
                     let mut t = 0 as Scalar;
                     loop {
-                        control_graph.process_control(t, control_rate);
+                        control_graph.process(
+                            t,
+                            control_rate,
+                            &FxHashMap::default(),
+                            &mut FxHashMap::default(),
+                        );
                         clk.tick().await;
                         t += control_rate.recip();
                     }
