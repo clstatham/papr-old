@@ -79,11 +79,11 @@ impl Processor<AudioRate> for DacA {
 impl Processor<ControlRate> for DacC {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as crate::graph::GraphKind>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as crate::graph::GraphKind>::SiblingNode>>,
+        _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
     }
 }

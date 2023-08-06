@@ -16,7 +16,7 @@ use crate::{
         Signal,
     },
     graph::{
-        AudioRate, Connection, ControlRate, CreateNodes, Graph, InputName, Node, NodeName,
+        AudioRate, Connection, ControlRate, CreateNodes, Graph, InputName, Node, NodeName, Output,
         OutputName,
     },
     Scalar,
@@ -38,24 +38,17 @@ impl AudioContext {
     {
         let mut out = FxHashMap::default();
         for i in 0..channels {
-            out.insert(
-                NodeName(format!("dac{i}")),
-                FxHashMap::from_iter(
-                    [(OutputName("out".to_owned()), Signal::new_audio(0.0))].into_iter(),
-                ),
-            );
+            out.insert(OutputName(format!("dac{i}")), Signal::new_audio(0.0));
         }
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
-            graph.process(
+            graph.process_graph(
                 t as Scalar + frame_idx as Scalar / sample_rate,
                 sample_rate,
                 &FxHashMap::default(),
                 &mut out,
             );
             for (c, sample) in frame.iter_mut().enumerate() {
-                *sample = T::from_sample(
-                    out[&NodeName(format!("dac{c}"))][&OutputName("out".to_owned())].value(),
-                );
+                *sample = T::from_sample(out[&OutputName(format!("dac{c}"))].value());
             }
         }
     }
@@ -124,25 +117,30 @@ impl PaprApp {
     }
 
     pub fn create_graphs(&mut self, n_dacs: usize) {
-        let mut audio_graph = Graph::new();
-        let mut control_graph = Graph::new();
+        let mut audio_graph = Graph::<AudioRate>::new(
+            FxHashMap::default(),
+            FxHashMap::from_iter((0..n_dacs).map(|i| {
+                (
+                    OutputName(format!("dac{i}")),
+                    Output {
+                        name: OutputName(format!("dac{i}")),
+                    },
+                )
+            })),
+        );
+        let mut control_graph =
+            Graph::<ControlRate>::new(FxHashMap::default(), FxHashMap::default());
 
         // test stuff follows
-
-        let mut dacs = Vec::new();
-        for i in 0..n_dacs {
-            let (an, cn) = Dac::create_nodes();
-            let dac = audio_graph.add_node(an, &format!("dac{i}"));
-            dacs.push(dac);
-            // dacs.push(audio_graph.add_dac(&format!("dac{i}")));
-        }
 
         let (an, cn) = SineOsc::create_nodes();
 
         let sine_an = audio_graph.add_node(an, "sine");
         audio_graph.add_edge(
             sine_an,
-            dacs[0],
+            audio_graph
+                .get_output_id(&OutputName("dac0".to_owned()))
+                .unwrap(),
             Connection {
                 source_output: OutputName("out".to_owned()),
                 sink_input: InputName("in".to_owned()),
@@ -266,7 +264,7 @@ impl PaprApp {
                     ));
                     let mut t = 0 as Scalar;
                     loop {
-                        control_graph.process(
+                        control_graph.process_graph(
                             t,
                             control_rate,
                             &FxHashMap::default(),

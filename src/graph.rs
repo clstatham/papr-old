@@ -4,7 +4,10 @@ use petgraph::prelude::*;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    dsp::{Processor, Signal},
+    dsp::{
+        graph_util::{GraphInput, GraphOutput},
+        Processor, Signal,
+    },
     Scalar,
 };
 
@@ -97,22 +100,74 @@ impl<T: GraphKind> Node<T> {
 pub struct Graph<T: GraphKind> {
     digraph: DiGraph<Arc<Node<T>>, Connection>,
     node_indices_by_name: FxHashMap<NodeName, NodeIndex>,
-    output_cache: FxHashMap<NodeIndex, FxHashMap<OutputName, Signal<T>>>,
+    output_cache: RwLock<FxHashMap<NodeIndex, FxHashMap<OutputName, Signal<T>>>>,
     graph_inputs: FxHashMap<InputName, NodeIndex>,
     graph_outputs: FxHashMap<OutputName, NodeIndex>,
 }
 
-impl<T: GraphKind> Graph<T> {
-    pub fn new() -> Graph<T> {
-        Self {
+impl Graph<AudioRate> {
+    pub fn new(
+        inputs: FxHashMap<InputName, Input<AudioRate>>,
+        outputs: FxHashMap<OutputName, Output>,
+    ) -> Graph<AudioRate> {
+        let mut this = Self {
             digraph: DiGraph::new(),
             node_indices_by_name: FxHashMap::default(),
-            output_cache: FxHashMap::default(),
+            output_cache: RwLock::new(FxHashMap::default()),
             graph_inputs: FxHashMap::default(),
             graph_outputs: FxHashMap::default(),
+        };
+        for (inp_name, inp) in inputs {
+            let (an, cn) = GraphInput::create_nodes();
+            let idx = this.add_node(an, &inp_name.0);
+            this.node_indices_by_name
+                .insert(NodeName(inp_name.0.to_owned()), idx);
+            this.graph_inputs.insert(inp_name, idx);
         }
-    }
+        for (out_name, out) in outputs {
+            let (an, cn) = GraphOutput::create_nodes();
+            let idx = this.add_node(an, &out_name.0);
+            this.node_indices_by_name
+                .insert(NodeName(out_name.0.to_owned()), idx);
+            this.graph_outputs.insert(out_name, idx);
+        }
 
+        this
+    }
+}
+
+impl Graph<ControlRate> {
+    pub fn new(
+        inputs: FxHashMap<InputName, Input<ControlRate>>,
+        outputs: FxHashMap<OutputName, Output>,
+    ) -> Graph<ControlRate> {
+        let mut this = Self {
+            digraph: DiGraph::new(),
+            node_indices_by_name: FxHashMap::default(),
+            output_cache: RwLock::new(FxHashMap::default()),
+            graph_inputs: FxHashMap::default(),
+            graph_outputs: FxHashMap::default(),
+        };
+        for (inp_name, inp) in inputs {
+            let (an, cn) = GraphInput::create_nodes();
+            let idx = this.add_node(cn, &inp_name.0);
+            this.node_indices_by_name
+                .insert(NodeName(inp_name.0.to_owned()), idx);
+            this.graph_inputs.insert(inp_name, idx);
+        }
+        for (out_name, out) in outputs {
+            let (an, cn) = GraphOutput::create_nodes();
+            let idx = this.add_node(cn, &out_name.0);
+            this.node_indices_by_name
+                .insert(NodeName(out_name.0.to_owned()), idx);
+            this.graph_outputs.insert(out_name, idx);
+        }
+
+        this
+    }
+}
+
+impl<T: GraphKind> Graph<T> {
     pub fn add_node(&mut self, node: Arc<Node<T>>, name: &str) -> NodeIndex {
         let outs = node
             .outputs
@@ -120,18 +175,11 @@ impl<T: GraphKind> Graph<T> {
             .map(|out_name| (out_name.to_owned(), Signal::new(0.0)))
             .collect();
         let idx = self.digraph.add_node(node);
-        self.output_cache.insert(idx, outs);
+        self.output_cache.write().unwrap().insert(idx, outs);
         self.node_indices_by_name
             .insert(NodeName(name.to_owned()), idx);
         idx
     }
-
-    // pub fn add_input(&mut self, name: &str) -> NodeIndex {
-    //     let (an, _) = GraphInput::create_nodes();
-    //     let idx = self.add_node(an, name);
-    //     self.graph_inputs.insert(InputName(name.to_owned()), idx);
-    //     idx
-    // }
 
     pub fn add_edge(
         &mut self,
@@ -142,12 +190,20 @@ impl<T: GraphKind> Graph<T> {
         self.digraph.add_edge(source, sink, connection)
     }
 
-    pub fn process(
-        &mut self,
+    pub fn get_output_id(&self, name: &OutputName) -> Option<NodeIndex> {
+        self.graph_outputs.get(name).copied()
+    }
+
+    pub fn get_input_id(&self, name: &InputName) -> Option<NodeIndex> {
+        self.graph_inputs.get(name).copied()
+    }
+
+    pub fn process_graph(
+        &self,
         t: Scalar,
         sample_rate: Scalar,
         inputs: &FxHashMap<InputName, Signal<T>>,
-        outputs: &mut FxHashMap<NodeName, FxHashMap<OutputName, Signal<T>>>,
+        outputs: &mut FxHashMap<OutputName, Signal<T>>,
     ) {
         if self.digraph.node_count() == 0 {
             return;
@@ -179,7 +235,9 @@ impl<T: GraphKind> Graph<T> {
 
         while let Some(node_id) = bfs.next(&self.digraph) {
             for edge in self.digraph.edges_directed(node_id, Direction::Incoming) {
-                let out = self.output_cache[&edge.source()][&edge.weight().source_output];
+                let out = {
+                    self.output_cache.read().unwrap()[&edge.source()][&edge.weight().source_output]
+                };
                 *self.digraph[node_id]
                     .inputs_cache
                     .write()
@@ -188,27 +246,50 @@ impl<T: GraphKind> Graph<T> {
                     .unwrap() = out;
             }
             let inps = self.digraph[node_id].inputs_cache.read().unwrap().clone();
-            let node = &mut self.digraph[node_id];
+            let node = &self.digraph[node_id];
             node.processor.process(
                 t,
                 sample_rate,
                 node.sibling_node.as_ref(),
                 &inps,
-                self.output_cache.get_mut(&node_id).unwrap(),
+                self.output_cache
+                    .write()
+                    .unwrap()
+                    .get_mut(&node_id)
+                    .unwrap(),
             )
         }
 
-        for (node_name, node_outs) in outputs.iter_mut() {
-            for (out_name, out) in node_outs.iter_mut() {
-                *out = self.output_cache[&self.node_indices_by_name[node_name]][out_name];
-            }
+        for (out_name, out) in outputs.iter_mut() {
+            let node_idx = self.graph_outputs[out_name];
+            *out = self.output_cache.read().unwrap()[&node_idx][&OutputName("out".to_owned())];
         }
     }
 }
 
-impl<T: GraphKind> Default for Graph<T> {
-    fn default() -> Self {
-        Self::new()
+impl Processor<AudioRate> for Graph<AudioRate> {
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<AudioRate as GraphKind>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+    ) {
+        self.process_graph(t, sample_rate, inputs, outputs);
+    }
+}
+
+impl Processor<ControlRate> for Graph<ControlRate> {
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<ControlRate as GraphKind>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+    ) {
+        self.process_graph(t, sample_rate, inputs, outputs)
     }
 }
 
