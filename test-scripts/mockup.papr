@@ -1,0 +1,35 @@
+/* comment */
+/* @ means audio-rate, # means control-rate */
+/* ~ indicates a series of connections and node instantiations */
+
+graph bar {
+    @in {}
+    @out {}
+    #in { #input0 }
+    #out { #output0 }
+    ~ {
+        #input0 -> #output0;
+    }
+}
+
+/* graphs contain audio/control inputs, outputs, and connections */
+graph foo {
+    @in {}
+    @out {}
+    #in { #control_input0 }
+    #out { #control_output0 }
+    ~ {
+        #control_input0 -> #control_output0;
+    }
+}
+
+graph main {
+    @in {}
+    @out { @dac0 @dac1 }
+    #in { #in0 }
+    #out { #out0 }
+    ~ {
+        let f = foo;
+        f.#control_output0 -> #in0;
+    }
+}

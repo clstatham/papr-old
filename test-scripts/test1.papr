@@ -1,0 +1,21 @@
+graph foo {
+    @in {}
+    @out {}
+    #in { #ci0 }
+    #out { #co0 }
+    ~ {
+        #ci0 -> #co0;
+    }
+}
+
+graph main {
+    @in {}
+    @out { @dac0 @dac1 }
+    #in { #ci0 }
+    #out { #co0 }
+    ~ {
+        let f : foo;
+        #ci0 -> f.#ci0;
+        f.#co0 -> #co0;
+    }
+}

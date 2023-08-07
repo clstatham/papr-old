@@ -19,6 +19,9 @@
                     "kind": "bin"
                 }
             },
+            "env": {
+                "RUST_LOG": "papr=trace"
+            },
             "args": [],
             "cwd": "${workspaceFolder}"
         },
@@ -37,6 +40,9 @@
                     "name": "papr",
                     "kind": "bin"
                 }
+            },
+            "env": {
+                "RUST_LOG": "papr=trace"
             },
             "args": [],
             "cwd": "${workspaceFolder}"

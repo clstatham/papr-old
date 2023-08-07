@@ -7,7 +7,7 @@ use crate::{
     Scalar,
 };
 
-use super::{basic::DummyC, Processor, Signal};
+use super::{Processor, Signal};
 
 pub struct GraphInput;
 pub struct GraphInputA;
@@ -30,9 +30,9 @@ impl Processor<AudioRate> for GraphInputA {
 impl Processor<ControlRate> for GraphInputC {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as crate::graph::GraphKind>::SiblingNode>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as crate::graph::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
@@ -63,7 +63,7 @@ impl CreateNodes for GraphInput {
                 )]
                 .into_iter(),
             ),
-            Box::new(GraphInputC),
+            Box::new(GraphInputC).into(),
             None,
         ));
         let an = Arc::new(Node::new(
@@ -86,7 +86,7 @@ impl CreateNodes for GraphInput {
                 )]
                 .into_iter(),
             ),
-            Box::new(GraphInputA),
+            Box::new(GraphInputA).into(),
             Some(cn.clone()),
         ));
         (an, cn)
@@ -114,9 +114,9 @@ impl Processor<AudioRate> for GraphOutputA {
 impl Processor<ControlRate> for GraphOutputC {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as crate::graph::GraphKind>::SiblingNode>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as crate::graph::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
@@ -147,7 +147,7 @@ impl CreateNodes for GraphOutput {
                 )]
                 .into_iter(),
             ),
-            Box::new(GraphOutputC),
+            Box::new(GraphOutputC).into(),
             None,
         ));
         let an = Arc::new(Node::new(
@@ -170,7 +170,7 @@ impl CreateNodes for GraphOutput {
                 )]
                 .into_iter(),
             ),
-            Box::new(GraphOutputA),
+            Box::new(GraphOutputA).into(),
             Some(cn.clone()),
         ));
         (an, cn)

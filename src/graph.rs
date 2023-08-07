@@ -11,7 +11,7 @@ use crate::{
     Scalar,
 };
 
-pub trait GraphKind
+pub trait SignalType
 where
     Self: Copy,
 {
@@ -22,10 +22,10 @@ where
 pub struct AudioRate;
 #[derive(Clone, Copy)]
 pub struct ControlRate;
-impl GraphKind for AudioRate {
+impl SignalType for AudioRate {
     type SiblingNode = Node<ControlRate>;
 }
-impl GraphKind for ControlRate {
+impl SignalType for ControlRate {
     type SiblingNode = Node<AudioRate>;
 }
 
@@ -38,18 +38,19 @@ pub struct InputName(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::Display)]
 pub struct OutputName(pub String);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Connection {
     pub source_output: OutputName,
     pub sink_input: InputName,
 }
 
-pub struct Input<T: GraphKind> {
+#[derive(Clone)]
+pub struct Input<T: SignalType> {
     pub name: InputName,
     pub default: Signal<T>,
 }
 
-impl<T: GraphKind> Input<T> {
+impl<T: SignalType> Input<T> {
     pub fn new(name: &str, default: Signal<T>) -> Self {
         Self {
             name: InputName(name.to_owned()),
@@ -58,24 +59,93 @@ impl<T: GraphKind> Input<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct Output {
     pub name: OutputName,
 }
 
+pub enum ProcessorType<T: SignalType + 'static>
+where
+    Graph<T>: Processor<T>,
+{
+    Boxed(Box<dyn Processor<T>>),
+    Subgraph(Graph<T>),
+}
+
+impl<T: SignalType + 'static> ProcessorType<T>
+where
+    Graph<T>: Processor<T>,
+{
+    pub fn as_graph(&self) -> Option<&Graph<T>> {
+        match self {
+            Self::Boxed(_) => None,
+            Self::Subgraph(g) => Some(g),
+        }
+    }
+
+    pub fn as_graph_mut(&mut self) -> Option<&mut Graph<T>> {
+        match self {
+            Self::Boxed(_) => None,
+            Self::Subgraph(g) => Some(g),
+        }
+    }
+}
+
+impl<T: SignalType + 'static> Processor<T> for ProcessorType<T>
+where
+    Graph<T>: Processor<T>,
+{
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<T>>,
+        outputs: &mut FxHashMap<OutputName, Signal<T>>,
+    ) {
+        match self {
+            Self::Boxed(p) => p.process(t, sample_rate, sibling_node, inputs, outputs),
+            Self::Subgraph(p) => p.process(t, sample_rate, sibling_node, inputs, outputs),
+        }
+    }
+
+    fn ui_update(&self, ui: &mut eframe::egui::Ui) {
+        match self {
+            Self::Boxed(p) => p.ui_update(ui),
+            Self::Subgraph(p) => p.ui_update(ui),
+        }
+    }
+}
+
+impl<T: SignalType + 'static, P: Processor<T> + 'static> From<Box<P>> for ProcessorType<T>
+where
+    Graph<T>: Processor<T>,
+{
+    fn from(value: Box<P>) -> Self {
+        Self::Boxed(value)
+    }
+}
+
 #[non_exhaustive]
-pub struct Node<T: GraphKind> {
+pub struct Node<T: SignalType + 'static>
+where
+    Graph<T>: Processor<T>,
+{
     pub sibling_node: Option<Arc<T::SiblingNode>>,
     pub inputs: FxHashMap<InputName, Input<T>>,
     pub outputs: FxHashMap<OutputName, Output>,
-    pub processor: Box<dyn Processor<T>>,
+    pub processor: ProcessorType<T>,
     inputs_cache: RwLock<FxHashMap<InputName, Signal<T>>>,
 }
 
-impl<T: GraphKind> Node<T> {
+impl<T: SignalType + 'static> Node<T>
+where
+    Graph<T>: Processor<T>,
+{
     pub fn new(
         inputs: FxHashMap<InputName, Input<T>>,
         outputs: FxHashMap<OutputName, Output>,
-        processor: Box<dyn Processor<T>>,
+        processor: ProcessorType<T>,
         sibling_node: Option<Arc<T::SiblingNode>>,
     ) -> Self {
         Self {
@@ -92,13 +162,40 @@ impl<T: GraphKind> Node<T> {
         }
     }
 
+    pub fn from_graph(graph: Graph<T>) -> Self {
+        Self::new(
+            graph
+                .graph_inputs
+                .iter()
+                .map(|(name, idx)| (name.to_owned(), Input::new(&name.0, Signal::new(0.0))))
+                .collect(),
+            graph
+                .graph_outputs
+                .iter()
+                .map(|(name, idx)| {
+                    (
+                        name.to_owned(),
+                        Output {
+                            name: name.to_owned(),
+                        },
+                    )
+                })
+                .collect(),
+            ProcessorType::Subgraph(graph),
+            None,
+        )
+    }
+
     pub fn cached_input(&self, inp_name: &InputName) -> Option<Signal<T>> {
         self.inputs_cache.read().unwrap().get(inp_name).copied()
     }
 }
 
-pub struct Graph<T: GraphKind> {
-    digraph: DiGraph<Arc<Node<T>>, Connection>,
+pub struct Graph<T: SignalType + 'static>
+where
+    Self: Processor<T>,
+{
+    pub digraph: DiGraph<Arc<Node<T>>, Connection>,
     node_indices_by_name: FxHashMap<NodeName, NodeIndex>,
     output_cache: RwLock<FxHashMap<NodeIndex, FxHashMap<OutputName, Signal<T>>>>,
     graph_inputs: FxHashMap<InputName, NodeIndex>,
@@ -117,15 +214,15 @@ impl Graph<AudioRate> {
             graph_inputs: FxHashMap::default(),
             graph_outputs: FxHashMap::default(),
         };
-        for (inp_name, inp) in inputs {
-            let (an, cn) = GraphInput::create_nodes();
+        for (inp_name, _inp) in inputs {
+            let (an, _cn) = GraphInput::create_nodes();
             let idx = this.add_node(an, &inp_name.0);
             this.node_indices_by_name
                 .insert(NodeName(inp_name.0.to_owned()), idx);
             this.graph_inputs.insert(inp_name, idx);
         }
-        for (out_name, out) in outputs {
-            let (an, cn) = GraphOutput::create_nodes();
+        for (out_name, _out) in outputs {
+            let (an, _cn) = GraphOutput::create_nodes();
             let idx = this.add_node(an, &out_name.0);
             this.node_indices_by_name
                 .insert(NodeName(out_name.0.to_owned()), idx);
@@ -148,15 +245,15 @@ impl Graph<ControlRate> {
             graph_inputs: FxHashMap::default(),
             graph_outputs: FxHashMap::default(),
         };
-        for (inp_name, inp) in inputs {
-            let (an, cn) = GraphInput::create_nodes();
+        for (inp_name, _inp) in inputs {
+            let (_an, cn) = GraphInput::create_nodes();
             let idx = this.add_node(cn, &inp_name.0);
             this.node_indices_by_name
                 .insert(NodeName(inp_name.0.to_owned()), idx);
             this.graph_inputs.insert(inp_name, idx);
         }
-        for (out_name, out) in outputs {
-            let (an, cn) = GraphOutput::create_nodes();
+        for (out_name, _out) in outputs {
+            let (_an, cn) = GraphOutput::create_nodes();
             let idx = this.add_node(cn, &out_name.0);
             this.node_indices_by_name
                 .insert(NodeName(out_name.0.to_owned()), idx);
@@ -167,7 +264,10 @@ impl Graph<ControlRate> {
     }
 }
 
-impl<T: GraphKind> Graph<T> {
+impl<T: SignalType + 'static> Graph<T>
+where
+    Self: Processor<T>,
+{
     pub fn add_node(&mut self, node: Arc<Node<T>>, name: &str) -> NodeIndex {
         let outs = node
             .outputs
@@ -187,6 +287,20 @@ impl<T: GraphKind> Graph<T> {
         sink: NodeIndex,
         connection: Connection,
     ) -> EdgeIndex {
+        assert!(
+            self.digraph[source]
+                .outputs
+                .contains_key(&connection.source_output),
+            "Graph::add_edge(): No output named `{}` on node",
+            &connection.source_output.0
+        );
+        assert!(
+            self.digraph[sink]
+                .inputs
+                .contains_key(&connection.sink_input),
+            "Graph::add_edge(): No input named `{}` on node",
+            &connection.source_output.0
+        );
         self.digraph.add_edge(source, sink, connection)
     }
 
@@ -196,6 +310,10 @@ impl<T: GraphKind> Graph<T> {
 
     pub fn get_input_id(&self, name: &InputName) -> Option<NodeIndex> {
         self.graph_inputs.get(name).copied()
+    }
+
+    pub fn node_id_by_name(&self, name: &NodeName) -> Option<NodeIndex> {
+        self.node_indices_by_name.get(name).copied()
     }
 
     pub fn process_graph(
@@ -267,27 +385,17 @@ impl<T: GraphKind> Graph<T> {
     }
 }
 
-impl Processor<AudioRate> for Graph<AudioRate> {
+impl<T: SignalType> Processor<T> for Graph<T>
+where
+    Self: Send + Sync,
+{
     fn process(
         &self,
         t: Scalar,
         sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as GraphKind>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
-    ) {
-        self.process_graph(t, sample_rate, inputs, outputs);
-    }
-}
-
-impl Processor<ControlRate> for Graph<ControlRate> {
-    fn process(
-        &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as GraphKind>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+        sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<T>>,
+        outputs: &mut FxHashMap<OutputName, Signal<T>>,
     ) {
         self.process_graph(t, sample_rate, inputs, outputs)
     }

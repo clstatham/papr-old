@@ -1,11 +1,10 @@
-
 use rustc_hash::FxHashMap;
 use std::{marker::PhantomData, sync::Arc};
 
 use eframe::egui::Ui;
 
 use crate::{
-    graph::{AudioRate, ControlRate, GraphKind, InputName, OutputName},
+    graph::{AudioRate, ControlRate, InputName, OutputName, SignalType},
     Scalar, PI,
 };
 
@@ -14,9 +13,9 @@ pub mod generators;
 pub mod graph_util;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Signal<T: GraphKind>(Scalar, PhantomData<T>);
+pub struct Signal<T: SignalType>(Scalar, PhantomData<T>);
 
-impl<T: GraphKind> Signal<T> {
+impl<T: SignalType> Signal<T> {
     pub const fn new(val: Scalar) -> Self {
         Self(val, PhantomData)
     }
@@ -38,41 +37,41 @@ impl Signal<AudioRate> {
     }
 }
 
-impl<T: GraphKind> From<Scalar> for Signal<T> {
+impl<T: SignalType> From<Scalar> for Signal<T> {
     fn from(value: Scalar) -> Self {
         Self::new(value)
     }
 }
 
-impl<T: GraphKind> std::ops::Add<Self> for Signal<T> {
+impl<T: SignalType> std::ops::Add<Self> for Signal<T> {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Self::new(self.value() + rhs.value())
     }
 }
 
-impl<T: GraphKind> std::ops::Sub<Self> for Signal<T> {
+impl<T: SignalType> std::ops::Sub<Self> for Signal<T> {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Self::new(self.value() - rhs.value())
     }
 }
 
-impl<T: GraphKind> std::ops::Mul<Self> for Signal<T> {
+impl<T: SignalType> std::ops::Mul<Self> for Signal<T> {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
         Self::new(self.value() * rhs.value())
     }
 }
 
-impl<T: GraphKind> std::ops::Div<Self> for Signal<T> {
+impl<T: SignalType> std::ops::Div<Self> for Signal<T> {
     type Output = Self;
     fn div(self, rhs: Self) -> Self::Output {
         Self::new(self.value() / rhs.value())
     }
 }
 
-pub trait Processor<T: GraphKind>
+pub trait Processor<T: SignalType>
 where
     Self: Send + Sync,
 {

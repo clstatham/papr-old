@@ -25,6 +25,10 @@ struct Args {
 }
 
 fn main() {
+    // #[cfg(debug_assertions)]
+    env_logger::init();
+
+    log::trace!("Logger initialized.");
     let args = Args::parse();
     eframe::run_native(
         "PAPR",

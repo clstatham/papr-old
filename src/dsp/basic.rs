@@ -37,24 +37,67 @@ impl Processor<ControlRate> for DummyC {
     }
 }
 
-pub struct DebugC {
-    pub name: &'static str,
+pub struct DebugNode;
+
+pub struct DebugNodeA;
+
+pub struct DebugNodeC {
+    pub name: String,
 }
 
-impl Processor<ControlRate> for DebugC {
+impl Processor<AudioRate> for DebugNodeA {
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<AudioRate as crate::graph::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+    ) {
+    }
+}
+
+impl Processor<ControlRate> for DebugNodeC {
     fn process(
         &self,
         t: Scalar,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+        _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
         println!("Debug: {} (t={t})", self.name);
 
-        for ((inp_name, inp), (_out_name, _out)) in inputs.iter().zip(outputs.iter()) {
+        for (inp_name, inp) in inputs.iter() {
             println!("{inp_name} = {}", inp.value());
         }
+    }
+}
+
+impl DebugNode {
+    pub fn create_nodes(name: &str) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+        let cn = Arc::new(Node::new(
+            FxHashMap::from_iter(
+                [(
+                    InputName("in".to_owned()),
+                    Input::new("in", Signal::new_control(0.0)),
+                )]
+                .into_iter(),
+            ),
+            FxHashMap::default(),
+            Box::new(DebugNodeC {
+                name: name.to_owned(),
+            })
+            .into(),
+            None,
+        ));
+        let an = Arc::new(Node::new(
+            FxHashMap::default(),
+            FxHashMap::default(),
+            Box::new(DebugNodeA).into(),
+            Some(cn.clone()),
+        ));
+        (an, cn)
     }
 }
 
@@ -81,7 +124,7 @@ impl Processor<ControlRate> for DacC {
         &self,
         _t: Scalar,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as crate::graph::GraphKind>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<ControlRate as crate::graph::SignalType>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
@@ -93,7 +136,7 @@ impl CreateNodes for Dac {
         let cn = Arc::new(Node::new(
             FxHashMap::default(),
             FxHashMap::default(),
-            Box::new(DacC),
+            Box::new(DacC).into(),
             None,
         ));
         let an = Arc::new(Node::new(
@@ -116,7 +159,7 @@ impl CreateNodes for Dac {
                 )]
                 .into_iter(),
             ),
-            Box::new(DacA),
+            Box::new(DacA).into(),
             Some(cn.clone()),
         ));
         (an, cn)
@@ -195,13 +238,14 @@ impl UiInput {
                 minimum,
                 name: name.to_owned(),
                 value: value.clone(),
-            }),
+            })
+            .into(),
             None,
         ));
         let an = Arc::new(Node::new(
             FxHashMap::default(),
             FxHashMap::default(),
-            Box::new(UiInputA { value }),
+            Box::new(UiInputA { value }).into(),
             Some(cn.clone()),
         ));
         (an, cn)

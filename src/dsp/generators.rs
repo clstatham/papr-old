@@ -24,7 +24,7 @@ impl CreateNodes for SineOsc {
                 .into_iter(),
             ),
             FxHashMap::default(),
-            Box::new(SineOscC),
+            Box::new(SineOscC).into(),
             None,
         ));
         let an = Arc::new(Node::new(
@@ -38,7 +38,7 @@ impl CreateNodes for SineOsc {
                 )]
                 .into_iter(),
             ),
-            Box::new(SineOscA),
+            Box::new(SineOscA).into(),
             Some(cn.clone()),
         ));
         (an, cn)
