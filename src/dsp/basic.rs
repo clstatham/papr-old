@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     dsp::{AudioRate, ControlRate, Signal},
     graph::{CreateNodes, Input, InputName, Node, Output, OutputName},
-    Scalar,
+    node_constructor, Scalar,
 };
 
 use super::{Processor, SmoothControlSignal};
@@ -252,15 +252,17 @@ impl UiInput {
     }
 }
 
-pub struct Constant;
-pub struct ConstantA {
-    pub value: Signal<AudioRate>,
-}
-pub struct ConstantC {
-    pub value: Signal<ControlRate>,
+node_constructor! {
+    Constant {
+        value: Scalar
+    }
+    @in {}
+    @out { "out" }
+    #in {}
+    #out { "out" }
 }
 
-impl Processor<AudioRate> for ConstantA {
+impl Processor<AudioRate> for Constant {
     fn process(
         &self,
         _t: Scalar,
@@ -269,11 +271,11 @@ impl Processor<AudioRate> for ConstantA {
         _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
-        *outputs.get_mut(&OutputName("out".to_string())).unwrap() = self.value;
+        *outputs.get_mut(&OutputName("out".to_string())).unwrap() = self.value.into();
     }
 }
 
-impl Processor<ControlRate> for ConstantC {
+impl Processor<ControlRate> for Constant {
     fn process(
         &self,
         _t: Scalar,
@@ -282,46 +284,42 @@ impl Processor<ControlRate> for ConstantC {
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
-        *outputs.get_mut(&OutputName("out".to_string())).unwrap() = self.value;
+        *outputs.get_mut(&OutputName("out".to_string())).unwrap() = self.value.into();
     }
 }
 
-impl Constant {
-    pub fn create_nodes(value: Scalar) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let cn = Arc::new(Node::new(
-            FxHashMap::default(),
-            FxHashMap::from_iter(
-                [(
-                    OutputName("out".to_owned()),
-                    Output {
-                        name: OutputName("out".to_owned()),
-                    },
-                )]
-                .into_iter(),
-            ),
-            Box::new(ConstantC {
-                value: value.into(),
-            })
-            .into(),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            FxHashMap::default(),
-            FxHashMap::from_iter(
-                [(
-                    OutputName("out".to_owned()),
-                    Output {
-                        name: OutputName("out".to_owned()),
-                    },
-                )]
-                .into_iter(),
-            ),
-            Box::new(ConstantA {
-                value: value.into(),
-            })
-            .into(),
-            Some(cn.clone()),
-        ));
-        (an, cn)
+node_constructor! {
+    Multiply {}
+    @in { "a" = 0.0 "b" = 0.0 }
+    @out { "out" }
+    #in { "a" = 0.0 "b" = 0.0 }
+    #out { "out" }
+}
+
+impl Processor<AudioRate> for Multiply {
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+    ) {
+        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
+            inputs[&InputName("a".to_owned())] * inputs[&InputName("b".to_owned())];
+    }
+}
+
+impl Processor<ControlRate> for Multiply {
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+    ) {
+        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
+            inputs[&InputName("a".to_owned())] * inputs[&InputName("b".to_owned())];
     }
 }

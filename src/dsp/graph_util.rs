@@ -4,17 +4,21 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate},
-    graph::{CreateNodes, Input, InputName, Node, Output, OutputName},
-    Scalar,
+    graph::{InputName, Node, OutputName},
+    node_constructor, Scalar,
 };
 
 use super::{Processor, Signal};
 
-pub struct GraphInput;
-pub struct GraphInputA;
-pub struct GraphInputC;
+node_constructor! {
+    GraphInput {}
+    @in { "in" = 0.0 }
+    @out { "out" }
+    #in { "in" = 0.0 }
+    #out { "out" }
+}
 
-impl Processor<AudioRate> for GraphInputA {
+impl Processor<AudioRate> for GraphInput {
     fn process(
         &self,
         _t: Scalar,
@@ -28,7 +32,7 @@ impl Processor<AudioRate> for GraphInputA {
     }
 }
 
-impl Processor<ControlRate> for GraphInputC {
+impl Processor<ControlRate> for GraphInput {
     fn process(
         &self,
         _t: Scalar,
@@ -42,63 +46,15 @@ impl Processor<ControlRate> for GraphInputC {
     }
 }
 
-impl CreateNodes for GraphInput {
-    fn create_nodes() -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let cn = Arc::new(Node::new(
-            FxHashMap::from_iter(
-                [(
-                    InputName("in".to_owned()),
-                    Input {
-                        name: InputName("in".to_owned()),
-                        default: Signal::new_control(0.0),
-                    },
-                )]
-                .into_iter(),
-            ),
-            FxHashMap::from_iter(
-                [(
-                    OutputName("out".to_owned()),
-                    Output {
-                        name: OutputName("out".to_owned()),
-                    },
-                )]
-                .into_iter(),
-            ),
-            Box::new(GraphInputC).into(),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            FxHashMap::from_iter(
-                [(
-                    InputName("in".to_owned()),
-                    Input {
-                        name: InputName("in".to_owned()),
-                        default: Signal::new_audio(0.0),
-                    },
-                )]
-                .into_iter(),
-            ),
-            FxHashMap::from_iter(
-                [(
-                    OutputName("out".to_owned()),
-                    Output {
-                        name: OutputName("out".to_owned()),
-                    },
-                )]
-                .into_iter(),
-            ),
-            Box::new(GraphInputA).into(),
-            Some(cn.clone()),
-        ));
-        (an, cn)
-    }
+node_constructor! {
+    GraphOutput {}
+    @in { "in" = 0.0 }
+    @out { "out" }
+    #in { "in" = 0.0 }
+    #out { "out" }
 }
 
-pub struct GraphOutput;
-pub struct GraphOutputA;
-pub struct GraphOutputC;
-
-impl Processor<AudioRate> for GraphOutputA {
+impl Processor<AudioRate> for GraphOutput {
     fn process(
         &self,
         _t: Scalar,
@@ -112,7 +68,7 @@ impl Processor<AudioRate> for GraphOutputA {
     }
 }
 
-impl Processor<ControlRate> for GraphOutputC {
+impl Processor<ControlRate> for GraphOutput {
     fn process(
         &self,
         _t: Scalar,
@@ -123,57 +79,5 @@ impl Processor<ControlRate> for GraphOutputC {
     ) {
         *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
             inputs[&InputName("in".to_owned())];
-    }
-}
-
-impl CreateNodes for GraphOutput {
-    fn create_nodes() -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let cn = Arc::new(Node::new(
-            FxHashMap::from_iter(
-                [(
-                    InputName("in".to_owned()),
-                    Input {
-                        name: InputName("in".to_owned()),
-                        default: Signal::new_control(0.0),
-                    },
-                )]
-                .into_iter(),
-            ),
-            FxHashMap::from_iter(
-                [(
-                    OutputName("out".to_owned()),
-                    Output {
-                        name: OutputName("out".to_owned()),
-                    },
-                )]
-                .into_iter(),
-            ),
-            Box::new(GraphOutputC).into(),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            FxHashMap::from_iter(
-                [(
-                    InputName("in".to_owned()),
-                    Input {
-                        name: InputName("in".to_owned()),
-                        default: Signal::new_audio(0.0),
-                    },
-                )]
-                .into_iter(),
-            ),
-            FxHashMap::from_iter(
-                [(
-                    OutputName("out".to_owned()),
-                    Output {
-                        name: OutputName("out".to_owned()),
-                    },
-                )]
-                .into_iter(),
-            ),
-            Box::new(GraphOutputA).into(),
-            Some(cn.clone()),
-        ));
-        (an, cn)
     }
 }

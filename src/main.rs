@@ -3,6 +3,7 @@ use clap::Parser;
 use eframe::{egui::Visuals, NativeOptions};
 
 pub mod app;
+#[macro_use]
 pub mod dsp;
 pub mod graph;
 pub mod parser;

@@ -4,52 +4,21 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate},
-    graph::{CreateNodes, Input, InputName, Node, Output, OutputName},
-    Scalar, PI,
+    graph::{InputName, Node, OutputName},
+    node_constructor, Scalar, PI,
 };
 
 use super::{Processor, Signal};
 
-pub struct SineOsc;
-impl CreateNodes for SineOsc {
-    fn create_nodes() -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let cn = Arc::new(Node::new(
-            FxHashMap::from_iter(
-                [
-                    (InputName("amp".to_owned()), Input::new("amp", 1.0.into())),
-                    (
-                        InputName("freq".to_owned()),
-                        Input::new("freq", 440.0.into()),
-                    ),
-                ]
-                .into_iter(),
-            ),
-            FxHashMap::default(),
-            Box::new(SineOscC).into(),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            FxHashMap::default(),
-            FxHashMap::from_iter(
-                [(
-                    OutputName("out".to_owned()),
-                    Output {
-                        name: OutputName("out".to_owned()),
-                    },
-                )]
-                .into_iter(),
-            ),
-            Box::new(SineOscA).into(),
-            Some(cn.clone()),
-        ));
-        (an, cn)
-    }
+node_constructor! {
+    SineOsc {}
+    @in {}
+    @out { "out" }
+    #in { "amp" = 1.0 "freq" = 440.0 }
+    #out {}
 }
 
-pub struct SineOscA;
-pub struct SineOscC;
-
-impl Processor<AudioRate> for SineOscA {
+impl Processor<AudioRate> for SineOsc {
     fn process(
         &self,
         t: Scalar,
@@ -70,7 +39,7 @@ impl Processor<AudioRate> for SineOscA {
     }
 }
 
-impl Processor<ControlRate> for SineOscC {
+impl Processor<ControlRate> for SineOsc {
     fn process(
         &self,
         _t: Scalar,
