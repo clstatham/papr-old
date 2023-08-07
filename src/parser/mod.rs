@@ -236,7 +236,7 @@ pub fn graph_def<'a>() -> impl FnMut(
 pub fn graph_def_instantiation<'a>(
     inp: &'a str,
     ctx: &mut ParserContext,
-    scope: &mut ParserScope,
+    _scope: &mut ParserScope,
 ) -> IResult<&'a str, GraphPtrs> {
     map(
         graph_def(),

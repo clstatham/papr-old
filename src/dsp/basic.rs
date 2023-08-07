@@ -48,11 +48,11 @@ pub struct DebugNodeC {
 impl Processor<AudioRate> for DebugNodeA {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as crate::graph::SignalType>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as crate::graph::SignalType>::SiblingNode>>,
+        _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        _outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
     }
 }

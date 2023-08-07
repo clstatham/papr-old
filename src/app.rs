@@ -11,14 +11,10 @@ use tokio::runtime::Runtime;
 
 use crate::{
     dsp::{
-        basic::{DebugNode, DebugNodeC, UiInput},
-        generators::SineOsc,
+        basic::{DebugNode, UiInput},
         Processor, Signal,
     },
-    graph::{
-        AudioRate, Connection, ControlRate, CreateNodes, Graph, InputName, Node, NodeName, Output,
-        OutputName,
-    },
+    graph::{AudioRate, Connection, ControlRate, Graph, InputName, Node, NodeName, OutputName},
     parser::{parse_script, GraphPtrs},
     Scalar,
 };
@@ -117,7 +113,7 @@ impl PaprApp {
         }
     }
 
-    pub fn create_graphs(&mut self, n_dacs: usize) {
+    pub fn create_graphs(&mut self, _n_dacs: usize) {
         let main_graphs = parse_script(include_str!("../test-scripts/test1.papr"))
             .remove(&NodeName("main".to_owned()))
             .unwrap();
@@ -149,7 +145,7 @@ impl PaprApp {
                 },
             );
 
-            let (an, cn) = DebugNode::create_nodes("debug0");
+            let (_an, cn) = DebugNode::create_nodes("debug0");
             // let debug0_an = audio.add_node(an, "debug0");
             let debug0_cn = control.add_node(cn, "debug0");
             control.add_edge(

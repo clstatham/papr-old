@@ -166,13 +166,13 @@ where
         Self::new(
             graph
                 .graph_inputs
-                .iter()
-                .map(|(name, idx)| (name.to_owned(), Input::new(&name.0, Signal::new(0.0))))
+                .keys()
+                .map(|name| (name.to_owned(), Input::new(&name.0, Signal::new(0.0))))
                 .collect(),
             graph
                 .graph_outputs
-                .iter()
-                .map(|(name, idx)| {
+                .keys()
+                .map(|name| {
                     (
                         name.to_owned(),
                         Output {
@@ -393,7 +393,7 @@ where
         &self,
         t: Scalar,
         sample_rate: Scalar,
-        sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<T>>,
         outputs: &mut FxHashMap<OutputName, Signal<T>>,
     ) {
