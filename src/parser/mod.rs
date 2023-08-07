@@ -7,11 +7,8 @@ use nom::{
 use rustc_hash::FxHashMap;
 
 use crate::{
-    dsp::{basic::Constant, Signal},
-    graph::{
-        AudioRate, Connection, ControlRate, Graph, Input, InputName, Node, NodeName, Output,
-        OutputName,
-    },
+    dsp::{basic::Constant, AudioRate, ControlRate, Signal},
+    graph::{Connection, Graph, Input, InputName, Node, NodeName, Output, OutputName},
     Scalar,
 };
 
@@ -98,7 +95,7 @@ pub fn audio_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
             Binding::AudioIo(id.to_owned())
         }),
         map(preceded(tag("@"), float), |num| {
-            let (an, cn) = Constant::create_nodes(num as Scalar);
+            let (an, _cn) = Constant::create_nodes(num as Scalar);
             Binding::AudioConstant(an)
         }),
     ))
@@ -114,7 +111,7 @@ pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding>
             Binding::ControlIo(id.to_owned())
         }),
         map(preceded(tag("#"), float), |num| {
-            let (an, cn) = Constant::create_nodes(num as Scalar);
+            let (_an, cn) = Constant::create_nodes(num as Scalar);
             Binding::ControlConstant(cn)
         }),
     ))
@@ -366,7 +363,7 @@ pub fn graph_def_instantiation<'a>(
                             (Binding::ControlIo(frm), Binding::ControlIo(to)) => {
                                 io_io_bindings_impl!(control, cg, frm, to);
                             }
-                            (Binding::AudioConstant(con), Binding::AudioIo(to)) => {
+                            (Binding::AudioConstant(_con), Binding::AudioIo(_to)) => {
                                 todo!("audio constant -> audio io");
                             }
                             (Binding::ControlConstant(con), Binding::ControlIo(to)) => {

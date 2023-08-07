@@ -6,28 +6,10 @@ use rustc_hash::FxHashMap;
 use crate::{
     dsp::{
         graph_util::{GraphInput, GraphOutput},
-        Processor, Signal,
+        AudioRate, ControlRate, Processor, Signal, SignalType,
     },
     Scalar,
 };
-
-pub trait SignalType
-where
-    Self: Copy,
-{
-    type SiblingNode;
-}
-
-#[derive(Clone, Copy)]
-pub struct AudioRate;
-#[derive(Clone, Copy)]
-pub struct ControlRate;
-impl SignalType for AudioRate {
-    type SiblingNode = Node<ControlRate>;
-}
-impl SignalType for ControlRate {
-    type SiblingNode = Node<AudioRate>;
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::Display)]
 pub struct NodeName(pub String);

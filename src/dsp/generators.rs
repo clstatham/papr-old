@@ -3,7 +3,8 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    graph::{AudioRate, ControlRate, CreateNodes, Input, InputName, Node, Output, OutputName},
+    dsp::{AudioRate, ControlRate},
+    graph::{CreateNodes, Input, InputName, Node, Output, OutputName},
     Scalar, PI,
 };
 

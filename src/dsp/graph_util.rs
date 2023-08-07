@@ -3,7 +3,8 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    graph::{AudioRate, ControlRate, CreateNodes, Input, InputName, Node, Output, OutputName},
+    dsp::{AudioRate, ControlRate},
+    graph::{CreateNodes, Input, InputName, Node, Output, OutputName},
     Scalar,
 };
 
@@ -32,7 +33,7 @@ impl Processor<ControlRate> for GraphInputC {
         &self,
         _t: Scalar,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as crate::graph::SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
@@ -116,7 +117,7 @@ impl Processor<ControlRate> for GraphOutputC {
         &self,
         _t: Scalar,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as crate::graph::SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {

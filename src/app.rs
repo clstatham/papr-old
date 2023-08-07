@@ -12,9 +12,9 @@ use tokio::runtime::Runtime;
 use crate::{
     dsp::{
         basic::{DebugNode, UiInput},
-        Processor, Signal,
+        AudioRate, ControlRate, Processor, Signal,
     },
-    graph::{AudioRate, Connection, ControlRate, Graph, InputName, Node, NodeName, OutputName},
+    graph::{Connection, Graph, InputName, Node, NodeName, OutputName},
     parser::{parse_script, GraphPtrs},
     Scalar,
 };

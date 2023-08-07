@@ -4,8 +4,8 @@ use eframe::egui::{Slider, Ui};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    dsp::Signal,
-    graph::{AudioRate, ControlRate, CreateNodes, Input, InputName, Node, Output, OutputName},
+    dsp::{AudioRate, ControlRate, Signal},
+    graph::{CreateNodes, Input, InputName, Node, Output, OutputName},
     Scalar,
 };
 
@@ -50,7 +50,7 @@ impl Processor<AudioRate> for DebugNodeA {
         &self,
         _t: Scalar,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as crate::graph::SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalType>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         _outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
@@ -124,7 +124,7 @@ impl Processor<ControlRate> for DacC {
         &self,
         _t: Scalar,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as crate::graph::SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
@@ -263,10 +263,10 @@ pub struct ConstantC {
 impl Processor<AudioRate> for ConstantA {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as crate::graph::SignalType>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalType>::SiblingNode>>,
+        _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
         *outputs.get_mut(&OutputName("out".to_string())).unwrap() = self.value;
@@ -276,10 +276,10 @@ impl Processor<AudioRate> for ConstantA {
 impl Processor<ControlRate> for ConstantC {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as crate::graph::SignalType>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
+        _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
         *outputs.get_mut(&OutputName("out".to_string())).unwrap() = self.value;

@@ -4,13 +4,31 @@ use std::{marker::PhantomData, sync::Arc};
 use eframe::egui::Ui;
 
 use crate::{
-    graph::{AudioRate, ControlRate, InputName, OutputName, SignalType},
+    graph::{InputName, Node, OutputName},
     Scalar, PI,
 };
 
 pub mod basic;
 pub mod generators;
 pub mod graph_util;
+
+pub trait SignalType
+where
+    Self: Copy,
+{
+    type SiblingNode;
+}
+
+#[derive(Clone, Copy)]
+pub struct AudioRate;
+#[derive(Clone, Copy)]
+pub struct ControlRate;
+impl SignalType for AudioRate {
+    type SiblingNode = Node<ControlRate>;
+}
+impl SignalType for ControlRate {
+    type SiblingNode = Node<AudioRate>;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Signal<T: SignalType>(Scalar, PhantomData<T>);
