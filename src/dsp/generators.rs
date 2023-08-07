@@ -61,14 +61,12 @@ impl Processor<AudioRate> for SineOscA {
         let sibling_node = sibling_node.as_ref().unwrap();
         let amp = sibling_node
             .cached_input(&InputName("amp".to_owned()))
-            .unwrap()
-            .value();
+            .unwrap();
         let freq = sibling_node
             .cached_input(&InputName("freq".to_owned()))
-            .unwrap()
-            .value();
+            .unwrap();
         *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
-            Signal::new_audio(Scalar::sin(t * PI * 2.0 * freq) * amp);
+            Signal::new_audio(Scalar::sin(t * PI * 2.0 * freq.value()) * amp.value());
     }
 }
 

@@ -118,6 +118,7 @@ where
     pub outputs: FxHashMap<OutputName, Output>,
     pub processor: ProcessorType<T>,
     inputs_cache: RwLock<FxHashMap<InputName, Signal<T>>>,
+    outputs_cache: RwLock<FxHashMap<OutputName, Signal<T>>>,
 }
 
 impl<T: SignalType + 'static> Node<T>
@@ -135,6 +136,12 @@ where
                 inputs
                     .iter()
                     .map(|(k, v)| (k.to_owned(), v.default))
+                    .collect(),
+            ),
+            outputs_cache: RwLock::new(
+                outputs
+                    .keys()
+                    .map(|k| (k.to_owned(), Signal::new(0.0)))
                     .collect(),
             ),
             inputs,
@@ -179,7 +186,6 @@ where
 {
     pub digraph: DiGraph<Arc<Node<T>>, Connection>,
     node_indices_by_name: FxHashMap<NodeName, NodeIndex>,
-    output_cache: RwLock<FxHashMap<NodeIndex, FxHashMap<OutputName, Signal<T>>>>,
     graph_inputs: FxHashMap<InputName, NodeIndex>,
     graph_outputs: FxHashMap<OutputName, NodeIndex>,
 }
@@ -192,7 +198,6 @@ impl Graph<AudioRate> {
         let mut this = Self {
             digraph: DiGraph::new(),
             node_indices_by_name: FxHashMap::default(),
-            output_cache: RwLock::new(FxHashMap::default()),
             graph_inputs: FxHashMap::default(),
             graph_outputs: FxHashMap::default(),
         };
@@ -223,7 +228,6 @@ impl Graph<ControlRate> {
         let mut this = Self {
             digraph: DiGraph::new(),
             node_indices_by_name: FxHashMap::default(),
-            output_cache: RwLock::new(FxHashMap::default()),
             graph_inputs: FxHashMap::default(),
             graph_outputs: FxHashMap::default(),
         };
@@ -251,13 +255,7 @@ where
     Self: Processor<T>,
 {
     pub fn add_node(&mut self, node: Arc<Node<T>>, name: &str) -> NodeIndex {
-        let outs = node
-            .outputs
-            .keys()
-            .map(|out_name| (out_name.to_owned(), Signal::new(0.0)))
-            .collect();
         let idx = self.digraph.add_node(node);
-        self.output_cache.write().unwrap().insert(idx, outs);
         self.node_indices_by_name
             .insert(NodeName(name.to_owned()), idx);
         idx
@@ -305,10 +303,12 @@ where
         inputs: &FxHashMap<InputName, Signal<T>>,
         outputs: &mut FxHashMap<OutputName, Signal<T>>,
     ) {
+        // early check for empty graph (nothing to do)
         if self.digraph.node_count() == 0 {
             return;
         }
 
+        // copy the provided input values into each input node's input chache
         for (input_name, value) in inputs.iter() {
             let inp_idx = self.graph_inputs[input_name];
             *self.digraph[inp_idx]
@@ -319,6 +319,7 @@ where
                 .unwrap() = *value;
         }
 
+        // initialize a breadth-first search starting at the input nodes
         let mut starts = self.digraph.externals(Direction::Incoming);
         let mut bfs = Bfs::new(
             &self.digraph,
@@ -333,10 +334,15 @@ where
             bfs.stack.push_back(*node);
         }
 
+        // walk the BFS...
         while let Some(node_id) = bfs.next(&self.digraph) {
+            // for each incoming connection into the visited node:
+            // - grab the cached outputs from earlier in the graph
+            // - copy them to the input cache of the currently visited node
             for edge in self.digraph.edges_directed(node_id, Direction::Incoming) {
                 let out = {
-                    self.output_cache.read().unwrap()[&edge.source()][&edge.weight().source_output]
+                    self.digraph[edge.source()].outputs_cache.read().unwrap()
+                        [&edge.weight().source_output]
                 };
                 *self.digraph[node_id]
                     .inputs_cache
@@ -345,24 +351,25 @@ where
                     .get_mut(&edge.weight().sink_input)
                     .unwrap() = out;
             }
+
+            // create a copy of the inputs from the cache (necessary because we mutably borrow `self` in the next step)
             let inps = self.digraph[node_id].inputs_cache.read().unwrap().clone();
             let node = &self.digraph[node_id];
+            // run the processing logic for this node, which will store its results directly in our output cache
             node.processor.process(
                 t,
                 sample_rate,
                 node.sibling_node.as_ref(),
                 &inps,
-                self.output_cache
-                    .write()
-                    .unwrap()
-                    .get_mut(&node_id)
-                    .unwrap(),
+                &mut node.outputs_cache.write().unwrap(),
             )
         }
 
+        // copy the cached (and now updated) output values into the mutable passed outputs
         for (out_name, out) in outputs.iter_mut() {
             let node_idx = self.graph_outputs[out_name];
-            *out = self.output_cache.read().unwrap()[&node_idx][&OutputName("out".to_owned())];
+            *out =
+                self.digraph[node_idx].outputs_cache.read().unwrap()[&OutputName("out".to_owned())];
         }
     }
 }
