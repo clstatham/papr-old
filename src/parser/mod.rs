@@ -1,42 +1,45 @@
 use std::sync::Arc;
 
 use nom::{
-    branch::*, bytes::complete::*, character::complete::*, combinator::*, multi::*, sequence::*,
-    IResult,
+    branch::*, bytes::complete::*, character::complete::*, combinator::*, multi::*,
+    number::complete::float, sequence::*, IResult,
 };
 use rustc_hash::FxHashMap;
 
 use crate::{
-    dsp::Signal,
+    dsp::{basic::Constant, Signal},
     graph::{
         AudioRate, Connection, ControlRate, Graph, Input, InputName, Node, NodeName, Output,
         OutputName,
     },
+    Scalar,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum Binding {
-    Audio(String),
-    Control(String),
+    AudioIo(String),
+    AudioConstant(Arc<Node<AudioRate>>),
+    ControlIo(String),
+    ControlConstant(Arc<Node<ControlRate>>),
 }
 
 impl Binding {
-    pub fn into_input_name(self) -> InputName {
+    pub fn into_input_name(self) -> Option<InputName> {
         match self {
-            Self::Audio(n) => InputName(n),
-            Self::Control(n) => InputName(n),
+            Self::AudioIo(n) | Self::ControlIo(n) => Some(InputName(n)),
+            Self::AudioConstant(_) | Self::ControlConstant(_) => None,
         }
     }
 
-    pub fn into_output_name(self) -> OutputName {
+    pub fn into_output_name(self) -> Option<OutputName> {
         match self {
-            Self::Audio(n) => OutputName(n),
-            Self::Control(n) => OutputName(n),
+            Self::AudioIo(n) | Self::ControlIo(n) => Some(OutputName(n)),
+            Self::AudioConstant(_) | Self::ControlConstant(_) => None,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ConnectionOrLet {
     Connection(ParsedConnection),
     Let(ParsedLet),
@@ -48,7 +51,7 @@ pub struct ParsedLet {
     graph_name: NodeName,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ParsedConnection {
     from_node: Option<NodeName>,
     from_output: Binding,
@@ -84,24 +87,38 @@ pub fn ignore_garbage<'a, O>(
 }
 
 pub fn ident<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
-    recognize(many1(alt((alphanumeric1, tag("_")))))
+    recognize(pair(alpha1, opt(many1(alt((alphanumeric1, tag("_")))))))
 }
 
 pub fn audio_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
     // nom::error::context(
     //     "audio_binding",
-    map(preceded(tag("@"), ident()), |id| {
-        Binding::Audio(id.to_owned())
-    })
+    alt((
+        map(preceded(tag("@"), ident()), |id| {
+            Binding::AudioIo(id.to_owned())
+        }),
+        map(preceded(tag("@"), float), |num| {
+            let (an, cn) = Constant::create_nodes(num as Scalar);
+            Binding::AudioConstant(an)
+        }),
+    ))
+
     // )
 }
 
 pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
     // nom::error::context(
     //     "control_binding",
-    map(preceded(tag("#"), ident()), |id| {
-        Binding::Control(id.to_owned())
-    })
+    alt((
+        map(preceded(tag("#"), ident()), |id| {
+            Binding::ControlIo(id.to_owned())
+        }),
+        map(preceded(tag("#"), float), |num| {
+            let (an, cn) = Constant::create_nodes(num as Scalar);
+            Binding::ControlConstant(cn)
+        }),
+    ))
+
     // )
 }
 
@@ -260,8 +277,8 @@ pub fn graph_def_instantiation<'a>(
                 .into_iter()
                 .map(|inp| {
                     (
-                        inp.clone().into_input_name(),
-                        Input::new(&inp.into_input_name().0, Signal::new_audio(0.0)),
+                        inp.clone().into_input_name().unwrap(),
+                        Input::new(&inp.into_input_name().unwrap().0, Signal::new_audio(0.0)),
                     )
                 })
                 .collect::<FxHashMap<_, _>>();
@@ -269,8 +286,8 @@ pub fn graph_def_instantiation<'a>(
                 .into_iter()
                 .map(|inp| {
                     (
-                        inp.clone().into_input_name(),
-                        Input::new(&inp.into_input_name().0, Signal::new_control(0.0)),
+                        inp.clone().into_input_name().unwrap(),
+                        Input::new(&inp.into_input_name().unwrap().0, Signal::new_control(0.0)),
                     )
                 })
                 .collect::<FxHashMap<_, _>>();
@@ -278,9 +295,9 @@ pub fn graph_def_instantiation<'a>(
                 .into_iter()
                 .map(|out| {
                     (
-                        out.clone().into_output_name(),
+                        out.clone().into_output_name().unwrap(),
                         Output {
-                            name: out.into_output_name(),
+                            name: out.into_output_name().unwrap(),
                         },
                     )
                 })
@@ -289,9 +306,9 @@ pub fn graph_def_instantiation<'a>(
                 .into_iter()
                 .map(|out| {
                     (
-                        out.clone().into_output_name(),
+                        out.clone().into_output_name().unwrap(),
                         Output {
-                            name: out.into_output_name(),
+                            name: out.into_output_name().unwrap(),
                         },
                     )
                 })
@@ -303,7 +320,7 @@ pub fn graph_def_instantiation<'a>(
             for conn in connections {
                 match conn {
                     ConnectionOrLet::Connection(conn) => {
-                        macro_rules! matching_bindings_impl {
+                        macro_rules! io_io_bindings_impl {
                             ($other:ident, $mine:ident, $frm:expr, $to:expr) => {
                                 let (source_output, source) =
                                     if let Some(from_node) = conn.from_node {
@@ -343,16 +360,39 @@ pub fn graph_def_instantiation<'a>(
                             };
                         }
                         match (conn.from_output, conn.to_input) {
-                            (Binding::Audio(frm), Binding::Audio(to)) => {
-                                matching_bindings_impl!(audio, ag, frm, to);
+                            (Binding::AudioIo(frm), Binding::AudioIo(to)) => {
+                                io_io_bindings_impl!(audio, ag, frm, to);
                             }
-                            (Binding::Control(frm), Binding::Control(to)) => {
-                                matching_bindings_impl!(control, cg, frm, to);
+                            (Binding::ControlIo(frm), Binding::ControlIo(to)) => {
+                                io_io_bindings_impl!(control, cg, frm, to);
                             }
-                            (Binding::Audio(frm), Binding::Control(to)) => panic!(
+                            (Binding::AudioConstant(con), Binding::AudioIo(to)) => {
+                                todo!("audio constant -> audio io");
+                            }
+                            (Binding::ControlConstant(con), Binding::ControlIo(to)) => {
+                                let (sink_input, sink) = if let Some(to_node) = conn.to_node {
+                                    // cross-graph connection, use the external names for things
+                                    (
+                                        InputName(to.clone()),
+                                        cg.node_id_by_name(&to_node).unwrap(),
+                                    )
+                                } else {
+                                    // self-input is the sink, use our own names for things
+                                    (
+                                        InputName("in".to_owned()),
+                                        cg.node_id_by_name(&NodeName(to.clone())).unwrap(),
+                                    )
+                                };
+                                let con_id = cg.add_node(con, Default::default());
+                                cg.add_edge(con_id, sink, Connection { source_output: OutputName("out".to_owned()), sink_input });
+                            }
+                            (Binding::ControlConstant(_), Binding::AudioIo(io)) => panic!("Parsing error: cannot attach control constant to audio input `{io}`"),
+                            (Binding::AudioConstant(_), Binding::ControlIo(io)) => panic!("Parsing error: cannot attach audio constant to control input `{io}`"),
+                            (_, Binding::AudioConstant(_) | Binding::ControlConstant(_)) => panic!("Parsing error: constant cannot take inputs"),
+                            (Binding::AudioIo(frm), Binding::ControlIo(to)) => panic!(
                                 "Parsing error: cannot attach audio output `{frm}` to control input `{to}`"
                             ),
-                            (Binding::Control(frm), Binding::Audio(to)) => panic!(
+                            (Binding::ControlIo(frm), Binding::AudioIo(to)) => panic!(
                                 "Parsing error: cannot attach control output `{frm}` to audio input `{to}`"
                             ),
                         }
@@ -374,9 +414,6 @@ pub fn graph_def_instantiation<'a>(
                         } = graphs;
                         ag.add_node(Arc::new(Node::from_graph(audio)), &pl.ident);
                         cg.add_node(Arc::new(Node::from_graph(control)), &pl.ident);
-                        // scope
-                        //     .defined_node_instances
-                        //     .insert(NodeName(pl.ident.to_owned()), graphs);
                     }
                 }
             }

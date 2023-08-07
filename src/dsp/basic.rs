@@ -251,3 +251,77 @@ impl UiInput {
         (an, cn)
     }
 }
+
+pub struct Constant;
+pub struct ConstantA {
+    pub value: Signal<AudioRate>,
+}
+pub struct ConstantC {
+    pub value: Signal<ControlRate>,
+}
+
+impl Processor<AudioRate> for ConstantA {
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<AudioRate as crate::graph::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+    ) {
+        *outputs.get_mut(&OutputName("out".to_string())).unwrap() = self.value;
+    }
+}
+
+impl Processor<ControlRate> for ConstantC {
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<ControlRate as crate::graph::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+    ) {
+        *outputs.get_mut(&OutputName("out".to_string())).unwrap() = self.value;
+    }
+}
+
+impl Constant {
+    pub fn create_nodes(value: Scalar) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+        let cn = Arc::new(Node::new(
+            FxHashMap::default(),
+            FxHashMap::from_iter(
+                [(
+                    OutputName("out".to_owned()),
+                    Output {
+                        name: OutputName("out".to_owned()),
+                    },
+                )]
+                .into_iter(),
+            ),
+            Box::new(ConstantC {
+                value: value.into(),
+            })
+            .into(),
+            None,
+        ));
+        let an = Arc::new(Node::new(
+            FxHashMap::default(),
+            FxHashMap::from_iter(
+                [(
+                    OutputName("out".to_owned()),
+                    Output {
+                        name: OutputName("out".to_owned()),
+                    },
+                )]
+                .into_iter(),
+            ),
+            Box::new(ConstantA {
+                value: value.into(),
+            })
+            .into(),
+            Some(cn.clone()),
+        ));
+        (an, cn)
+    }
+}

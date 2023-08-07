@@ -1,0 +1,13 @@
+graph main {
+    @in {}
+    @out { @dac0 @dac1 }
+    #in { #amp #freq }
+    #out {}
+    ~ {
+        let s : sine;
+        s.@out -> @dac0;
+        s.@out -> @dac1;
+        #amp -> s.#amp;
+        #freq -> s.#freq;
+    }
+}
