@@ -4,18 +4,55 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate},
-    graph::{InputName, Node, OutputName},
+    graph::{Input, InputName, Node, NodeName, Output, OutputName},
     node_constructor, Scalar,
 };
 
 use super::{Processor, Signal};
 
-node_constructor! {
-    GraphInput {}
-    @in { "in" = 0.0 }
-    @out { "out" }
-    #in { "in" = 0.0 }
-    #out { "out" }
+// node_constructor! {
+//     GraphInput {}
+//     @in { "in" = 0.0 }
+//     @out { "out" }
+//     #in { "in" }
+//     #out { "out" }
+// }
+
+pub struct GraphInput;
+
+impl GraphInput {
+    pub fn create_audio_node(name: &str, for_input: Input<AudioRate>) -> Arc<Node<AudioRate>> {
+        Arc::new(Node::new(
+            NodeName(name.to_owned()),
+            FxHashMap::from_iter([(InputName::default(), for_input)]),
+            FxHashMap::from_iter([(
+                OutputName::default(),
+                Output {
+                    name: OutputName::default(),
+                },
+            )]),
+            crate::graph::ProcessorType::Boxed(Box::new(Self)),
+            None,
+        ))
+    }
+
+    pub fn create_control_node(
+        name: &str,
+        for_input: Input<ControlRate>,
+    ) -> Arc<Node<ControlRate>> {
+        Arc::new(Node::new(
+            NodeName(name.to_owned()),
+            FxHashMap::from_iter([(InputName::default(), for_input)]),
+            FxHashMap::from_iter([(
+                OutputName::default(),
+                Output {
+                    name: OutputName::default(),
+                },
+            )]),
+            crate::graph::ProcessorType::Boxed(Box::new(Self)),
+            None,
+        ))
+    }
 }
 
 impl Processor<AudioRate> for GraphInput {
@@ -48,7 +85,7 @@ node_constructor! {
     GraphOutput {}
     @in { "in" = 0.0 }
     @out { "out" }
-    #in { "in" = 0.0 }
+    #in { "in" }
     #out { "out" }
 }
 

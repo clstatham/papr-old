@@ -1,7 +1,10 @@
 graph test {
     @in {}
     @out {}
-    #in { #in0 #in1 }
+    #in { 
+        #in0 = 0.0
+        #in1 = 0.5
+        }
     #out { #out0 }
     ~ {
         #out0 <- (#in0 * #in1);
@@ -11,12 +14,11 @@ graph test {
 graph main {
     @in {}
     @out { @dac0 @dac1 }
-    #in { #ci0 #ci1 #ci2 #ci3 }
+    #in { #ci0(0:100) = 0 #ci1(100:200) = 0 #ci2(200:300) = 0 #ci3(300:400) = 0 }
     #out { #co0 }
     ~ {
         let ts : test;
         ts.#in0 <- #ci0;
-        ts.#in1 <- #ci1;
         #co0 <- (ts.#out0 + (#ci2 * #ci3));
     }
 }

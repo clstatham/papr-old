@@ -126,13 +126,8 @@ impl PaprApp {
         // test stuff follows
         for c_in_idx in control.graph_inputs.clone() {
             let c_in = &control.digraph[c_in_idx];
-            let ui_name = format!("{}_ui", &c_in.name.0);
-            let (an, cn) = UiInput::create_nodes(
-                &ui_name,
-                Signal::new_control(0.0),
-                Signal::new_control(1.0),
-                Signal::new_control(0.0),
-            );
+            let ui_name = c_in.name.0.to_owned();
+            let (an, cn) = UiInput::create_nodes(c_in.inputs[&InputName::default()].clone());
             self.ui_control_inputs.push(cn.clone());
             audio.add_node(an);
             let c_in_ui_idx = control.add_node(cn);

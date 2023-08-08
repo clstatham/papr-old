@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate, Signal},
-    graph::{InputName, Node, NodeName, Output, OutputName},
+    graph::{Input, InputName, Node, NodeName, Output, OutputName},
     node_constructor, Scalar,
 };
 
@@ -47,7 +47,7 @@ node_constructor! {
     DebugNode {name_copy: String}
     @in {}
     @out {}
-    #in { "in" = 0.0 }
+    #in { "in" }
     #out {}
 }
 
@@ -165,35 +165,35 @@ impl Processor<ControlRate> for UiInputC {
 pub struct UiInput;
 impl UiInput {
     pub fn create_nodes(
-        name: &str,
-        minimum: Signal<ControlRate>,
-        maximum: Signal<ControlRate>,
-        initial_value: Signal<ControlRate>,
+        for_input: Input<ControlRate>,
     ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let value = Arc::new(RwLock::new(SmoothControlSignal::new(initial_value, 4)));
+        let value = Arc::new(RwLock::new(SmoothControlSignal::new(
+            for_input.default.unwrap(),
+            4,
+        )));
         let cn = Arc::new(Node::new(
-            NodeName(name.to_owned()),
+            NodeName(for_input.name.0.to_owned()),
             FxHashMap::default(),
             FxHashMap::from_iter(
                 [(
-                    OutputName(name.to_owned()),
+                    OutputName(for_input.name.0.to_owned()),
                     Output {
-                        name: OutputName(name.to_owned()),
+                        name: OutputName(for_input.name.0.to_owned()),
                     },
                 )]
                 .into_iter(),
             ),
             Box::new(UiInputC {
-                maximum,
-                minimum,
-                name: name.to_owned(),
+                maximum: for_input.maximum.unwrap(),
+                minimum: for_input.minimum.unwrap(),
+                name: for_input.name.0.to_owned(),
                 value: value.clone(),
             })
             .into(),
             None,
         ));
         let an = Arc::new(Node::new(
-            NodeName(name.to_owned()),
+            NodeName(for_input.name.0.to_owned()),
             FxHashMap::default(),
             FxHashMap::default(),
             Box::new(UiInputA { value }).into(),
@@ -243,7 +243,7 @@ node_constructor! {
     Multiply {}
     @in { "a" = 0.0 "b" = 0.0 }
     @out { "out" }
-    #in { "a" = 0.0 "b" = 0.0 }
+    #in { "a" "b" }
     #out { "out" }
 }
 
@@ -279,7 +279,7 @@ node_constructor! {
     Divide {}
     @in { "a" = 0.0 "b" = 0.0 }
     @out { "out" }
-    #in { "a" = 0.0 "b" = 0.0 }
+    #in { "a" "b" }
     #out { "out" }
 }
 
@@ -315,7 +315,7 @@ node_constructor! {
     Add {}
     @in { "a" = 0.0 "b" = 0.0 }
     @out { "out" }
-    #in { "a" = 0.0 "b" = 0.0 }
+    #in { "a" "b" }
     #out { "out" }
 }
 
@@ -351,7 +351,7 @@ node_constructor! {
     Subtract {}
     @in { "a" = 0.0 "b" = 0.0 }
     @out { "out" }
-    #in { "a" = 0.0 "b" = 0.0 }
+    #in { "a" "b" }
     #out { "out" }
 }
 

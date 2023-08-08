@@ -156,7 +156,7 @@ macro_rules! node_constructor {
         $name:ident {$($v:vis $members:ident : $member_types:ty),*}
         @in {$($audio_inputs:literal = $ai_default_values:expr)*}
         @out {$($audio_outputs:literal)*}
-        #in {$($control_inputs:literal = $ci_default_values:expr)*}
+        #in {$($control_inputs:literal)*}
         #out {$($control_outputs:literal)*}
     } => {
         pub struct $name {
@@ -164,10 +164,22 @@ macro_rules! node_constructor {
         }
         impl $name {
             pub fn create_nodes(name: &str, $($members: $member_types),*) -> (std::sync::Arc<$crate::graph::Node<$crate::dsp::AudioRate>>, std::sync::Arc<$crate::graph::Node<$crate::dsp::ControlRate>>) {
-                let a_outs = [$(($crate::graph::OutputName($audio_outputs.to_owned()), $crate::graph::Output { name: $crate::graph::OutputName($audio_outputs.to_owned()) })),*];
-                let c_outs = [$(($crate::graph::OutputName($control_outputs.to_owned()), $crate::graph::Output { name: $crate::graph::OutputName($control_outputs.to_owned()) })),*];
-                let a_ins = [$(($crate::graph::InputName($audio_inputs.to_owned()), $crate::graph::Input::new($audio_inputs, $crate::dsp::Signal::new($ai_default_values)))),*];
-                let c_ins = [$(($crate::graph::InputName($control_inputs.to_owned()), $crate::graph::Input::new($control_inputs, $crate::dsp::Signal::new($ci_default_values)))),*];
+                let a_outs = [$((
+                    $crate::graph::OutputName($audio_outputs.to_owned()),
+                    $crate::graph::Output { name: $crate::graph::OutputName($audio_outputs.to_owned()) }
+                )),*];
+                let c_outs = [$((
+                    $crate::graph::OutputName($control_outputs.to_owned()),
+                    $crate::graph::Output { name: $crate::graph::OutputName($control_outputs.to_owned()) }
+                )),*];
+                let a_ins = [$((
+                    $crate::graph::InputName($audio_inputs.to_owned()),
+                    $crate::graph::Input::new($audio_inputs, Some($crate::dsp::Signal::new($ai_default_values)))
+                )),*];
+                let c_ins = [$((
+                    $crate::graph::InputName($control_inputs.to_owned()),
+                    $crate::graph::Input::new($control_inputs, None)
+                )),*];
 
                 let cn = std::sync::Arc::new($crate::graph::Node::new(
                     $crate::graph::NodeName(name.to_owned()),

@@ -18,9 +18,22 @@ use crate::{
 
 #[derive(Clone)]
 pub enum Binding {
-    AudioIo { node: Option<String>, port: String },
+    AudioIo {
+        node: Option<String>,
+        port: String,
+    },
     AudioConstant(Arc<Node<AudioRate>>),
-    ControlIo { node: Option<String>, port: String },
+    ControlIo {
+        node: Option<String>,
+        port: String,
+        default: Option<Signal<ControlRate>>,
+    },
+    ControlIoBounded {
+        port: String,
+        min: Signal<ControlRate>,
+        max: Signal<ControlRate>,
+        default: Option<Signal<ControlRate>>,
+    },
     ControlConstant(Arc<Node<ControlRate>>),
 }
 
@@ -28,6 +41,7 @@ impl Binding {
     pub fn into_input_name(self) -> Option<InputName> {
         match self {
             Self::AudioIo { port, .. } | Self::ControlIo { port, .. } => Some(InputName(port)),
+            Self::ControlIoBounded { port, .. } => Some(InputName(port)),
             Self::AudioConstant(_) | Self::ControlConstant(_) => None,
         }
     }
@@ -35,20 +49,23 @@ impl Binding {
     pub fn into_output_name(self) -> Option<OutputName> {
         match self {
             Self::AudioIo { port, .. } | Self::ControlIo { port, .. } => Some(OutputName(port)),
+            Self::ControlIoBounded { port, .. } => Some(OutputName(port)),
             Self::AudioConstant(_) | Self::ControlConstant(_) => None,
         }
     }
 
     pub fn node(&self) -> Option<&String> {
         match self {
-            Self::AudioIo { node, port: _ } | Self::ControlIo { node, port: _ } => node.as_ref(),
+            Self::AudioIo { node, .. } | Self::ControlIo { node, .. } => node.as_ref(),
             _ => None,
         }
     }
 
     pub fn port(&self) -> Option<&String> {
         match self {
-            Self::AudioIo { node: _, port } | Self::ControlIo { node: _, port } => Some(port),
+            Self::AudioIo { port, .. }
+            | Self::ControlIo { port, .. }
+            | Self::ControlIoBounded { port, .. } => Some(port),
             _ => None,
         }
     }
@@ -137,6 +154,41 @@ pub fn audio_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
     // )
 }
 
+pub fn control_input_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
+    map(
+        tuple((
+            opt(map(tuple((ident(), tag("."))), |(a, _)| a)),
+            preceded(tag("#"), ident()),
+            opt(delimited(
+                ignore_garbage(tag("(")),
+                tuple((
+                    ignore_garbage(float),
+                    ignore_garbage(tag(":")),
+                    ignore_garbage(float),
+                )),
+                ignore_garbage(tag(")")),
+            )),
+            opt(preceded(ignore_garbage(tag("=")), ignore_garbage(float))),
+        )),
+        |(node, port, bounds, default)| {
+            if let Some((min, _, max)) = bounds {
+                Binding::ControlIoBounded {
+                    port: port.to_owned(),
+                    min: Signal::new_control(min as Scalar),
+                    max: Signal::new_control(max as Scalar),
+                    default: default.map(|d| Signal::new_control(d as Scalar)),
+                }
+            } else {
+                Binding::ControlIo {
+                    node: node.map(ToOwned::to_owned),
+                    port: port.to_owned(),
+                    default: default.map(|d| Signal::new_control(d as Scalar)),
+                }
+            }
+        },
+    )
+}
+
 pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
     // nom::error::context(
     //     "control_binding",
@@ -149,6 +201,7 @@ pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding>
             |(node, port)| Binding::ControlIo {
                 node: node.map(ToOwned::to_owned),
                 port: port.to_owned(),
+                default: None,
             },
         ),
         map(preceded(tag("#"), float), |num| {
@@ -197,7 +250,14 @@ fn solve_expr(
                     )
                 }
             }
-            Binding::ControlIo { node, port } => {
+            Binding::ControlIoBounded { .. } => {
+                unreachable!()
+            }
+            Binding::ControlIo {
+                node,
+                port,
+                default: _,
+            } => {
                 if let Some(node) = node {
                     (
                         false,
@@ -483,7 +543,7 @@ pub fn graph_def<'a>() -> impl FnMut(
             ),
             preceded(
                 ignore_garbage(tag("#in")),
-                many_in_braces(ignore_garbage(control_binding())),
+                many_in_braces(ignore_garbage(control_input_binding())),
             ),
             preceded(
                 ignore_garbage(tag("#out")),
@@ -507,11 +567,47 @@ pub fn graph_def_instantiation<'a>(
             let id = NodeName(id.to_owned());
             let audio_inputs = audio_inputs
                 .into_iter()
-                .map(|inp| Input::new(&inp.into_input_name().unwrap().0, Signal::new_audio(0.0)))
+                .map(|inp| {
+                    Input::new(
+                        &inp.into_input_name().unwrap().0,
+                        Some(Signal::new_audio(0.0)),
+                    )
+                })
                 .collect::<Vec<_>>();
             let control_inputs = control_inputs
                 .into_iter()
-                .map(|inp| Input::new(&inp.into_input_name().unwrap().0, Signal::new_control(0.0)))
+                .map(|inp| {
+                    if let Binding::ControlIoBounded {
+                        port,
+                        min,
+                        max,
+                        default,
+                    } = inp
+                    {
+                        Input {
+                            name: InputName(port),
+                            minimum: Some(min),
+                            maximum: Some(max),
+                            default: Some(default.expect(
+                                "Parsing error: no default value provided for control input",
+                            )),
+                        }
+                    } else if let Binding::ControlIo {
+                        node: _,
+                        port,
+                        default,
+                    } = inp
+                    {
+                        Input::new(
+                            &port,
+                            Some(default.expect(
+                                "Parsing error: no default value provided for control input",
+                            )),
+                        )
+                    } else {
+                        unreachable!()
+                    }
+                })
                 .collect::<Vec<_>>();
             let audio_outputs = audio_outputs
                 .into_iter()
@@ -557,7 +653,12 @@ pub fn graph_def_instantiation<'a>(
                                         )
                                     }
                                 }
-                                Binding::ControlIo { node, port } => {
+                                Binding::ControlIoBounded { .. } => unreachable!(),
+                                Binding::ControlIo {
+                                    node,
+                                    port,
+                                    default: _,
+                                } => {
                                     if let Some(node) = node {
                                         (
                                             false,
@@ -624,6 +725,7 @@ pub fn graph_def_instantiation<'a>(
                                 (false, Binding::AudioIo { port: io, .. }) => panic!("Parsing error: cannot attach control constant to audio input `{io}`"),
                                 (true, Binding::ControlIo { port: io, .. }) => panic!("Parsing error: cannot attach audio constant to control input `{io}`"),
                                 (_, Binding::AudioConstant(_) | Binding::ControlConstant(_)) => panic!("Parsing error: constant cannot take inputs"),
+                                (_, Binding::ControlIoBounded { .. }) => unreachable!(),
                             }
                         }
                     }

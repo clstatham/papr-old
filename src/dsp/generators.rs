@@ -14,7 +14,7 @@ node_constructor! {
     SineOsc {}
     @in {}
     @out { "out" }
-    #in { "amp" = 1.0 "freq" = 440.0 }
+    #in { "amp" "freq" }
     #out {}
 }
 

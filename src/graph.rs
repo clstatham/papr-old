@@ -62,11 +62,11 @@ pub struct Input<T: SignalType> {
     pub name: InputName,
     pub minimum: Option<Signal<T>>,
     pub maximum: Option<Signal<T>>,
-    pub default: Signal<T>,
+    pub default: Option<Signal<T>>,
 }
 
 impl<T: SignalType> Input<T> {
-    pub fn new(name: &str, default: Signal<T>) -> Self {
+    pub fn new(name: &str, default: Option<Signal<T>>) -> Self {
         Self {
             name: InputName(name.to_owned()),
             minimum: None,
@@ -77,15 +77,15 @@ impl<T: SignalType> Input<T> {
 
     pub fn new_bounded(
         name: &str,
-        minimum: Option<Signal<T>>,
-        maximum: Option<Signal<T>>,
+        minimum: Signal<T>,
+        maximum: Signal<T>,
         default: Signal<T>,
     ) -> Self {
         Self {
             name: InputName(name.to_owned()),
-            minimum,
-            maximum,
-            default,
+            minimum: Some(minimum),
+            maximum: Some(maximum),
+            default: Some(default),
         }
     }
 }
@@ -187,7 +187,7 @@ where
             inputs_cache: RwLock::new(
                 inputs
                     .iter()
-                    .map(|(k, v)| (k.to_owned(), v.default))
+                    .map(|(k, v)| (k.to_owned(), v.default.unwrap_or(Signal::new(0.0))))
                     .collect(),
             ),
             outputs_cache: RwLock::new(
@@ -213,7 +213,7 @@ where
                     let node = &graph.digraph[*idx];
                     (
                         InputName(node.name.0.to_owned()),
-                        Input::new(&node.name.0, Signal::new(0.0)),
+                        Input::new(&node.name.0, node.inputs[&InputName::default()].default),
                     )
                 })
                 .collect(),
@@ -265,7 +265,7 @@ impl Graph<AudioRate> {
             graph_outputs: Vec::default(),
         };
         for inp in inputs {
-            let (an, _cn) = GraphInput::create_nodes(&inp.name.0);
+            let an = GraphInput::create_audio_node(&inp.name.0, inp.clone());
             let idx = this.add_node(an);
             this.node_indices_by_name
                 .insert(NodeName(inp.name.0.to_owned()), idx);
@@ -297,7 +297,7 @@ impl Graph<ControlRate> {
             graph_outputs: Vec::default(),
         };
         for inp in inputs {
-            let (_an, cn) = GraphInput::create_nodes(&inp.name.0);
+            let cn = GraphInput::create_control_node(&inp.name.0, inp.clone());
             let idx = this.add_node(cn);
             this.node_indices_by_name
                 .insert(NodeName(inp.name.0.to_owned()), idx);
@@ -462,8 +462,8 @@ macro_rules! dual_graphs {
         {
             let a_outs = vec![$(($crate::graph::Output { name: $crate::graph::OutputName($audio_outputs.to_owned()) })),*];
             let c_outs = vec![$(($crate::graph::Output { name: $crate::graph::OutputName($control_outputs.to_owned()) })),*];
-            let a_ins = vec![$(($crate::graph::Input::new($audio_inputs, $crate::dsp::Signal::new_audio($ai_default_values)))),*];
-            let c_ins = vec![$(($crate::graph::Input::new($control_inputs, $crate::dsp::Signal::new_control($ci_default_values)))),*];
+            let a_ins = vec![$(($crate::graph::Input::new($audio_inputs, Some($crate::dsp::Signal::new_audio($ai_default_values))))),*];
+            let c_ins = vec![$(($crate::graph::Input::new($control_inputs, Some($crate::dsp::Signal::new_control($ci_default_values))))),*];
             let ag = $crate::graph::Graph::<AudioRate>::new(Some($crate::graph::NodeName($name.to_owned())), a_ins, a_outs);
             let cg = $crate::graph::Graph::<ControlRate>::new(Some($crate::graph::NodeName($name.to_owned())), c_ins, c_outs);
             (ag, cg)
