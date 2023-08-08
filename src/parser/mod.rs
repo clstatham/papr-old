@@ -462,15 +462,10 @@ pub fn graph_def<'a>() -> impl FnMut(
     (
         &str,
         (
-            &str,
             Vec<Binding>,
-            &str,
             Vec<Binding>,
-            &str,
             Vec<Binding>,
-            &str,
             Vec<Binding>,
-            &str,
             Vec<ConnectionOrLet>,
         ),
     ),
@@ -478,16 +473,26 @@ pub fn graph_def<'a>() -> impl FnMut(
     tuple((
         preceded(ignore_garbage(tag("graph")), ident()),
         ignore_garbage(in_braces(ignore_garbage(tuple((
-            ignore_garbage(tag("@in")),
-            many_in_braces(ignore_garbage(audio_binding())),
-            ignore_garbage(tag("@out")),
-            many_in_braces(ignore_garbage(audio_binding())),
-            ignore_garbage(tag("#in")),
-            many_in_braces(ignore_garbage(control_binding())),
-            ignore_garbage(tag("#out")),
-            many_in_braces(ignore_garbage(control_binding())),
-            ignore_garbage(tag("~")),
-            many_in_braces(ignore_garbage(connection_or_let)),
+            preceded(
+                ignore_garbage(tag("@in")),
+                many_in_braces(ignore_garbage(audio_binding())),
+            ),
+            preceded(
+                ignore_garbage(tag("@out")),
+                many_in_braces(ignore_garbage(audio_binding())),
+            ),
+            preceded(
+                ignore_garbage(tag("#in")),
+                many_in_braces(ignore_garbage(control_binding())),
+            ),
+            preceded(
+                ignore_garbage(tag("#out")),
+                many_in_braces(ignore_garbage(control_binding())),
+            ),
+            preceded(
+                ignore_garbage(tag("~")),
+                many_in_braces(ignore_garbage(connection_or_let)),
+            ),
         ))))),
     ))
 }
@@ -498,21 +503,7 @@ pub fn graph_def_instantiation<'a>(
 ) -> IResult<&'a str, GraphPtrs> {
     map(
         graph_def(),
-        |(
-            id,
-            (
-                _,
-                audio_inputs,
-                _,
-                audio_outputs,
-                _,
-                control_inputs,
-                _,
-                control_outputs,
-                _,
-                connections,
-            ),
-        )| {
+        |(id, (audio_inputs, audio_outputs, control_inputs, control_outputs, connections))| {
             let id = NodeName(id.to_owned());
             let audio_inputs = audio_inputs
                 .into_iter()
