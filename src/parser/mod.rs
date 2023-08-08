@@ -80,7 +80,7 @@ pub struct ParsedLet {
 
 pub struct ParsedConnection {
     from: Expr,
-    to: Binding,
+    to: Vec<Binding>,
 }
 
 pub fn whitespace0<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
@@ -403,17 +403,21 @@ pub fn many_in_braces<'a, O>(
 pub fn connection<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedConnection> {
     map(
         tuple((
-            ignore_garbage(expr),
-            tag("->"),
-            ignore_garbage(tuple((
-                opt(map(tuple((ident(), tag("."))), |(a, _)| a)),
-                alt((audio_binding(), control_binding())),
+            ignore_garbage(alt((
+                map(alt((audio_binding(), control_binding())), |b| vec![b]),
+                delimited(
+                    ignore_garbage(tag("[")),
+                    many1(ignore_garbage(alt((audio_binding(), control_binding())))),
+                    ignore_garbage(tag("]")),
+                ),
             ))),
+            tag("<-"),
+            ignore_garbage(expr),
             tag(";"),
         )),
-        |(exp, _, (_to_node, to_input), _)| ParsedConnection {
-            from: exp,
-            to: to_input,
+        |(to_inputs, _, xpr, _)| ParsedConnection {
+            from: xpr,
+            to: to_inputs,
         },
     )
 }
@@ -442,7 +446,6 @@ pub fn connection_or_let(inp: &str) -> IResult<&str, ConnectionOrLet> {
     ))(inp)
 }
 
-// #[derive(Clone)]
 pub struct GraphPtrs {
     pub name: NodeName,
     pub audio: Graph<AudioRate>,
@@ -493,8 +496,6 @@ pub fn graph_def<'a>() -> impl FnMut(
         ))))),
     ))
 }
-
-// pub fn parse_let<'a>(inp: &'a str)
 
 pub fn graph_def_instantiation<'a>(
     inp: &'a str,
@@ -612,45 +613,48 @@ pub fn graph_def_instantiation<'a>(
                                 (is_audio, idx, OutputName::default())
                             }
                         };
-                        match (from_is_audio, &conn.to) {
-                            (true, Binding::AudioIo { port: to, .. }) => {
-                                let (sink_input, sink) = if let Some(to_node) = conn.to.node() {
-                                    // cross-graph connection, use the external names for things
-                                    (
-                                        InputName(to.clone()),
-                                        ag.node_id_by_name(&NodeName(to_node.to_owned())).unwrap(),
-                                    )
-                                } else {
-                                    // self-input is the sink, use our own names for things
-                                    (
-                                        InputName::default(),
-                                        ag.node_id_by_name(&NodeName(to.clone())).unwrap(),
-                                    )
-                                };
-                                ag.add_edge(from, sink, Connection { source_output: from_output, sink_input });
+                        for conn_to in &conn.to {
+                            match (from_is_audio, conn_to) {
+                                (true, Binding::AudioIo { port: to, .. }) => {
+                                    let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
+                                        // cross-graph connection, use the external names for things
+                                        (
+                                            InputName(to.clone()),
+                                            ag.node_id_by_name(&NodeName(to_node.to_owned())).unwrap(),
+                                        )
+                                    } else {
+                                        // self-input is the sink, use our own names for things
+                                        (
+                                            InputName::default(),
+                                            ag.node_id_by_name(&NodeName(to.clone())).unwrap(),
+                                        )
+                                    };
+                                    ag.add_edge(from, sink, Connection { source_output: from_output.clone(), sink_input });
+                                }
+                                (false, Binding::ControlIo { port: to, .. }) => {
+                                    let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
+                                        // cross-graph connection, use the external names for things
+                                        (
+                                            InputName(to.clone()),
+                                            cg.node_id_by_name(&NodeName(to_node.to_owned())).unwrap(),
+                                        )
+                                    } else {
+                                        // self-input is the sink, use our own names for things
+                                        (
+                                            InputName::default(),
+                                            cg.node_id_by_name(&NodeName(to.clone())).unwrap(),
+                                        )
+                                    };
+                                    // let con_id = cg.add_node(con.to_owned(), Default::default());
+                                    cg.add_edge(from, sink, Connection { source_output: from_output.clone(), sink_input });
+                                }
+                                (false, Binding::AudioIo { port: io, .. }) => panic!("Parsing error: cannot attach control constant to audio input `{io}`"),
+                                (true, Binding::ControlIo { port: io, .. }) => panic!("Parsing error: cannot attach audio constant to control input `{io}`"),
+                                (_, Binding::AudioConstant(_) | Binding::ControlConstant(_)) => panic!("Parsing error: constant cannot take inputs"),
                             }
-                            (false, Binding::ControlIo { port: to, .. }) => {
-                                let (sink_input, sink) = if let Some(to_node) = conn.to.node() {
-                                    // cross-graph connection, use the external names for things
-                                    (
-                                        InputName(to.clone()),
-                                        cg.node_id_by_name(&NodeName(to_node.to_owned())).unwrap(),
-                                    )
-                                } else {
-                                    // self-input is the sink, use our own names for things
-                                    (
-                                        InputName::default(),
-                                        cg.node_id_by_name(&NodeName(to.clone())).unwrap(),
-                                    )
-                                };
-                                // let con_id = cg.add_node(con.to_owned(), Default::default());
-                                cg.add_edge(from, sink, Connection { source_output: from_output, sink_input });
-                            }
-                            (false, Binding::AudioIo { port: io, .. }) => panic!("Parsing error: cannot attach control constant to audio input `{io}`"),
-                            (true, Binding::ControlIo { port: io, .. }) => panic!("Parsing error: cannot attach audio constant to control input `{io}`"),
-                            (_, Binding::AudioConstant(_) | Binding::ControlConstant(_)) => panic!("Parsing error: constant cannot take inputs"),
                         }
                     }
+
                     ConnectionOrLet::Let(pl) => {
                         let mut new_scope = ParserScope {
                             defined_node_instances: FxHashMap::default(),

@@ -4,10 +4,9 @@ graph main {
     #in { #amp #freq }
     #out {}
     ~ {
-        let s : sine;
-        s.@out -> @dac0;
-        s.@out -> @dac1;
-        #amp -> s.#amp;
-        #freq -> s.#freq;
+        let s : sineosc;
+        [@dac0 @dac1] <- s.@out;
+        s.#amp <- #amp;
+        s.#freq <- #freq;
     }
 }
