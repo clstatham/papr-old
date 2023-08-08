@@ -11,10 +11,10 @@ use crate::{
 use super::{Processor, Signal};
 
 node_constructor! {
-    SineOsc
-    @in { fm = 0.0 }
+    pub struct SineOsc;
+    @in { fm }
     @out { out }
-    #in { amp freq fm_amt }
+    #in { amp, freq, fm_amt }
     #out {}
 }
 

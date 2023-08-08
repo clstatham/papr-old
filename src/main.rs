@@ -1,6 +1,7 @@
 use app::PaprApp;
 use clap::Parser;
 use eframe::{egui::Visuals, NativeOptions};
+use papr_proc_macro::node_constructor;
 
 pub mod app;
 #[macro_use]

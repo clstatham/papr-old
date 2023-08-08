@@ -74,8 +74,8 @@ impl Processor<ControlRate> for GraphInput {
 }
 
 node_constructor! {
-    GraphOutput
-    @in { input = 0.0 }
+    pub struct GraphOutput;
+    @in { input }
     @out { out }
     #in { input }
     #out { out }

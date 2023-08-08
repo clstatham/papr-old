@@ -1,18 +1,19 @@
 use std::sync::{Arc, RwLock};
 
 use eframe::egui::{Slider, Ui};
+use papr_proc_macro::node_constructor;
 use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate, Signal},
     graph::{Input, InputName, Node, NodeName, Output, OutputName},
-    node_constructor, Scalar,
+    Scalar,
 };
 
 use super::{Processor, SmoothControlSignal};
 
 node_constructor! {
-    Dummy
+    pub struct Dummy;
     @in {}
     @out {}
     #in {}
@@ -103,8 +104,8 @@ impl Processor<ControlRate> for DebugNode {
 }
 
 node_constructor! {
-    Dac
-    @in { input = 0.0 }
+    pub struct Dac;
+    @in { input }
     @out { out }
     #in {}
     #out {}
@@ -287,10 +288,10 @@ impl Processor<ControlRate> for Constant {
 }
 
 node_constructor! {
-    Multiply
-    @in { a = 0.0 b = 0.0 }
+    pub struct Multiply;
+    @in { a, b }
     @out { out }
-    #in { a b }
+    #in { a, b }
     #out { out }
 }
 
@@ -323,10 +324,10 @@ impl Processor<ControlRate> for Multiply {
 }
 
 node_constructor! {
-    Divide
-    @in { a = 0.0 b = 0.0 }
+    pub struct Divide;
+    @in { a, b }
     @out { out }
-    #in { a b }
+    #in { a, b }
     #out { out }
 }
 
@@ -359,10 +360,10 @@ impl Processor<ControlRate> for Divide {
 }
 
 node_constructor! {
-    Add
-    @in { a = 0.0 b = 0.0 }
+    pub struct Add;
+    @in { a, b }
     @out { out }
-    #in { a b }
+    #in { a, b }
     #out { out }
 }
 
@@ -395,10 +396,10 @@ impl Processor<ControlRate> for Add {
 }
 
 node_constructor! {
-    Subtract
-    @in { a = 0.0 b = 0.0 }
+    pub struct Subtract;
+    @in { a, b }
     @out { out }
-    #in { a b }
+    #in { a, b }
     #out { out }
 }
 
