@@ -11,10 +11,10 @@ use crate::{
 use super::{Processor, Signal};
 
 node_constructor! {
-    SineOsc {}
+    SineOsc
     @in {}
-    @out { "out" }
-    #in { "amp" "freq" }
+    @out { out }
+    #in { amp freq }
     #out {}
 }
 

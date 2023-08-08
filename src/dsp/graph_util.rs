@@ -12,9 +12,9 @@ use super::{Processor, Signal};
 
 // node_constructor! {
 //     GraphInput {}
-//     @in { "in" = 0.0 }
+//     @in { "input" = 0.0 }
 //     @out { "out" }
-//     #in { "in" }
+//     #in { "input" }
 //     #out { "out" }
 // }
 
@@ -82,11 +82,11 @@ impl Processor<ControlRate> for GraphInput {
 }
 
 node_constructor! {
-    GraphOutput {}
-    @in { "in" = 0.0 }
-    @out { "out" }
-    #in { "in" }
-    #out { "out" }
+    GraphOutput
+    @in { input = 0.0 }
+    @out { out }
+    #in { input }
+    #out { out }
 }
 
 impl Processor<AudioRate> for GraphOutput {

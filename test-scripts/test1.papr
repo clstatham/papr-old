@@ -14,10 +14,10 @@ graph test {
 graph main {
     @in {}
     @out { @dac0 @dac1 }
-    #in { #ci0(0:100) = 0 #ci1(100:200) = 0 #ci2(200:300) = 0 #ci3(300:400) = 0 }
+    #in { #ci0(0:100) = 50 #ci1(100:200) = 150 #ci2(200:300) = 250 #ci3(300:400) = 350 }
     #out { #co0 }
     ~ {
-        let ts : test;
+        let ts: test;
         ts.#in0 <- #ci0;
         #co0 <- (ts.#out0 + (#ci2 * #ci3));
     }

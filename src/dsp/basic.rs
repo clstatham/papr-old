@@ -12,7 +12,7 @@ use crate::{
 use super::{Processor, SmoothControlSignal};
 
 node_constructor! {
-    Dummy {}
+    Dummy
     @in {}
     @out {}
     #in {}
@@ -43,15 +43,35 @@ impl Processor<ControlRate> for Dummy {
     }
 }
 
-node_constructor! {
-    DebugNode {name_copy: String}
-    @in {}
-    @out {}
-    #in { "in" }
-    #out {}
+pub struct DebugNode {
+    name: String,
 }
 
-// pub struct DebugNode;
+impl DebugNode {
+    pub fn create_nodes(name: String) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+        let cn = Arc::new(Node::new(
+            NodeName(name.clone()),
+            FxHashMap::from_iter([(
+                InputName::default(),
+                Input::new(&InputName::default().0, Some(Signal::new(0.0))),
+            )]),
+            FxHashMap::default(),
+            crate::graph::ProcessorType::Boxed(Box::new(Self { name: name.clone() })),
+            None,
+        ));
+        let an = Arc::new(Node::new(
+            NodeName(name.clone()),
+            FxHashMap::from_iter([(
+                InputName::default(),
+                Input::new(&InputName::default().0, Some(Signal::new(0.0))),
+            )]),
+            FxHashMap::default(),
+            crate::graph::ProcessorType::Boxed(Box::new(Self { name: name.clone() })),
+            Some(cn.clone()),
+        ));
+        (an, cn)
+    }
+}
 
 impl Processor<AudioRate> for DebugNode {
     fn process(
@@ -76,16 +96,16 @@ impl Processor<ControlRate> for DebugNode {
     ) {
         log::debug!(
             "{} = {} (t={t})",
-            self.name_copy,
+            self.name,
             inputs[&InputName::default()].value()
         );
     }
 }
 
 node_constructor! {
-    Dac {}
-    @in { "in" = 0.0 }
-    @out { "out" }
+    Dac
+    @in { input = 0.0 }
+    @out { out }
     #in {}
     #out {}
 }
@@ -203,14 +223,41 @@ impl UiInput {
     }
 }
 
-node_constructor! {
-    Constant {
-        value: Scalar
+pub struct Constant {
+    pub value: Scalar,
+}
+
+impl Constant {
+    pub fn create_nodes(
+        name: &str,
+        value: Scalar,
+    ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+        let cn = Arc::new(Node::new(
+            NodeName(name.to_owned()),
+            FxHashMap::default(),
+            FxHashMap::from_iter([(
+                OutputName("out".to_owned()),
+                Output {
+                    name: OutputName("out".to_owned()),
+                },
+            )]),
+            crate::graph::ProcessorType::Boxed(Box::new(Self { value })),
+            None,
+        ));
+        let an = Arc::new(Node::new(
+            NodeName(name.to_owned()),
+            FxHashMap::default(),
+            FxHashMap::from_iter([(
+                OutputName("out".to_owned()),
+                Output {
+                    name: OutputName("out".to_owned()),
+                },
+            )]),
+            crate::graph::ProcessorType::Boxed(Box::new(Self { value })),
+            Some(cn.clone()),
+        ));
+        (an, cn)
     }
-    @in {}
-    @out { "out" }
-    #in {}
-    #out { "out" }
 }
 
 impl Processor<AudioRate> for Constant {
@@ -240,11 +287,11 @@ impl Processor<ControlRate> for Constant {
 }
 
 node_constructor! {
-    Multiply {}
-    @in { "a" = 0.0 "b" = 0.0 }
-    @out { "out" }
-    #in { "a" "b" }
-    #out { "out" }
+    Multiply
+    @in { a = 0.0 b = 0.0 }
+    @out { out }
+    #in { a b }
+    #out { out }
 }
 
 impl Processor<AudioRate> for Multiply {
@@ -276,11 +323,11 @@ impl Processor<ControlRate> for Multiply {
 }
 
 node_constructor! {
-    Divide {}
-    @in { "a" = 0.0 "b" = 0.0 }
-    @out { "out" }
-    #in { "a" "b" }
-    #out { "out" }
+    Divide
+    @in { a = 0.0 b = 0.0 }
+    @out { out }
+    #in { a b }
+    #out { out }
 }
 
 impl Processor<AudioRate> for Divide {
@@ -312,11 +359,11 @@ impl Processor<ControlRate> for Divide {
 }
 
 node_constructor! {
-    Add {}
-    @in { "a" = 0.0 "b" = 0.0 }
-    @out { "out" }
-    #in { "a" "b" }
-    #out { "out" }
+    Add
+    @in { a = 0.0 b = 0.0 }
+    @out { out }
+    #in { a b }
+    #out { out }
 }
 
 impl Processor<AudioRate> for Add {
@@ -348,11 +395,11 @@ impl Processor<ControlRate> for Add {
 }
 
 node_constructor! {
-    Subtract {}
-    @in { "a" = 0.0 "b" = 0.0 }
-    @out { "out" }
-    #in { "a" "b" }
-    #out { "out" }
+    Subtract
+    @in { a = 0.0 b = 0.0 }
+    @out { out }
+    #in { a b }
+    #out { out }
 }
 
 impl Processor<AudioRate> for Subtract {

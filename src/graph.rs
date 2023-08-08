@@ -37,7 +37,7 @@ pub struct InputName(pub String);
 
 impl Default for InputName {
     fn default() -> Self {
-        Self("in".to_owned())
+        Self("input".to_owned())
     }
 }
 
@@ -272,7 +272,7 @@ impl Graph<AudioRate> {
             this.graph_inputs.push(idx);
         }
         for out in outputs {
-            let (an, _cn) = GraphOutput::create_nodes(&out.name.0);
+            let (an, _cn) = GraphOutput::create_nodes(&out.name.0, 0.0);
             let idx = this.add_node(an);
             this.node_indices_by_name
                 .insert(NodeName(out.name.0.to_owned()), idx);
@@ -304,7 +304,7 @@ impl Graph<ControlRate> {
             this.graph_inputs.push(idx);
         }
         for out in outputs {
-            let (_an, cn) = GraphOutput::create_nodes(&out.name.0);
+            let (_an, cn) = GraphOutput::create_nodes(&out.name.0, 0.0);
             let idx = this.add_node(cn);
             this.node_indices_by_name
                 .insert(NodeName(out.name.0.to_owned()), idx);

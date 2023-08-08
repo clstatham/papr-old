@@ -10,6 +10,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     dsp::{
         basic::{Add, Constant, Divide, Multiply, Subtract},
+        generators::SineOsc,
         AudioRate, ControlRate, Signal,
     },
     graph::{Connection, Graph, Input, InputName, Node, NodeName, Output, OutputName},
@@ -89,10 +90,29 @@ pub enum ConnectionOrLet {
     Let(ParsedLet),
 }
 
-#[derive(Debug, Clone)]
+pub enum BuiltinNode {
+    SineOsc {
+        amp: Signal<ControlRate>,
+        freq: Signal<ControlRate>,
+    },
+}
+
+impl BuiltinNode {
+    pub fn create_graphs(&self, name: &str) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+        match self {
+            Self::SineOsc { amp, freq } => SineOsc::create_nodes(name, amp.value(), freq.value()),
+        }
+    }
+}
+
+pub enum LetRhs {
+    ScriptGraph(NodeName),
+    BuiltinNode(BuiltinNode),
+}
+
 pub struct ParsedLet {
     ident: String,
-    graph_name: NodeName,
+    graph_name: LetRhs,
 }
 
 pub struct ParsedConnection {
@@ -299,10 +319,10 @@ fn solve_expr(
         #out { "out" }
     };
     let (op_an, op_cn) = match op {
-        BinaryOp::Add => Add::create_nodes("add"),
-        BinaryOp::Sub => Subtract::create_nodes("sub"),
-        BinaryOp::Mul => Multiply::create_nodes("mul"),
-        BinaryOp::Div => Divide::create_nodes("div"),
+        BinaryOp::Add => Add::create_nodes("add", 0.0, 0.0),
+        BinaryOp::Sub => Subtract::create_nodes("sub", 0.0, 0.0),
+        BinaryOp::Mul => Multiply::create_nodes("mul", 0.0, 0.0),
+        BinaryOp::Div => Divide::create_nodes("div", 0.0, 0.0),
     };
     let op_an = expr_ag.add_node(op_an);
     let op_cn = expr_cg.add_node(op_cn);
@@ -330,7 +350,7 @@ fn solve_expr(
             .unwrap(),
         Connection {
             source_output: OutputName::default(),
-            sink_input: InputName("in".to_owned()),
+            sink_input: InputName("input".to_owned()),
         },
     );
 
@@ -357,7 +377,7 @@ fn solve_expr(
             .unwrap(),
         Connection {
             source_output: OutputName::default(),
-            sink_input: InputName("in".to_owned()),
+            sink_input: InputName("input".to_owned()),
         },
     );
 
@@ -489,11 +509,25 @@ pub fn let_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedLet> {
             ident(),
             ignore_garbage(tag(":")),
             ident(),
+            opt(delimited(
+                ignore_garbage(tag("<")),
+                many1(ignore_garbage(float)),
+                ignore_garbage(tag(">")),
+            )),
             ignore_garbage(tag(";")),
         )),
-        |(_, _, id, _, graph_name, _)| ParsedLet {
+        |(_, _, id, _, graph_name, control_input_defaults, _)| ParsedLet {
             ident: id.to_owned(),
-            graph_name: NodeName(graph_name.to_owned()),
+            graph_name: match graph_name {
+                "sineosc" => {
+                    let defaults = control_input_defaults.unwrap();
+                    LetRhs::BuiltinNode(BuiltinNode::SineOsc {
+                        amp: Signal::new_control(defaults[0] as Scalar),
+                        freq: Signal::new_control(defaults[1] as Scalar),
+                    })
+                }
+                _ => LetRhs::ScriptGraph(NodeName(graph_name.to_owned())),
+            },
         },
     )
 }
@@ -731,20 +765,29 @@ pub fn graph_def_instantiation<'a>(
                     }
 
                     ConnectionOrLet::Let(pl) => {
-                        let (_, graphs) = graph_def_instantiation(
-                            &ctx.known_node_defs[&pl.graph_name].clone(),
-                            ctx,
-                        )
-                        .unwrap();
-                        let GraphPtrs {
-                            name: _,
-                            mut audio,
-                            mut control,
-                        } = graphs;
-                        audio.name = NodeName(pl.ident.to_owned());
-                        control.name = NodeName(pl.ident.to_owned());
-                        ag.add_node(Arc::new(Node::from_graph(audio)));
-                        cg.add_node(Arc::new(Node::from_graph(control)));
+                        let known_node_defs = ctx.known_node_defs.clone();
+                        let (an, cn) = match &pl.graph_name {
+                            LetRhs::ScriptGraph(graph_name) => {
+                                let (_, graphs) =
+                                    graph_def_instantiation(&known_node_defs[graph_name], ctx)
+                                        .unwrap();
+                                let GraphPtrs {
+                                    name: _,
+                                    mut audio,
+                                    mut control,
+                                } = graphs;
+                                audio.name = NodeName(pl.ident.to_owned());
+                                control.name = NodeName(pl.ident.to_owned());
+                                (
+                                    Arc::new(Node::from_graph(audio)),
+                                    Arc::new(Node::from_graph(control)),
+                                )
+                            }
+                            LetRhs::BuiltinNode(node) => node.create_graphs(&pl.ident),
+                        };
+
+                        ag.add_node(an);
+                        cg.add_node(cn);
                     }
                 }
             }

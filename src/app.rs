@@ -114,7 +114,7 @@ impl PaprApp {
     }
 
     pub fn create_graphs(&mut self, _n_dacs: usize) {
-        let main_graphs = parse_script(include_str!("../test-scripts/test1.papr"))
+        let main_graphs = parse_script(include_str!("../test-scripts/test2.papr"))
             .remove(&NodeName("main".to_owned()))
             .unwrap();
         let GraphPtrs {
@@ -143,7 +143,7 @@ impl PaprApp {
         for c_out_idx in control.graph_outputs.clone() {
             let c_out = &control.digraph[c_out_idx];
             let dbg_name = format!("{}_dbg", &c_out.name.0);
-            let (_an, cn) = DebugNode::create_nodes(&dbg_name, dbg_name.to_owned());
+            let (_an, cn) = DebugNode::create_nodes(dbg_name.to_owned());
             // let debug0_an = audio.add_node(an, "debug0");
             let debug0_cn = control.add_node(cn);
             control.add_edge(

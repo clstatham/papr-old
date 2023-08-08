@@ -2,12 +2,12 @@ graph main {
     @in {}
     @out { @dac0 @dac1 }
     #in {
-        #amp(0.0 -> 1.0) = 0.5
-        #freq(20.0 -> 2000.0) = 440.0
+        #amp(0.0 : 1.0) = 0.5
+        #freq(20.0 : 2000.0) = 440.0
     }
     #out {}
     ~ {
-        let s : sineosc;
+        let s : sineosc<0.5 440.0>;
         [@dac0 @dac1] <- s.@out;
         s.#amp <- #amp;
         s.#freq <- #freq;
