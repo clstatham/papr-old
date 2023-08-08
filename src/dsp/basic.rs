@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate, Signal},
-    graph::{CreateNodes, Input, InputName, Node, NodeName, Output, OutputName},
+    graph::{InputName, Node, NodeName, Output, OutputName},
     node_constructor, Scalar,
 };
 
@@ -82,11 +82,15 @@ impl Processor<ControlRate> for DebugNode {
     }
 }
 
-pub struct Dac;
-pub struct DacA;
-pub struct DacC;
+node_constructor! {
+    Dac {}
+    @in { "in" = 0.0 }
+    @out { "out" }
+    #in {}
+    #out {}
+}
 
-impl Processor<AudioRate> for DacA {
+impl Processor<AudioRate> for Dac {
     fn process(
         &self,
         _t: Scalar,
@@ -99,7 +103,7 @@ impl Processor<AudioRate> for DacA {
     }
 }
 
-impl Processor<ControlRate> for DacC {
+impl Processor<ControlRate> for Dac {
     fn process(
         &self,
         _t: Scalar,
@@ -108,40 +112,6 @@ impl Processor<ControlRate> for DacC {
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
-    }
-}
-
-impl Dac {
-    fn create_nodes(name: &str) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let cn = Arc::new(Node::new(
-            NodeName(name.to_owned()),
-            FxHashMap::default(),
-            FxHashMap::default(),
-            Box::new(DacC).into(),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            NodeName(name.to_owned()),
-            FxHashMap::from_iter(
-                [(
-                    InputName::default(),
-                    Input::new(&InputName::default().0, Signal::new(0.0)),
-                )]
-                .into_iter(),
-            ),
-            FxHashMap::from_iter(
-                [(
-                    OutputName::default(),
-                    Output {
-                        name: OutputName::default(),
-                    },
-                )]
-                .into_iter(),
-            ),
-            Box::new(DacA).into(),
-            Some(cn.clone()),
-        ));
-        (an, cn)
     }
 }
 

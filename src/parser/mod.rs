@@ -119,10 +119,10 @@ pub fn audio_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
     //     "audio_binding",
     alt((
         map(
-            preceded(
-                tag("@"),
-                tuple((opt(map(tuple((ident(), tag("."))), |(a, _)| a)), ident())),
-            ),
+            tuple((
+                opt(map(tuple((ident(), tag("."))), |(a, _)| a)),
+                preceded(tag("@"), ident()),
+            )),
             |(node, port)| Binding::AudioIo {
                 node: node.map(ToOwned::to_owned),
                 port: port.to_owned(),
@@ -142,10 +142,10 @@ pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding>
     //     "control_binding",
     alt((
         map(
-            preceded(
-                tag("#"),
-                tuple((opt(map(tuple((ident(), tag("."))), |(a, _)| a)), ident())),
-            ),
+            tuple((
+                opt(map(tuple((ident(), tag("."))), |(a, _)| a)),
+                preceded(tag("#"), ident()),
+            )),
             |(node, port)| Binding::ControlIo {
                 node: node.map(ToOwned::to_owned),
                 port: port.to_owned(),
@@ -645,9 +645,11 @@ pub fn graph_def_instantiation<'a>(
                         .unwrap();
                         let GraphPtrs {
                             name: _,
-                            audio,
-                            control,
+                            mut audio,
+                            mut control,
                         } = graphs;
+                        audio.name = NodeName(pl.ident.to_owned());
+                        control.name = NodeName(pl.ident.to_owned());
                         ag.add_node(Arc::new(Node::from_graph(audio)));
                         cg.add_node(Arc::new(Node::from_graph(control)));
                     }
