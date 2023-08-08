@@ -5,6 +5,7 @@ use eframe::{egui::Visuals, NativeOptions};
 pub mod app;
 #[macro_use]
 pub mod dsp;
+#[macro_use]
 pub mod graph;
 pub mod parser;
 

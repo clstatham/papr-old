@@ -34,7 +34,7 @@ impl Processor<AudioRate> for SineOsc {
         let freq = sibling_node
             .cached_input(&InputName("freq".to_owned()))
             .unwrap();
-        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
+        *outputs.get_mut(&OutputName::default()).unwrap() =
             Signal::new_audio(Scalar::sin(t * PI * 2.0 * freq.value()) * amp.value());
     }
 }

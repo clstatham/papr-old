@@ -79,7 +79,7 @@ impl DebugNode {
         let cn = Arc::new(Node::new(
             FxHashMap::from_iter(
                 [(
-                    InputName("in".to_owned()),
+                    InputName::default(),
                     Input::new("in", Signal::new_control(0.0)),
                 )]
                 .into_iter(),
@@ -114,8 +114,7 @@ impl Processor<AudioRate> for DacA {
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
-        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
-            inputs[&InputName("in".to_owned())];
+        *outputs.get_mut(&OutputName::default()).unwrap() = inputs[&InputName::default()];
     }
 }
 
@@ -142,9 +141,9 @@ impl CreateNodes for Dac {
         let an = Arc::new(Node::new(
             FxHashMap::from_iter(
                 [(
-                    InputName("in".to_owned()),
+                    InputName::default(),
                     Input {
-                        name: InputName("in".to_owned()),
+                        name: InputName::default(),
                         default: Signal::new(0.0),
                     },
                 )]
@@ -152,9 +151,9 @@ impl CreateNodes for Dac {
             ),
             FxHashMap::from_iter(
                 [(
-                    OutputName("out".to_owned()),
+                    OutputName::default(),
                     Output {
-                        name: OutputName("out".to_owned()),
+                        name: OutputName::default(),
                     },
                 )]
                 .into_iter(),
@@ -299,13 +298,13 @@ node_constructor! {
 impl Processor<AudioRate> for Multiply {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
-        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
+        *outputs.get_mut(&OutputName::default()).unwrap() =
             inputs[&InputName("a".to_owned())] * inputs[&InputName("b".to_owned())];
     }
 }
@@ -313,13 +312,121 @@ impl Processor<AudioRate> for Multiply {
 impl Processor<ControlRate> for Multiply {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
-        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
+        *outputs.get_mut(&OutputName::default()).unwrap() =
             inputs[&InputName("a".to_owned())] * inputs[&InputName("b".to_owned())];
+    }
+}
+
+node_constructor! {
+    Divide {}
+    @in { "a" = 0.0 "b" = 0.0 }
+    @out { "out" }
+    #in { "a" = 0.0 "b" = 0.0 }
+    #out { "out" }
+}
+
+impl Processor<AudioRate> for Divide {
+    fn process(
+        &self,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+    ) {
+        *outputs.get_mut(&OutputName::default()).unwrap() =
+            inputs[&InputName("a".to_owned())] / inputs[&InputName("b".to_owned())];
+    }
+}
+
+impl Processor<ControlRate> for Divide {
+    fn process(
+        &self,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+    ) {
+        *outputs.get_mut(&OutputName::default()).unwrap() =
+            inputs[&InputName("a".to_owned())] / inputs[&InputName("b".to_owned())];
+    }
+}
+
+node_constructor! {
+    Add {}
+    @in { "a" = 0.0 "b" = 0.0 }
+    @out { "out" }
+    #in { "a" = 0.0 "b" = 0.0 }
+    #out { "out" }
+}
+
+impl Processor<AudioRate> for Add {
+    fn process(
+        &self,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+    ) {
+        *outputs.get_mut(&OutputName::default()).unwrap() =
+            inputs[&InputName("a".to_owned())] + inputs[&InputName("b".to_owned())];
+    }
+}
+
+impl Processor<ControlRate> for Add {
+    fn process(
+        &self,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+    ) {
+        *outputs.get_mut(&OutputName::default()).unwrap() =
+            inputs[&InputName("a".to_owned())] + inputs[&InputName("b".to_owned())];
+    }
+}
+
+node_constructor! {
+    Subtract {}
+    @in { "a" = 0.0 "b" = 0.0 }
+    @out { "out" }
+    #in { "a" = 0.0 "b" = 0.0 }
+    #out { "out" }
+}
+
+impl Processor<AudioRate> for Subtract {
+    fn process(
+        &self,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+    ) {
+        *outputs.get_mut(&OutputName::default()).unwrap() =
+            inputs[&InputName("a".to_owned())] - inputs[&InputName("b".to_owned())];
+    }
+}
+
+impl Processor<ControlRate> for Subtract {
+    fn process(
+        &self,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+    ) {
+        *outputs.get_mut(&OutputName::default()).unwrap() =
+            inputs[&InputName("a".to_owned())] - inputs[&InputName("b".to_owned())];
     }
 }

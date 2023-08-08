@@ -141,7 +141,7 @@ impl PaprApp {
                 control.get_input_id(&InputName("ci0".to_owned())).unwrap(),
                 Connection {
                     source_output: OutputName("debug0_ui".to_owned()),
-                    sink_input: InputName("in".to_owned()),
+                    sink_input: InputName::default(),
                 },
             );
 
@@ -154,8 +154,8 @@ impl PaprApp {
                     .unwrap(),
                 debug0_cn,
                 Connection {
-                    source_output: OutputName("out".to_owned()),
-                    sink_input: InputName("in".to_owned()),
+                    source_output: OutputName::default(),
+                    sink_input: InputName::default(),
                 },
             );
         }
@@ -169,8 +169,8 @@ impl PaprApp {
         //         .get_output_id(&OutputName("dac0".to_owned()))
         //         .unwrap(),
         //     Connection {
-        //         source_output: OutputName("out".to_owned()),
-        //         sink_input: InputName("in".to_owned()),
+        //         source_output: OutputName::default(),
+        //         sink_input: InputName::default(),
         //     },
         // );
         // let sine_cn = control_graph.add_node(cn, "sine");

@@ -27,8 +27,7 @@ impl Processor<AudioRate> for GraphInput {
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
-        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
-            inputs[&InputName("in".to_owned())];
+        *outputs.get_mut(&OutputName::default()).unwrap() = inputs[&InputName::default()];
     }
 }
 
@@ -41,8 +40,7 @@ impl Processor<ControlRate> for GraphInput {
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
-        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
-            inputs[&InputName("in".to_owned())];
+        *outputs.get_mut(&OutputName::default()).unwrap() = inputs[&InputName::default()];
     }
 }
 
@@ -63,8 +61,7 @@ impl Processor<AudioRate> for GraphOutput {
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
-        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
-            inputs[&InputName("in".to_owned())];
+        *outputs.get_mut(&OutputName::default()).unwrap() = inputs[&InputName::default()];
     }
 }
 
@@ -77,7 +74,6 @@ impl Processor<ControlRate> for GraphOutput {
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
-        *outputs.get_mut(&OutputName("out".to_owned())).unwrap() =
-            inputs[&InputName("in".to_owned())];
+        *outputs.get_mut(&OutputName::default()).unwrap() = inputs[&InputName::default()];
     }
 }

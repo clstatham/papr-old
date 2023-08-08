@@ -4,39 +4,69 @@ use nom::{
     branch::*, bytes::complete::*, character::complete::*, combinator::*, multi::*,
     number::complete::float, sequence::*, IResult,
 };
+use petgraph::stable_graph::NodeIndex;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    dsp::{basic::Constant, AudioRate, ControlRate, Signal},
+    dsp::{
+        basic::{Add, Constant, Divide, Multiply, Subtract},
+        AudioRate, ControlRate, Signal,
+    },
     graph::{Connection, Graph, Input, InputName, Node, NodeName, Output, OutputName},
     Scalar,
 };
 
 #[derive(Clone)]
 pub enum Binding {
-    AudioIo(String),
+    AudioIo { node: Option<String>, port: String },
     AudioConstant(Arc<Node<AudioRate>>),
-    ControlIo(String),
+    ControlIo { node: Option<String>, port: String },
     ControlConstant(Arc<Node<ControlRate>>),
 }
 
 impl Binding {
     pub fn into_input_name(self) -> Option<InputName> {
         match self {
-            Self::AudioIo(n) | Self::ControlIo(n) => Some(InputName(n)),
+            Self::AudioIo { port, .. } | Self::ControlIo { port, .. } => Some(InputName(port)),
             Self::AudioConstant(_) | Self::ControlConstant(_) => None,
         }
     }
 
     pub fn into_output_name(self) -> Option<OutputName> {
         match self {
-            Self::AudioIo(n) | Self::ControlIo(n) => Some(OutputName(n)),
+            Self::AudioIo { port, .. } | Self::ControlIo { port, .. } => Some(OutputName(port)),
             Self::AudioConstant(_) | Self::ControlConstant(_) => None,
+        }
+    }
+
+    pub fn node(&self) -> Option<&String> {
+        match self {
+            Self::AudioIo { node, port: _ } | Self::ControlIo { node, port: _ } => node.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn port(&self) -> Option<&String> {
+        match self {
+            Self::AudioIo { node: _, port } | Self::ControlIo { node: _, port } => Some(port),
+            _ => None,
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+pub enum Expr {
+    Binding(Binding),
+    Expr(Box<Expr>, BinaryOp, Box<Expr>),
+}
+
 pub enum ConnectionOrLet {
     Connection(ParsedConnection),
     Let(ParsedLet),
@@ -48,12 +78,9 @@ pub struct ParsedLet {
     graph_name: NodeName,
 }
 
-#[derive(Clone)]
 pub struct ParsedConnection {
-    from_node: Option<NodeName>,
-    from_output: Binding,
-    to_node: Option<NodeName>,
-    to_input: Binding,
+    from: Expr,
+    to: Binding,
 }
 
 pub fn whitespace0<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
@@ -91,9 +118,16 @@ pub fn audio_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
     // nom::error::context(
     //     "audio_binding",
     alt((
-        map(preceded(tag("@"), ident()), |id| {
-            Binding::AudioIo(id.to_owned())
-        }),
+        map(
+            preceded(
+                tag("@"),
+                tuple((opt(map(tuple((ident(), tag("."))), |(a, _)| a)), ident())),
+            ),
+            |(node, port)| Binding::AudioIo {
+                node: node.map(ToOwned::to_owned),
+                port: port.to_owned(),
+            },
+        ),
         map(preceded(tag("@"), float), |num| {
             let (an, _cn) = Constant::create_nodes(num as Scalar);
             Binding::AudioConstant(an)
@@ -107,9 +141,16 @@ pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding>
     // nom::error::context(
     //     "control_binding",
     alt((
-        map(preceded(tag("#"), ident()), |id| {
-            Binding::ControlIo(id.to_owned())
-        }),
+        map(
+            preceded(
+                tag("#"),
+                tuple((opt(map(tuple((ident(), tag("."))), |(a, _)| a)), ident())),
+            ),
+            |(node, port)| Binding::ControlIo {
+                node: node.map(ToOwned::to_owned),
+                port: port.to_owned(),
+            },
+        ),
         map(preceded(tag("#"), float), |num| {
             let (_an, cn) = Constant::create_nodes(num as Scalar);
             Binding::ControlConstant(cn)
@@ -117,6 +158,219 @@ pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding>
     ))
 
     // )
+}
+
+fn solve_expr(
+    super_audio: &mut Graph<AudioRate>,
+    super_control: &mut Graph<ControlRate>,
+    a: &Expr,
+    op: BinaryOp,
+    b: &Expr,
+) -> (bool, NodeIndex) {
+    let mut expr_to_node_idxs = |a: &Expr| match a {
+        Expr::Binding(a) => match a {
+            Binding::AudioConstant(a) => (
+                true,
+                super_audio.add_node(a.clone(), "a"),
+                OutputName::default(),
+            ),
+            Binding::ControlConstant(a) => (
+                false,
+                super_control.add_node(a.clone(), "a"),
+                OutputName::default(),
+            ),
+
+            Binding::AudioIo { node, port } => {
+                if let Some(node) = node {
+                    (
+                        true,
+                        super_audio
+                            .node_id_by_name(&NodeName(node.to_owned()))
+                            .unwrap(),
+                        OutputName(port.to_owned()),
+                    )
+                } else {
+                    (
+                        true,
+                        super_audio
+                            .node_id_by_name(&NodeName(port.to_owned()))
+                            .unwrap(),
+                        OutputName::default(),
+                    )
+                }
+            }
+            Binding::ControlIo { node, port } => {
+                if let Some(node) = node {
+                    (
+                        false,
+                        super_control
+                            .node_id_by_name(&NodeName(node.to_owned()))
+                            .unwrap(),
+                        OutputName(port.to_owned()),
+                    )
+                } else {
+                    (
+                        false,
+                        super_control
+                            .node_id_by_name(&NodeName(port.to_owned()))
+                            .unwrap(),
+                        OutputName::default(),
+                    )
+                }
+            }
+        },
+        Expr::Expr(a1, a_op, a2) => {
+            let (subexpr_is_audio, subexpr_idx_supergraph) =
+                solve_expr(super_audio, super_control, a1, *a_op, a2);
+            (
+                subexpr_is_audio,
+                subexpr_idx_supergraph,
+                OutputName::default(),
+            )
+        }
+    };
+
+    let (a_is_audio, a_idx_supergraph, a_out_supergraph) = expr_to_node_idxs(a);
+    let (b_is_audio, b_idx_supergraph, b_out_supergraph) = expr_to_node_idxs(b);
+
+    let (mut expr_ag, mut expr_cg) = dual_graphs! {
+        @in { "a" = 0.0 "b" = 0.0 }
+        @out { "out" }
+        #in { "a" = 0.0 "b" = 0.0 }
+        #out { "out" }
+    };
+    let (op_an, op_cn) = match op {
+        BinaryOp::Add => Add::create_nodes(),
+        BinaryOp::Sub => Subtract::create_nodes(),
+        BinaryOp::Mul => Multiply::create_nodes(),
+        BinaryOp::Div => Divide::create_nodes(),
+    };
+    let op_an = expr_ag.add_node(op_an, "op");
+    let op_cn = expr_cg.add_node(op_cn, "op");
+
+    expr_ag.add_edge(
+        expr_ag.get_input_id(&InputName("a".to_owned())).unwrap(),
+        op_an,
+        Connection {
+            source_output: OutputName::default(),
+            sink_input: InputName("a".to_owned()),
+        },
+    );
+    expr_ag.add_edge(
+        expr_ag.get_input_id(&InputName("b".to_owned())).unwrap(),
+        op_an,
+        Connection {
+            source_output: OutputName::default(),
+            sink_input: InputName("b".to_owned()),
+        },
+    );
+    expr_ag.add_edge(
+        op_an,
+        expr_ag
+            .get_output_id(&OutputName("out".to_owned()))
+            .unwrap(),
+        Connection {
+            source_output: OutputName::default(),
+            sink_input: InputName("in".to_owned()),
+        },
+    );
+
+    expr_cg.add_edge(
+        expr_cg.get_input_id(&InputName("a".to_owned())).unwrap(),
+        op_cn,
+        Connection {
+            source_output: OutputName::default(),
+            sink_input: InputName("a".to_owned()),
+        },
+    );
+    expr_cg.add_edge(
+        expr_cg.get_input_id(&InputName("b".to_owned())).unwrap(),
+        op_cn,
+        Connection {
+            source_output: OutputName::default(),
+            sink_input: InputName("b".to_owned()),
+        },
+    );
+    expr_cg.add_edge(
+        op_cn,
+        expr_cg
+            .get_output_id(&OutputName("out".to_owned()))
+            .unwrap(),
+        Connection {
+            source_output: OutputName::default(),
+            sink_input: InputName("in".to_owned()),
+        },
+    );
+
+    if a_is_audio && b_is_audio {
+        // package it up and insert into supergraph
+        let expr_an = Arc::new(expr_ag.into_node());
+        let expr_an_idx_supergraph = super_audio.add_node(expr_an, "expr");
+        super_audio.add_edge(
+            a_idx_supergraph,
+            expr_an_idx_supergraph,
+            Connection {
+                source_output: a_out_supergraph,
+                sink_input: InputName("a".to_owned()),
+            },
+        );
+        super_audio.add_edge(
+            b_idx_supergraph,
+            expr_an_idx_supergraph,
+            Connection {
+                source_output: b_out_supergraph,
+                sink_input: InputName("b".to_owned()),
+            },
+        );
+        (true, expr_an_idx_supergraph)
+    } else if !a_is_audio && !b_is_audio {
+        let expr_cn = Arc::new(expr_cg.into_node());
+        let expr_cn_idx_supergraph = super_control.add_node(expr_cn, "expr");
+        super_control.add_edge(
+            a_idx_supergraph,
+            expr_cn_idx_supergraph,
+            Connection {
+                source_output: a_out_supergraph,
+                sink_input: InputName("a".to_owned()),
+            },
+        );
+        super_control.add_edge(
+            b_idx_supergraph,
+            expr_cn_idx_supergraph,
+            Connection {
+                source_output: b_out_supergraph,
+                sink_input: InputName("b".to_owned()),
+            },
+        );
+        (false, expr_cn_idx_supergraph)
+    } else {
+        panic!("Parsing error: mixing audio/control signals in expr")
+    }
+}
+
+pub fn expr(inp: &str) -> IResult<&str, Expr> {
+    alt((
+        map(alt((audio_binding(), control_binding())), |b| {
+            Expr::Binding(b)
+        }),
+        map(
+            delimited(
+                ignore_garbage(tag("(")),
+                tuple((
+                    ignore_garbage(expr),
+                    ignore_garbage(alt((
+                        value(BinaryOp::Add, tag("+")),
+                        value(BinaryOp::Sub, tag("-")),
+                        value(BinaryOp::Mul, tag("*")),
+                        value(BinaryOp::Div, tag("/")),
+                    ))),
+                    ignore_garbage(expr),
+                )),
+                ignore_garbage(tag(")")),
+            ),
+            |(a, op, b)| Expr::Expr(Box::new(a), op, Box::new(b)),
+        ),
+    ))(inp)
 }
 
 pub fn in_braces<'a, O>(
@@ -149,10 +403,7 @@ pub fn many_in_braces<'a, O>(
 pub fn connection<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedConnection> {
     map(
         tuple((
-            ignore_garbage(tuple((
-                opt(map(tuple((ident(), tag("."))), |(a, _)| a)),
-                alt((audio_binding(), control_binding())),
-            ))),
+            ignore_garbage(expr),
             tag("->"),
             ignore_garbage(tuple((
                 opt(map(tuple((ident(), tag("."))), |(a, _)| a)),
@@ -160,11 +411,9 @@ pub fn connection<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedConnection
             ))),
             tag(";"),
         )),
-        |((from_node, from_output), _, (to_node, to_input), _)| ParsedConnection {
-            from_node: from_node.map(|n| NodeName(n.to_owned())),
-            from_output,
-            to_node: to_node.map(|n| NodeName(n.to_owned())),
-            to_input,
+        |(exp, _, (_to_node, to_input), _)| ParsedConnection {
+            from: exp,
+            to: to_input,
         },
     )
 }
@@ -317,81 +566,89 @@ pub fn graph_def_instantiation<'a>(
             for conn in connections {
                 match conn {
                     ConnectionOrLet::Connection(conn) => {
-                        macro_rules! io_io_bindings_impl {
-                            ($other:ident, $mine:ident, $frm:expr, $to:expr) => {
-                                let (source_output, source) =
-                                    if let Some(from_node) = conn.from_node {
-                                        // cross-graph connection, use the external names for things
+                        let (from_is_audio, from, from_output) = match &conn.from {
+                            Expr::Binding(from) => match from {
+                                Binding::AudioIo { node, port } => {
+                                    if let Some(node) = node {
                                         (
-                                            OutputName($frm.clone()),
-                                            $mine.node_id_by_name(&from_node).unwrap(),
+                                            true,
+                                            ag.node_id_by_name(&NodeName(node.to_owned())).unwrap(),
+                                            OutputName(port.clone()),
                                         )
                                     } else {
-                                        // self-output is the source, use our own names for things
                                         (
-                                            OutputName("out".to_owned()),
-                                            $mine.node_id_by_name(&NodeName($frm.clone())).unwrap(),
+                                            true,
+                                            ag.node_id_by_name(&NodeName(port.to_owned())).unwrap(),
+                                            OutputName::default(),
                                         )
-                                    };
-                                let (sink_input, sink) = if let Some(to_node) = conn.to_node {
-                                    // cross-graph connection, use the external names for things
-                                    (
-                                        InputName($to.clone()),
-                                        $mine.node_id_by_name(&to_node).unwrap(),
-                                    )
-                                } else {
-                                    // self-input is the sink, use our own names for things
-                                    (
-                                        InputName("in".to_owned()),
-                                        $mine.node_id_by_name(&NodeName($to.clone())).unwrap(),
-                                    )
-                                };
-                                $mine.add_edge(
-                                    source,
-                                    sink,
-                                    Connection {
-                                        source_output,
-                                        sink_input,
-                                    },
-                                );
-                            };
-                        }
-                        match (conn.from_output, conn.to_input) {
-                            (Binding::AudioIo(frm), Binding::AudioIo(to)) => {
-                                io_io_bindings_impl!(audio, ag, frm, to);
+                                    }
+                                }
+                                Binding::ControlIo { node, port } => {
+                                    if let Some(node) = node {
+                                        (
+                                            false,
+                                            cg.node_id_by_name(&NodeName(node.to_owned())).unwrap(),
+                                            OutputName(port.clone()),
+                                        )
+                                    } else {
+                                        (
+                                            false,
+                                            cg.node_id_by_name(&NodeName(port.to_owned())).unwrap(),
+                                            OutputName::default(),
+                                        )
+                                    }
+                                }
+                                Binding::AudioConstant(con) => {
+                                    let idx = ag.add_node(con.to_owned(), Default::default());
+                                    (true, idx, OutputName::default())
+                                }
+                                Binding::ControlConstant(con) => {
+                                    let idx = cg.add_node(con.to_owned(), Default::default());
+                                    (false, idx, OutputName::default())
+                                }
+                            },
+                            Expr::Expr(a, op, b) => {
+                                let (is_audio, idx) = solve_expr(&mut ag, &mut cg, a, *op, b);
+                                (is_audio, idx, OutputName::default())
                             }
-                            (Binding::ControlIo(frm), Binding::ControlIo(to)) => {
-                                io_io_bindings_impl!(control, cg, frm, to);
-                            }
-                            (Binding::AudioConstant(_con), Binding::AudioIo(_to)) => {
-                                todo!("audio constant -> audio io");
-                            }
-                            (Binding::ControlConstant(con), Binding::ControlIo(to)) => {
-                                let (sink_input, sink) = if let Some(to_node) = conn.to_node {
+                        };
+                        match (from_is_audio, &conn.to) {
+                            (true, Binding::AudioIo { port: to, .. }) => {
+                                let (sink_input, sink) = if let Some(to_node) = conn.to.node() {
                                     // cross-graph connection, use the external names for things
                                     (
                                         InputName(to.clone()),
-                                        cg.node_id_by_name(&to_node).unwrap(),
+                                        ag.node_id_by_name(&NodeName(to_node.to_owned())).unwrap(),
                                     )
                                 } else {
                                     // self-input is the sink, use our own names for things
                                     (
-                                        InputName("in".to_owned()),
+                                        InputName::default(),
+                                        ag.node_id_by_name(&NodeName(to.clone())).unwrap(),
+                                    )
+                                };
+                                ag.add_edge(from, sink, Connection { source_output: from_output, sink_input });
+                            }
+                            (false, Binding::ControlIo { port: to, .. }) => {
+                                let (sink_input, sink) = if let Some(to_node) = conn.to.node() {
+                                    // cross-graph connection, use the external names for things
+                                    (
+                                        InputName(to.clone()),
+                                        cg.node_id_by_name(&NodeName(to_node.to_owned())).unwrap(),
+                                    )
+                                } else {
+                                    // self-input is the sink, use our own names for things
+                                    (
+                                        InputName::default(),
                                         cg.node_id_by_name(&NodeName(to.clone())).unwrap(),
                                     )
                                 };
-                                let con_id = cg.add_node(con, Default::default());
-                                cg.add_edge(con_id, sink, Connection { source_output: OutputName("out".to_owned()), sink_input });
+                                // let con_id = cg.add_node(con.to_owned(), Default::default());
+                                cg.add_edge(from, sink, Connection { source_output: from_output, sink_input });
                             }
-                            (Binding::ControlConstant(_), Binding::AudioIo(io)) => panic!("Parsing error: cannot attach control constant to audio input `{io}`"),
-                            (Binding::AudioConstant(_), Binding::ControlIo(io)) => panic!("Parsing error: cannot attach audio constant to control input `{io}`"),
+                            (false, Binding::AudioIo { port: io, .. }) => panic!("Parsing error: cannot attach control constant to audio input `{io}`"),
+                            (true, Binding::ControlIo { port: io, .. }) => panic!("Parsing error: cannot attach audio constant to control input `{io}`"),
                             (_, Binding::AudioConstant(_) | Binding::ControlConstant(_)) => panic!("Parsing error: constant cannot take inputs"),
-                            (Binding::AudioIo(frm), Binding::ControlIo(to)) => panic!(
-                                "Parsing error: cannot attach audio output `{frm}` to control input `{to}`"
-                            ),
-                            (Binding::ControlIo(frm), Binding::AudioIo(to)) => panic!(
-                                "Parsing error: cannot attach control output `{frm}` to audio input `{to}`"
-                            ),
                         }
                     }
                     ConnectionOrLet::Let(pl) => {

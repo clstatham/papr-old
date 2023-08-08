@@ -17,8 +17,20 @@ pub struct NodeName(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::Display)]
 pub struct InputName(pub String);
 
+impl Default for InputName {
+    fn default() -> Self {
+        Self("in".to_owned())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::Display)]
 pub struct OutputName(pub String);
+
+impl Default for OutputName {
+    fn default() -> Self {
+        Self("out".to_owned())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Connection {
@@ -315,7 +327,7 @@ where
                 .inputs_cache
                 .write()
                 .unwrap()
-                .get_mut(&InputName("in".to_owned()))
+                .get_mut(&InputName::default())
                 .unwrap() = *value;
         }
 
@@ -368,9 +380,23 @@ where
         // copy the cached (and now updated) output values into the mutable passed outputs
         for (out_name, out) in outputs.iter_mut() {
             let node_idx = self.graph_outputs[out_name];
-            *out =
-                self.digraph[node_idx].outputs_cache.read().unwrap()[&OutputName("out".to_owned())];
+            *out = self.digraph[node_idx].outputs_cache.read().unwrap()[&OutputName::default()];
         }
+    }
+
+    pub fn into_node(self) -> Node<T> {
+        Node::new(
+            self.graph_inputs
+                .keys()
+                .map(|inp| (inp.clone(), Input::new(&inp.0, Signal::new(0.0))))
+                .collect(),
+            self.graph_outputs
+                .keys()
+                .map(|out| (out.clone(), Output { name: out.clone() }))
+                .collect(),
+            ProcessorType::Subgraph(self),
+            None,
+        )
     }
 }
 
@@ -388,6 +414,26 @@ where
     ) {
         self.process_graph(t, sample_rate, inputs, outputs)
     }
+}
+
+#[macro_export]
+macro_rules! dual_graphs {
+    {
+        @in {$($audio_inputs:literal = $ai_default_values:expr)*}
+        @out {$($audio_outputs:literal)*}
+        #in {$($control_inputs:literal = $ci_default_values:expr)*}
+        #out {$($control_outputs:literal)*}
+    } => {
+        {
+            let a_outs = [$(($crate::graph::OutputName($audio_outputs.to_owned()), $crate::graph::Output { name: $crate::graph::OutputName($audio_outputs.to_owned()) })),*];
+            let c_outs = [$(($crate::graph::OutputName($control_outputs.to_owned()), $crate::graph::Output { name: $crate::graph::OutputName($control_outputs.to_owned()) })),*];
+            let a_ins = [$(($crate::graph::InputName($audio_inputs.to_owned()), $crate::graph::Input::new($audio_inputs, $crate::dsp::Signal::new_audio($ai_default_values)))),*];
+            let c_ins = [$(($crate::graph::InputName($control_inputs.to_owned()), $crate::graph::Input::new($control_inputs, $crate::dsp::Signal::new_control($ci_default_values)))),*];
+            let ag = $crate::graph::Graph::<AudioRate>::new(rustc_hash::FxHashMap::from_iter(a_ins.into_iter()), rustc_hash::FxHashMap::from_iter(a_outs.into_iter()));
+            let cg = $crate::graph::Graph::<ControlRate>::new(rustc_hash::FxHashMap::from_iter(c_ins.into_iter()), rustc_hash::FxHashMap::from_iter(c_outs.into_iter()));
+            (ag, cg)
+        }
+    };
 }
 
 pub trait CreateNodes {

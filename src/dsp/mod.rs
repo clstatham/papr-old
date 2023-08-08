@@ -4,7 +4,7 @@ use std::{marker::PhantomData, sync::Arc};
 use eframe::egui::Ui;
 
 use crate::{
-    graph::{InputName, Node, OutputName, ProcessorType},
+    graph::{InputName, Node, OutputName},
     Scalar, PI,
 };
 
