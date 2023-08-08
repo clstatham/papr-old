@@ -198,8 +198,8 @@ where
 {
     pub digraph: DiGraph<Arc<Node<T>>, Connection>,
     node_indices_by_name: FxHashMap<NodeName, NodeIndex>,
-    graph_inputs: FxHashMap<InputName, NodeIndex>,
-    graph_outputs: FxHashMap<OutputName, NodeIndex>,
+    pub graph_inputs: FxHashMap<InputName, NodeIndex>,
+    pub graph_outputs: FxHashMap<OutputName, NodeIndex>,
 }
 
 impl Graph<AudioRate> {

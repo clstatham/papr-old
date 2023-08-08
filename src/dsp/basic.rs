@@ -66,11 +66,11 @@ impl Processor<ControlRate> for DebugNodeC {
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
-        println!("Debug: {} (t={t})", self.name);
-
-        for (inp_name, inp) in inputs.iter() {
-            println!("{inp_name} = {}", inp.value());
-        }
+        println!(
+            "Debug: {} (t={t}) => {}",
+            self.name,
+            inputs[&InputName::default()].value()
+        );
     }
 }
 

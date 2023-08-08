@@ -124,34 +124,33 @@ impl PaprApp {
         } = main_graphs;
 
         // test stuff follows
-        {
-            // let audio = Arc::get_mut(&mut audio).unwrap();
-            // let control = Arc::get_mut(&mut control).unwrap();
+        for (c_in_name, c_in_idx) in control.graph_inputs.clone() {
+            let ui_name = format!("{}_ui", &c_in_name.0);
             let (an, cn) = UiInput::create_nodes(
-                "debug0_ui",
+                &ui_name,
                 Signal::new_control(0.0),
-                Signal::new_control(100.0),
-                Signal::new_control(50.0),
+                Signal::new_control(1.0),
+                Signal::new_control(0.0),
             );
             self.ui_control_inputs.push(cn.clone());
-            audio.add_node(an, "debug0_ui");
-            let debug0_ui_cn = control.add_node(cn, "debug0_ui");
+            audio.add_node(an, &ui_name);
+            let c_in_ui_idx = control.add_node(cn, &ui_name);
             control.add_edge(
-                debug0_ui_cn,
-                control.get_input_id(&InputName("ci0".to_owned())).unwrap(),
+                c_in_ui_idx,
+                c_in_idx,
                 Connection {
-                    source_output: OutputName("debug0_ui".to_owned()),
+                    source_output: OutputName(ui_name),
                     sink_input: InputName::default(),
                 },
             );
-
-            let (_an, cn) = DebugNode::create_nodes("debug0");
+        }
+        for (c_out_name, c_out_idx) in control.graph_outputs.clone() {
+            let dbg_name = format!("{}_dbg", &c_out_name.0);
+            let (_an, cn) = DebugNode::create_nodes(&dbg_name);
             // let debug0_an = audio.add_node(an, "debug0");
-            let debug0_cn = control.add_node(cn, "debug0");
+            let debug0_cn = control.add_node(cn, &dbg_name);
             control.add_edge(
-                control
-                    .get_output_id(&OutputName("co0".to_owned()))
-                    .unwrap(),
+                c_out_idx,
                 debug0_cn,
                 Connection {
                     source_output: OutputName::default(),
@@ -159,6 +158,39 @@ impl PaprApp {
                 },
             );
         }
+        // {
+        //     let (an, cn) = UiInput::create_nodes(
+        //         "debug0_ui",
+        //         Signal::new_control(0.0),
+        //         Signal::new_control(100.0),
+        //         Signal::new_control(50.0),
+        //     );
+        //     self.ui_control_inputs.push(cn.clone());
+        //     audio.add_node(an, "debug0_ui");
+        //     let debug0_ui_cn = control.add_node(cn, "debug0_ui");
+        //     control.add_edge(
+        //         debug0_ui_cn,
+        //         control.get_input_id(&InputName("ci0".to_owned())).unwrap(),
+        //         Connection {
+        //             source_output: OutputName("debug0_ui".to_owned()),
+        //             sink_input: InputName::default(),
+        //         },
+        //     );
+
+        //     let (_an, cn) = DebugNode::create_nodes("debug0");
+        //     // let debug0_an = audio.add_node(an, "debug0");
+        //     let debug0_cn = control.add_node(cn, "debug0");
+        //     control.add_edge(
+        //         control
+        //             .get_output_id(&OutputName("co0".to_owned()))
+        //             .unwrap(),
+        //         debug0_cn,
+        //         Connection {
+        //             source_output: OutputName::default(),
+        //             sink_input: InputName::default(),
+        //         },
+        //     );
+        // }
 
         // let (an, cn) = SineOsc::create_nodes();
 
