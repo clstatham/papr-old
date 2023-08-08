@@ -129,7 +129,7 @@ pub fn audio_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
             },
         ),
         map(preceded(tag("@"), float), |num| {
-            let (an, _cn) = Constant::create_nodes(num as Scalar);
+            let (an, _cn) = Constant::create_nodes("constant", num as Scalar);
             Binding::AudioConstant(an)
         }),
     ))
@@ -152,7 +152,7 @@ pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding>
             },
         ),
         map(preceded(tag("#"), float), |num| {
-            let (_an, cn) = Constant::create_nodes(num as Scalar);
+            let (_an, cn) = Constant::create_nodes("constant", num as Scalar);
             Binding::ControlConstant(cn)
         }),
     ))
@@ -169,14 +169,12 @@ fn solve_expr(
 ) -> (bool, NodeIndex) {
     let mut expr_to_node_idxs = |a: &Expr| match a {
         Expr::Binding(a) => match a {
-            Binding::AudioConstant(a) => (
-                true,
-                super_audio.add_node(a.clone(), "a"),
-                OutputName::default(),
-            ),
+            Binding::AudioConstant(a) => {
+                (true, super_audio.add_node(a.clone()), OutputName::default())
+            }
             Binding::ControlConstant(a) => (
                 false,
-                super_control.add_node(a.clone(), "a"),
+                super_control.add_node(a.clone()),
                 OutputName::default(),
             ),
 
@@ -234,22 +232,23 @@ fn solve_expr(
     let (b_is_audio, b_idx_supergraph, b_out_supergraph) = expr_to_node_idxs(b);
 
     let (mut expr_ag, mut expr_cg) = dual_graphs! {
+        "expr"
         @in { "a" = 0.0 "b" = 0.0 }
         @out { "out" }
         #in { "a" = 0.0 "b" = 0.0 }
         #out { "out" }
     };
     let (op_an, op_cn) = match op {
-        BinaryOp::Add => Add::create_nodes(),
-        BinaryOp::Sub => Subtract::create_nodes(),
-        BinaryOp::Mul => Multiply::create_nodes(),
-        BinaryOp::Div => Divide::create_nodes(),
+        BinaryOp::Add => Add::create_nodes("add"),
+        BinaryOp::Sub => Subtract::create_nodes("sub"),
+        BinaryOp::Mul => Multiply::create_nodes("mul"),
+        BinaryOp::Div => Divide::create_nodes("div"),
     };
-    let op_an = expr_ag.add_node(op_an, "op");
-    let op_cn = expr_cg.add_node(op_cn, "op");
+    let op_an = expr_ag.add_node(op_an);
+    let op_cn = expr_cg.add_node(op_cn);
 
     expr_ag.add_edge(
-        expr_ag.get_input_id(&InputName("a".to_owned())).unwrap(),
+        expr_ag.node_id_by_name(&NodeName("a".to_owned())).unwrap(),
         op_an,
         Connection {
             source_output: OutputName::default(),
@@ -257,7 +256,7 @@ fn solve_expr(
         },
     );
     expr_ag.add_edge(
-        expr_ag.get_input_id(&InputName("b".to_owned())).unwrap(),
+        expr_ag.node_id_by_name(&NodeName("b".to_owned())).unwrap(),
         op_an,
         Connection {
             source_output: OutputName::default(),
@@ -267,7 +266,7 @@ fn solve_expr(
     expr_ag.add_edge(
         op_an,
         expr_ag
-            .get_output_id(&OutputName("out".to_owned()))
+            .node_id_by_name(&NodeName("out".to_owned()))
             .unwrap(),
         Connection {
             source_output: OutputName::default(),
@@ -276,7 +275,7 @@ fn solve_expr(
     );
 
     expr_cg.add_edge(
-        expr_cg.get_input_id(&InputName("a".to_owned())).unwrap(),
+        expr_cg.node_id_by_name(&NodeName("a".to_owned())).unwrap(),
         op_cn,
         Connection {
             source_output: OutputName::default(),
@@ -284,7 +283,7 @@ fn solve_expr(
         },
     );
     expr_cg.add_edge(
-        expr_cg.get_input_id(&InputName("b".to_owned())).unwrap(),
+        expr_cg.node_id_by_name(&NodeName("b".to_owned())).unwrap(),
         op_cn,
         Connection {
             source_output: OutputName::default(),
@@ -294,7 +293,7 @@ fn solve_expr(
     expr_cg.add_edge(
         op_cn,
         expr_cg
-            .get_output_id(&OutputName("out".to_owned()))
+            .node_id_by_name(&NodeName("out".to_owned()))
             .unwrap(),
         Connection {
             source_output: OutputName::default(),
@@ -305,7 +304,7 @@ fn solve_expr(
     if a_is_audio && b_is_audio {
         // package it up and insert into supergraph
         let expr_an = Arc::new(expr_ag.into_node());
-        let expr_an_idx_supergraph = super_audio.add_node(expr_an, "expr");
+        let expr_an_idx_supergraph = super_audio.add_node(expr_an);
         super_audio.add_edge(
             a_idx_supergraph,
             expr_an_idx_supergraph,
@@ -325,7 +324,7 @@ fn solve_expr(
         (true, expr_an_idx_supergraph)
     } else if !a_is_audio && !b_is_audio {
         let expr_cn = Arc::new(expr_cg.into_node());
-        let expr_cn_idx_supergraph = super_control.add_node(expr_cn, "expr");
+        let expr_cn_idx_supergraph = super_control.add_node(expr_cn);
         super_control.add_edge(
             a_idx_supergraph,
             expr_cn_idx_supergraph,
@@ -456,10 +455,6 @@ pub struct ParserContext {
     pub known_node_defs: FxHashMap<NodeName, String>,
 }
 
-pub struct ParserScope {
-    pub defined_node_instances: FxHashMap<NodeName, GraphPtrs>,
-}
-
 pub fn graph_def<'a>() -> impl FnMut(
     &'a str,
 ) -> IResult<
@@ -500,7 +495,6 @@ pub fn graph_def<'a>() -> impl FnMut(
 pub fn graph_def_instantiation<'a>(
     inp: &'a str,
     ctx: &mut ParserContext,
-    _scope: &mut ParserScope,
 ) -> IResult<&'a str, GraphPtrs> {
     map(
         graph_def(),
@@ -522,47 +516,35 @@ pub fn graph_def_instantiation<'a>(
             let id = NodeName(id.to_owned());
             let audio_inputs = audio_inputs
                 .into_iter()
-                .map(|inp| {
-                    (
-                        inp.clone().into_input_name().unwrap(),
-                        Input::new(&inp.into_input_name().unwrap().0, Signal::new_audio(0.0)),
-                    )
-                })
-                .collect::<FxHashMap<_, _>>();
+                .map(|inp| Input::new(&inp.into_input_name().unwrap().0, Signal::new_audio(0.0)))
+                .collect::<Vec<_>>();
             let control_inputs = control_inputs
                 .into_iter()
-                .map(|inp| {
-                    (
-                        inp.clone().into_input_name().unwrap(),
-                        Input::new(&inp.into_input_name().unwrap().0, Signal::new_control(0.0)),
-                    )
-                })
-                .collect::<FxHashMap<_, _>>();
+                .map(|inp| Input::new(&inp.into_input_name().unwrap().0, Signal::new_control(0.0)))
+                .collect::<Vec<_>>();
             let audio_outputs = audio_outputs
                 .into_iter()
-                .map(|out| {
-                    (
-                        out.clone().into_output_name().unwrap(),
-                        Output {
-                            name: out.into_output_name().unwrap(),
-                        },
-                    )
+                .map(|out| Output {
+                    name: out.into_output_name().unwrap(),
                 })
-                .collect::<FxHashMap<_, _>>();
+                .collect::<Vec<_>>();
             let control_outputs = control_outputs
                 .into_iter()
-                .map(|out| {
-                    (
-                        out.clone().into_output_name().unwrap(),
-                        Output {
-                            name: out.into_output_name().unwrap(),
-                        },
-                    )
+                .map(|out| Output {
+                    name: out.into_output_name().unwrap(),
                 })
-                .collect::<FxHashMap<_, _>>();
+                .collect::<Vec<_>>();
 
-            let mut cg = Graph::<ControlRate>::new(control_inputs.clone(), control_outputs.clone());
-            let mut ag = Graph::<AudioRate>::new(audio_inputs.clone(), audio_outputs.clone());
+            let mut cg = Graph::<ControlRate>::new(
+                Some(id.to_owned()),
+                control_inputs.clone(),
+                control_outputs.clone(),
+            );
+            let mut ag = Graph::<AudioRate>::new(
+                Some(id.to_owned()),
+                audio_inputs.clone(),
+                audio_outputs.clone(),
+            );
 
             for conn in connections {
                 match conn {
@@ -600,11 +582,11 @@ pub fn graph_def_instantiation<'a>(
                                     }
                                 }
                                 Binding::AudioConstant(con) => {
-                                    let idx = ag.add_node(con.to_owned(), Default::default());
+                                    let idx = ag.add_node(con.to_owned());
                                     (true, idx, OutputName::default())
                                 }
                                 Binding::ControlConstant(con) => {
-                                    let idx = cg.add_node(con.to_owned(), Default::default());
+                                    let idx = cg.add_node(con.to_owned());
                                     (false, idx, OutputName::default())
                                 }
                             },
@@ -656,13 +638,9 @@ pub fn graph_def_instantiation<'a>(
                     }
 
                     ConnectionOrLet::Let(pl) => {
-                        let mut new_scope = ParserScope {
-                            defined_node_instances: FxHashMap::default(),
-                        };
                         let (_, graphs) = graph_def_instantiation(
                             &ctx.known_node_defs[&pl.graph_name].clone(),
                             ctx,
-                            &mut new_scope,
                         )
                         .unwrap();
                         let GraphPtrs {
@@ -670,8 +648,8 @@ pub fn graph_def_instantiation<'a>(
                             audio,
                             control,
                         } = graphs;
-                        ag.add_node(Arc::new(Node::from_graph(audio)), &pl.ident);
-                        cg.add_node(Arc::new(Node::from_graph(control)), &pl.ident);
+                        ag.add_node(Arc::new(Node::from_graph(audio)));
+                        cg.add_node(Arc::new(Node::from_graph(control)));
                     }
                 }
             }
@@ -707,14 +685,9 @@ pub fn parse_script(inp: &str) -> FxHashMap<NodeName, GraphPtrs> {
         .expect("Parsing error: no `main` graph found")
         .to_owned();
 
-    let mut main_scope = ParserScope {
-        defined_node_instances: FxHashMap::default(),
-    };
     let (_, main_ptrs) =
-        ignore_garbage(|a| graph_def_instantiation(a, &mut ctx, &mut main_scope))(&main_def)
-            .unwrap();
+        ignore_garbage(|a| graph_def_instantiation(a, &mut ctx))(&main_def).unwrap();
     out.insert(NodeName("main".to_owned()), main_ptrs);
-    out.extend(main_scope.defined_node_instances);
 
     out
 }

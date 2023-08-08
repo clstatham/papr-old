@@ -163,19 +163,21 @@ macro_rules! node_constructor {
             $($v $members: $member_types),*
         }
         impl $name {
-            pub fn create_nodes($($members: $member_types),*) -> (std::sync::Arc<$crate::graph::Node<$crate::dsp::AudioRate>>, std::sync::Arc<$crate::graph::Node<$crate::dsp::ControlRate>>) {
+            pub fn create_nodes(name: &str, $($members: $member_types),*) -> (std::sync::Arc<$crate::graph::Node<$crate::dsp::AudioRate>>, std::sync::Arc<$crate::graph::Node<$crate::dsp::ControlRate>>) {
                 let a_outs = [$(($crate::graph::OutputName($audio_outputs.to_owned()), $crate::graph::Output { name: $crate::graph::OutputName($audio_outputs.to_owned()) })),*];
                 let c_outs = [$(($crate::graph::OutputName($control_outputs.to_owned()), $crate::graph::Output { name: $crate::graph::OutputName($control_outputs.to_owned()) })),*];
                 let a_ins = [$(($crate::graph::InputName($audio_inputs.to_owned()), $crate::graph::Input::new($audio_inputs, $crate::dsp::Signal::new($ai_default_values)))),*];
                 let c_ins = [$(($crate::graph::InputName($control_inputs.to_owned()), $crate::graph::Input::new($control_inputs, $crate::dsp::Signal::new($ci_default_values)))),*];
 
                 let cn = std::sync::Arc::new($crate::graph::Node::new(
+                    $crate::graph::NodeName(name.to_owned()),
                     FxHashMap::from_iter(c_ins.into_iter()),
                     FxHashMap::from_iter(c_outs.into_iter()),
                     $crate::graph::ProcessorType::Boxed(Box::new(Self {$($members: $members.clone()),*})),
                     None,
                 ));
                 let an = std::sync::Arc::new($crate::graph::Node::new(
+                    $crate::graph::NodeName(name.to_owned()),
                     FxHashMap::from_iter(a_ins.into_iter()),
                     FxHashMap::from_iter(a_outs.into_iter()),
                     $crate::graph::ProcessorType::Boxed(Box::new(Self {$($members: $members.clone()),*})),

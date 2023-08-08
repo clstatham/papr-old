@@ -5,14 +5,21 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate, Signal},
-    graph::{CreateNodes, Input, InputName, Node, Output, OutputName},
+    graph::{CreateNodes, Input, InputName, Node, NodeName, Output, OutputName},
     node_constructor, Scalar,
 };
 
 use super::{Processor, SmoothControlSignal};
 
-pub struct DummyA;
-impl Processor<AudioRate> for DummyA {
+node_constructor! {
+    Dummy {}
+    @in {}
+    @out {}
+    #in {}
+    #out {}
+}
+
+impl Processor<AudioRate> for Dummy {
     fn process(
         &self,
         _t: Scalar,
@@ -24,8 +31,7 @@ impl Processor<AudioRate> for DummyA {
     }
 }
 
-pub struct DummyC;
-impl Processor<ControlRate> for DummyC {
+impl Processor<ControlRate> for Dummy {
     fn process(
         &self,
         _t: Scalar,
@@ -37,15 +43,17 @@ impl Processor<ControlRate> for DummyC {
     }
 }
 
-pub struct DebugNode;
-
-pub struct DebugNodeA;
-
-pub struct DebugNodeC {
-    pub name: String,
+node_constructor! {
+    DebugNode {name_copy: String}
+    @in {}
+    @out {}
+    #in { "in" = 0.0 }
+    #out {}
 }
 
-impl Processor<AudioRate> for DebugNodeA {
+// pub struct DebugNode;
+
+impl Processor<AudioRate> for DebugNode {
     fn process(
         &self,
         _t: Scalar,
@@ -57,7 +65,7 @@ impl Processor<AudioRate> for DebugNodeA {
     }
 }
 
-impl Processor<ControlRate> for DebugNodeC {
+impl Processor<ControlRate> for DebugNode {
     fn process(
         &self,
         t: Scalar,
@@ -66,38 +74,11 @@ impl Processor<ControlRate> for DebugNodeC {
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
-        println!(
-            "Debug: {} (t={t}) => {}",
-            self.name,
+        log::debug!(
+            "{} = {} (t={t})",
+            self.name_copy,
             inputs[&InputName::default()].value()
         );
-    }
-}
-
-impl DebugNode {
-    pub fn create_nodes(name: &str) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let cn = Arc::new(Node::new(
-            FxHashMap::from_iter(
-                [(
-                    InputName::default(),
-                    Input::new("in", Signal::new_control(0.0)),
-                )]
-                .into_iter(),
-            ),
-            FxHashMap::default(),
-            Box::new(DebugNodeC {
-                name: name.to_owned(),
-            })
-            .into(),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            FxHashMap::default(),
-            FxHashMap::default(),
-            Box::new(DebugNodeA).into(),
-            Some(cn.clone()),
-        ));
-        (an, cn)
     }
 }
 
@@ -130,22 +111,21 @@ impl Processor<ControlRate> for DacC {
     }
 }
 
-impl CreateNodes for Dac {
-    fn create_nodes() -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+impl Dac {
+    fn create_nodes(name: &str) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
         let cn = Arc::new(Node::new(
+            NodeName(name.to_owned()),
             FxHashMap::default(),
             FxHashMap::default(),
             Box::new(DacC).into(),
             None,
         ));
         let an = Arc::new(Node::new(
+            NodeName(name.to_owned()),
             FxHashMap::from_iter(
                 [(
                     InputName::default(),
-                    Input {
-                        name: InputName::default(),
-                        default: Signal::new(0.0),
-                    },
+                    Input::new(&InputName::default().0, Signal::new(0.0)),
                 )]
                 .into_iter(),
             ),
@@ -222,6 +202,7 @@ impl UiInput {
     ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
         let value = Arc::new(RwLock::new(SmoothControlSignal::new(initial_value, 4)));
         let cn = Arc::new(Node::new(
+            NodeName(name.to_owned()),
             FxHashMap::default(),
             FxHashMap::from_iter(
                 [(
@@ -242,6 +223,7 @@ impl UiInput {
             None,
         ));
         let an = Arc::new(Node::new(
+            NodeName(name.to_owned()),
             FxHashMap::default(),
             FxHashMap::default(),
             Box::new(UiInputA { value }).into(),

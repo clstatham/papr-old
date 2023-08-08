@@ -1,9 +1,9 @@
 graph main {
     @in {}
     @out { @dac0 @dac1 }
-    #in { #ci0 }
-    #out { #co0 #co1 }
+    #in { #ci0 #ci1 #ci2 #ci3 }
+    #out { #co0 }
     ~ {
-        [#co0 #co1] <- (#2 * (#ci0 + (#ci0 / #5)));
+        #co0 <- (#ci0 * (#ci1 + (#ci2 - #ci3)));
     }
 }

@@ -124,8 +124,9 @@ impl PaprApp {
         } = main_graphs;
 
         // test stuff follows
-        for (c_in_name, c_in_idx) in control.graph_inputs.clone() {
-            let ui_name = format!("{}_ui", &c_in_name.0);
+        for c_in_idx in control.graph_inputs.clone() {
+            let c_in = &control.digraph[c_in_idx];
+            let ui_name = format!("{}_ui", &c_in.name.0);
             let (an, cn) = UiInput::create_nodes(
                 &ui_name,
                 Signal::new_control(0.0),
@@ -133,8 +134,8 @@ impl PaprApp {
                 Signal::new_control(0.0),
             );
             self.ui_control_inputs.push(cn.clone());
-            audio.add_node(an, &ui_name);
-            let c_in_ui_idx = control.add_node(cn, &ui_name);
+            audio.add_node(an);
+            let c_in_ui_idx = control.add_node(cn);
             control.add_edge(
                 c_in_ui_idx,
                 c_in_idx,
@@ -144,11 +145,12 @@ impl PaprApp {
                 },
             );
         }
-        for (c_out_name, c_out_idx) in control.graph_outputs.clone() {
-            let dbg_name = format!("{}_dbg", &c_out_name.0);
-            let (_an, cn) = DebugNode::create_nodes(&dbg_name);
+        for c_out_idx in control.graph_outputs.clone() {
+            let c_out = &control.digraph[c_out_idx];
+            let dbg_name = format!("{}_dbg", &c_out.name.0);
+            let (_an, cn) = DebugNode::create_nodes(&dbg_name, dbg_name.to_owned());
             // let debug0_an = audio.add_node(an, "debug0");
-            let debug0_cn = control.add_node(cn, &dbg_name);
+            let debug0_cn = control.add_node(cn);
             control.add_edge(
                 c_out_idx,
                 debug0_cn,
