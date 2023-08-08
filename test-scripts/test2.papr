@@ -2,14 +2,22 @@ graph main {
     @in {}
     @out { @dac0 @dac1 }
     #in {
-        #amp(0.0 : 1.0) = 0.5
-        #freq(20.0 : 2000.0) = 440.0
+        #c_amp(0.0 : 1.0) = 0.5
+        #c_freq(20.0 : 2000.0) = 440.0
+        #m_amp(0.0 : 1.0) = 0.5
+        #m_freq(20.0 : 2000.0) = 440.0
+        #fm(0.0:1.0) = 1.0
     }
     #out {}
     ~ {
-        let s : sineosc<0.5 440.0>;
-        [@dac0 @dac1] <- s.@out;
-        s.#amp <- #amp;
-        s.#freq <- #freq;
+        let m: sineosc<0.5 440.0 0.0>;
+        let c: sineosc<0.5 440.0 1.0>;
+        c.@fm <- m.@out;
+        [@dac0 @dac1] <- c.@out;
+        c.#amp <- #c_amp;
+        c.#freq <- #c_freq;
+        c.#fm_amt <- #fm;
+        m.#amp <- #m_amp;
+        m.#freq <- #m_freq;
     }
 }

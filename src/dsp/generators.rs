@@ -12,9 +12,9 @@ use super::{Processor, Signal};
 
 node_constructor! {
     SineOsc
-    @in {}
+    @in { fm = 0.0 }
     @out { out }
-    #in { amp freq }
+    #in { amp freq fm_amt }
     #out {}
 }
 
@@ -24,7 +24,7 @@ impl Processor<AudioRate> for SineOsc {
         t: Scalar,
         _sample_rate: Scalar,
         sibling_node: Option<&Arc<Node<ControlRate>>>,
-        _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
@@ -34,8 +34,14 @@ impl Processor<AudioRate> for SineOsc {
         let freq = sibling_node
             .cached_input(&InputName("freq".to_owned()))
             .unwrap();
-        *outputs.get_mut(&OutputName::default()).unwrap() =
-            Signal::new_audio(Scalar::sin(t * PI * 2.0 * freq.value()) * amp.value());
+        let fm_amt = sibling_node
+            .cached_input(&InputName("fm_amt".to_owned()))
+            .unwrap();
+        let fm = inputs[&InputName("fm".to_owned())];
+        *outputs.get_mut(&OutputName::default()).unwrap() = Signal::new_audio(
+            Scalar::sin(t * PI * 2.0 * freq.value() + fm.value() * PI * 2.0 * fm_amt.value())
+                * amp.value(),
+        );
     }
 }
 

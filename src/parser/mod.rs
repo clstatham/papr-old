@@ -94,13 +94,16 @@ pub enum BuiltinNode {
     SineOsc {
         amp: Signal<ControlRate>,
         freq: Signal<ControlRate>,
+        fm_amt: Signal<ControlRate>,
     },
 }
 
 impl BuiltinNode {
     pub fn create_graphs(&self, name: &str) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
         match self {
-            Self::SineOsc { amp, freq } => SineOsc::create_nodes(name, amp.value(), freq.value()),
+            Self::SineOsc { amp, freq, fm_amt } => {
+                SineOsc::create_nodes(name, amp.value(), freq.value(), fm_amt.value())
+            }
         }
     }
 }
@@ -524,6 +527,7 @@ pub fn let_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedLet> {
                     LetRhs::BuiltinNode(BuiltinNode::SineOsc {
                         amp: Signal::new_control(defaults[0] as Scalar),
                         freq: Signal::new_control(defaults[1] as Scalar),
+                        fm_amt: Signal::new_control(defaults[2] as Scalar),
                     })
                 }
                 _ => LetRhs::ScriptGraph(NodeName(graph_name.to_owned())),

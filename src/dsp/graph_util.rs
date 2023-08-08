@@ -10,14 +10,6 @@ use crate::{
 
 use super::{Processor, Signal};
 
-// node_constructor! {
-//     GraphInput {}
-//     @in { "input" = 0.0 }
-//     @out { "out" }
-//     #in { "input" }
-//     #out { "out" }
-// }
-
 pub struct GraphInput;
 
 impl GraphInput {
