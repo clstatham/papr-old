@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use petgraph::{prelude::*, visit::IntoEdgesDirected};
+use petgraph::prelude::*;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -577,11 +577,11 @@ where
 {
     fn process_sample(
         &self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<T>>,
-        outputs: &mut FxHashMap<OutputName, Signal<T>>,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
+        _inputs: &FxHashMap<InputName, Signal<T>>,
+        _outputs: &mut FxHashMap<OutputName, Signal<T>>,
     ) {
         unimplemented!()
     }

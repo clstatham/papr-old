@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    FromSample, SizedSample, SupportedBufferSize,
+    FromSample, SizedSample,
 };
 
 use eframe::egui::CentralPanel;

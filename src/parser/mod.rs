@@ -446,7 +446,7 @@ pub fn expr(inp: &str, audio_buffer_len: usize) -> IResult<&str, Expr> {
                 audio_binding(audio_buffer_len),
                 control_binding(audio_buffer_len),
             )),
-            |b| Expr::Binding(b),
+            Expr::Binding,
         ),
         map(
             delimited(

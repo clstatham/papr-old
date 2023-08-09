@@ -23,7 +23,7 @@ node_constructor! {
 impl Processor<AudioRate> for Dummy {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
         _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -35,7 +35,7 @@ impl Processor<AudioRate> for Dummy {
 impl Processor<ControlRate> for Dummy {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<Node<AudioRate>>>,
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -76,7 +76,7 @@ impl DebugNode {
 impl Processor<AudioRate> for DebugNode {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalType>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -88,7 +88,7 @@ impl Processor<AudioRate> for DebugNode {
 impl Processor<ControlRate> for DebugNode {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -114,7 +114,7 @@ node_constructor! {
 impl Processor<AudioRate> for Dac {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -127,7 +127,7 @@ impl Processor<AudioRate> for Dac {
 impl Processor<ControlRate> for Dac {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -150,7 +150,7 @@ pub struct UiInputC {
 impl Processor<AudioRate> for UiInputA {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
         _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -163,7 +163,7 @@ impl Processor<AudioRate> for UiInputA {
 impl Processor<ControlRate> for UiInputC {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -274,7 +274,7 @@ impl Constant {
 impl Processor<AudioRate> for Constant {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalType>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -287,7 +287,7 @@ impl Processor<AudioRate> for Constant {
 impl Processor<ControlRate> for Constant {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -308,7 +308,7 @@ node_constructor! {
 impl Processor<AudioRate> for Multiply {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -322,7 +322,7 @@ impl Processor<AudioRate> for Multiply {
 impl Processor<ControlRate> for Multiply {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -344,7 +344,7 @@ node_constructor! {
 impl Processor<AudioRate> for Divide {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -358,7 +358,7 @@ impl Processor<AudioRate> for Divide {
 impl Processor<ControlRate> for Divide {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -380,7 +380,7 @@ node_constructor! {
 impl Processor<AudioRate> for Add {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -394,7 +394,7 @@ impl Processor<AudioRate> for Add {
 impl Processor<ControlRate> for Add {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -416,7 +416,7 @@ node_constructor! {
 impl Processor<AudioRate> for Subtract {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -430,7 +430,7 @@ impl Processor<AudioRate> for Subtract {
 impl Processor<ControlRate> for Subtract {
     fn process_sample(
         &self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -452,9 +452,9 @@ node_constructor! {
 impl Processor<AudioRate> for Sine {
     fn process_sample(
         &self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
@@ -466,9 +466,9 @@ impl Processor<AudioRate> for Sine {
 impl Processor<ControlRate> for Sine {
     fn process_sample(
         &self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
@@ -488,10 +488,10 @@ node_constructor! {
 impl Processor<AudioRate> for EventToAudio {
     fn process_sample(
         &self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
         sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
@@ -505,11 +505,11 @@ impl Processor<AudioRate> for EventToAudio {
 impl Processor<ControlRate> for EventToAudio {
     fn process_sample(
         &self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
+        _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
     }
 }

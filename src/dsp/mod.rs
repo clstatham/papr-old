@@ -125,12 +125,12 @@ where
         let mut inp = FxHashMap::from_iter(
             inputs
                 .iter()
-                .map(|(name, inp)| (name.to_owned(), Signal::new(0.0))),
+                .map(|(name, _inp)| (name.to_owned(), Signal::new(0.0))),
         );
         let mut out = FxHashMap::from_iter(
             outputs
                 .iter()
-                .map(|(name, out)| (name.to_owned(), Signal::new(0.0))),
+                .map(|(name, _out)| (name.to_owned(), Signal::new(0.0))),
         );
         for i in 0..audio_buffer_len {
             for (name, val) in inp.iter_mut() {
