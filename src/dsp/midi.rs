@@ -21,7 +21,6 @@ node_constructor! {
 impl Processor<AudioRate> for MidiToFreq {
     fn process(
         &self,
-        _t: Scalar,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as SignalType>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -33,7 +32,6 @@ impl Processor<AudioRate> for MidiToFreq {
 impl Processor<ControlRate> for MidiToFreq {
     fn process(
         &self,
-        _t: Scalar,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,

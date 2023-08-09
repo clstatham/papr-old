@@ -16,7 +16,7 @@ use crate::{
     Scalar,
 };
 
-use self::builtins::{let_statement, BuiltinNode};
+use self::builtins::{global_const, let_statement, BuiltinNode};
 
 pub mod builtins;
 
@@ -139,10 +139,21 @@ pub fn ident<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
     recognize(pair(alpha1, opt(many1(alt((alphanumeric1, tag("_")))))))
 }
 
+pub fn global_const_or_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scalar)> {
+    alt((global_const(), map(float, |f| (f.to_string(), f as Scalar))))
+}
+
 pub fn audio_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
     // nom::error::context(
     //     "audio_binding",
     alt((
+        map(
+            preceded(tag("@"), global_const_or_const()),
+            |(name, num)| {
+                let (an, _cn) = Constant::create_nodes(&name, num as Scalar);
+                Binding::AudioConstant(an)
+            },
+        ),
         map(
             tuple((
                 opt(map(tuple((ident(), tag("."))), |(a, _)| a)),
@@ -153,10 +164,6 @@ pub fn audio_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
                 port: port.to_owned(),
             },
         ),
-        map(preceded(tag("@"), float), |num| {
-            let (an, _cn) = Constant::create_nodes("constant", num as Scalar);
-            Binding::AudioConstant(an)
-        }),
     ))
 
     // )
@@ -202,6 +209,13 @@ pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding>
     //     "control_binding",
     alt((
         map(
+            preceded(tag("#"), global_const_or_const()),
+            |(name, num)| {
+                let (_an, cn) = Constant::create_nodes(&name, num as Scalar);
+                Binding::ControlConstant(cn)
+            },
+        ),
+        map(
             tuple((
                 opt(map(tuple((ident(), tag("."))), |(a, _)| a)),
                 preceded(tag("#"), ident()),
@@ -212,10 +226,6 @@ pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding>
                 default: None,
             },
         ),
-        map(preceded(tag("#"), float), |num| {
-            let (_an, cn) = Constant::create_nodes("constant", num as Scalar);
-            Binding::ControlConstant(cn)
-        }),
     ))
 
     // )
@@ -245,7 +255,9 @@ fn solve_expr(
                         true,
                         super_audio
                             .node_id_by_name(&NodeName(node.to_owned()))
-                            .unwrap(),
+                            .unwrap_or_else(|| {
+                                panic!("Parsing error: No node named `{node}` found on supergraph")
+                            }),
                         OutputName(port.to_owned()),
                     )
                 } else {
@@ -253,7 +265,9 @@ fn solve_expr(
                         true,
                         super_audio
                             .node_id_by_name(&NodeName(port.to_owned()))
-                            .unwrap(),
+                            .unwrap_or_else(|| {
+                                panic!("Parsing error: No node named `{port}` found on supergraph")
+                            }),
                         OutputName::default(),
                     )
                 }
@@ -271,7 +285,9 @@ fn solve_expr(
                         false,
                         super_control
                             .node_id_by_name(&NodeName(node.to_owned()))
-                            .unwrap(),
+                            .unwrap_or_else(|| {
+                                panic!("Parsing error: No node named `{node}` found on supergraph")
+                            }),
                         OutputName(port.to_owned()),
                     )
                 } else {
@@ -279,7 +295,9 @@ fn solve_expr(
                         false,
                         super_control
                             .node_id_by_name(&NodeName(port.to_owned()))
-                            .unwrap(),
+                            .unwrap_or_else(|| {
+                                panic!("Parsing error: No node named `{port}` found on supergraph")
+                            }),
                         OutputName::default(),
                     )
                 }
@@ -584,6 +602,7 @@ pub fn graph_def_instantiation<'a>(
                             default: Some(default.expect(
                                 "Parsing error: no default value provided for control input",
                             )),
+                            implicit: false,
                         }
                     } else if let Binding::ControlIo {
                         node: _,

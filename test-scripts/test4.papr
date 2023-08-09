@@ -1,0 +1,34 @@
+graph sineosc_manual {
+    @in {}
+    @out { @out }
+    #in {
+        #amp = 1.0
+        #freq = 440.0
+    }
+    #out {}
+    ~ {
+        let s: sin;
+        let amp_e2a: e2a;
+        let freq_e2a: e2a;
+        amp_e2a.#e <- #amp;
+        freq_e2a.#e <- #freq;
+        s.@input <- ((@TAU * @t) * freq_e2a.@a);
+        @out <- (amp_e2a.@a * s.@out);
+    }
+}
+
+graph main {
+    @in {}
+    @out { @dac0 @dac1 }
+    #in {
+        #amp(0.0 : 1.0) = 0.5
+        #freq(20.0 : 2000.0) = 440.0
+    }
+    #out {}
+    ~ {
+        let so: sineosc_manual;
+        so.#amp <- #amp;
+        so.#freq <- #freq;
+        [@dac0 @dac1] <- so.@out;
+    }
+}

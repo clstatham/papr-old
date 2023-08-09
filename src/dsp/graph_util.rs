@@ -50,7 +50,6 @@ impl GraphInput {
 impl Processor<AudioRate> for GraphInput {
     fn process(
         &self,
-        _t: Scalar,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -63,7 +62,6 @@ impl Processor<AudioRate> for GraphInput {
 impl Processor<ControlRate> for GraphInput {
     fn process(
         &self,
-        _t: Scalar,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -84,7 +82,6 @@ node_constructor! {
 impl Processor<AudioRate> for GraphOutput {
     fn process(
         &self,
-        _t: Scalar,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -97,7 +94,6 @@ impl Processor<AudioRate> for GraphOutput {
 impl Processor<ControlRate> for GraphOutput {
     fn process(
         &self,
-        _t: Scalar,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,

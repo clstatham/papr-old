@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rustc_hash::FxHashMap;
 
@@ -21,7 +21,6 @@ node_constructor! {
 impl Processor<AudioRate> for SineOsc {
     fn process(
         &self,
-        t: Scalar,
         _sample_rate: Scalar,
         sibling_node: Option<&Arc<Node<ControlRate>>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -37,6 +36,7 @@ impl Processor<AudioRate> for SineOsc {
         let fm_amt = sibling_node
             .cached_input(&InputName("fm_amt".to_owned()))
             .unwrap();
+        let t = inputs[&InputName("t".to_owned())].value();
         let fm = inputs[&InputName("fm".to_owned())];
         *outputs.get_mut(&OutputName::default()).unwrap() = Signal::new_audio(
             Scalar::sin(t * TAU * freq.value() + fm.value() * TAU * fm_amt.value()) * amp.value(),
@@ -47,7 +47,6 @@ impl Processor<AudioRate> for SineOsc {
 impl Processor<ControlRate> for SineOsc {
     fn process(
         &self,
-        _t: Scalar,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
@@ -56,7 +55,6 @@ impl Processor<ControlRate> for SineOsc {
     }
 }
 
-use std::sync::Mutex;
 node_constructor! {
     pub struct BlSawOsc {
         p: Arc<Mutex<Scalar>>,
@@ -73,7 +71,6 @@ node_constructor! {
 impl Processor<AudioRate> for BlSawOsc {
     fn process(
         &self,
-        t: Scalar,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<AudioRate>>,
@@ -116,7 +113,6 @@ impl Processor<AudioRate> for BlSawOsc {
 impl Processor<ControlRate> for BlSawOsc {
     fn process(
         &self,
-        t: Scalar,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,

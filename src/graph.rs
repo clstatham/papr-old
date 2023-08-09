@@ -63,6 +63,7 @@ pub struct Input<T: SignalType> {
     pub minimum: Option<Signal<T>>,
     pub maximum: Option<Signal<T>>,
     pub default: Option<Signal<T>>,
+    pub implicit: bool,
 }
 
 impl<T: SignalType> Input<T> {
@@ -72,6 +73,7 @@ impl<T: SignalType> Input<T> {
             minimum: None,
             maximum: None,
             default,
+            implicit: false,
         }
     }
 
@@ -86,6 +88,7 @@ impl<T: SignalType> Input<T> {
             minimum: Some(minimum),
             maximum: Some(maximum),
             default: Some(default),
+            implicit: false,
         }
     }
 }
@@ -128,15 +131,14 @@ where
 {
     fn process(
         &self,
-        t: Scalar,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<T>>,
         outputs: &mut FxHashMap<OutputName, Signal<T>>,
     ) {
         match self {
-            Self::Boxed(p) => p.process(t, sample_rate, sibling_node, inputs, outputs),
-            Self::Subgraph(p) => p.process(t, sample_rate, sibling_node, inputs, outputs),
+            Self::Boxed(p) => p.process(sample_rate, sibling_node, inputs, outputs),
+            Self::Subgraph(p) => p.process(sample_rate, sibling_node, inputs, outputs),
         }
     }
 
@@ -177,11 +179,21 @@ where
 {
     pub fn new(
         name: NodeName,
-        inputs: FxHashMap<InputName, Input<T>>,
+        mut inputs: FxHashMap<InputName, Input<T>>,
         outputs: FxHashMap<OutputName, Output>,
         processor: ProcessorType<T>,
         sibling_node: Option<Arc<T::SiblingNode>>,
     ) -> Self {
+        inputs.insert(
+            InputName("t".to_owned()),
+            Input {
+                name: InputName("t".to_owned()),
+                minimum: None,
+                maximum: None,
+                default: None,
+                implicit: true,
+            },
+        );
         Self {
             name,
             inputs_cache: RwLock::new(
@@ -254,7 +266,7 @@ where
 impl Graph<AudioRate> {
     pub fn new(
         name: Option<NodeName>,
-        inputs: Vec<Input<AudioRate>>,
+        mut inputs: Vec<Input<AudioRate>>,
         outputs: Vec<Output>,
     ) -> Graph<AudioRate> {
         let mut this = Self {
@@ -264,12 +276,22 @@ impl Graph<AudioRate> {
             graph_inputs: Vec::default(),
             graph_outputs: Vec::default(),
         };
+        let t = Input {
+            name: InputName("t".to_owned()),
+            minimum: None,
+            maximum: None,
+            default: None,
+            implicit: true,
+        };
+        inputs.push(t);
         for inp in inputs {
             let an = GraphInput::create_audio_node(&inp.name.0, inp.clone());
             let idx = this.add_node(an);
             this.node_indices_by_name
                 .insert(NodeName(inp.name.0.to_owned()), idx);
-            this.graph_inputs.push(idx);
+            if !inp.implicit {
+                this.graph_inputs.push(idx);
+            }
         }
         for out in outputs {
             let (an, _cn) = GraphOutput::create_nodes(&out.name.0, 0.0);
@@ -286,7 +308,7 @@ impl Graph<AudioRate> {
 impl Graph<ControlRate> {
     pub fn new(
         name: Option<NodeName>,
-        inputs: Vec<Input<ControlRate>>,
+        mut inputs: Vec<Input<ControlRate>>,
         outputs: Vec<Output>,
     ) -> Graph<ControlRate> {
         let mut this = Self {
@@ -296,12 +318,22 @@ impl Graph<ControlRate> {
             graph_inputs: Vec::default(),
             graph_outputs: Vec::default(),
         };
+        let t = Input {
+            name: InputName("t".to_owned()),
+            minimum: None,
+            maximum: None,
+            default: None,
+            implicit: true,
+        };
+        inputs.push(t);
         for inp in inputs {
             let cn = GraphInput::create_control_node(&inp.name.0, inp.clone());
             let idx = this.add_node(cn);
             this.node_indices_by_name
                 .insert(NodeName(inp.name.0.to_owned()), idx);
-            this.graph_inputs.push(idx);
+            if !inp.implicit {
+                this.graph_inputs.push(idx);
+            }
         }
         for out in outputs {
             let (_an, cn) = GraphOutput::create_nodes(&out.name.0, 0.0);
@@ -355,7 +387,6 @@ where
 
     pub fn process_graph(
         &self,
-        t: Scalar,
         sample_rate: Scalar,
         inputs: &FxHashMap<InputName, Signal<T>>,
         outputs: &mut FxHashMap<OutputName, Signal<T>>,
@@ -377,12 +408,13 @@ where
         }
 
         // initialize a breadth-first search starting at the input nodes
-        let mut starts = self.digraph.externals(Direction::Incoming);
+        let starts = self.digraph.externals(Direction::Incoming);
         let mut bfs = Bfs::new(
             &self.digraph,
-            starts
-                .next()
-                .expect("Graph::process(): graph has no input/source nodes"),
+            // starts
+            //     .next()
+            //     .expect("Graph::process(): graph has no input/source nodes"),
+            self.node_id_by_name(&NodeName("t".to_owned())).unwrap(),
         );
         for node in starts {
             bfs.stack.push_back(node);
@@ -410,11 +442,14 @@ where
             }
 
             // create a copy of the inputs from the cache (necessary because we mutably borrow `self` in the next step)
-            let inps = self.digraph[node_id].inputs_cache.read().unwrap().clone();
+            let mut inps = self.digraph[node_id].inputs_cache.read().unwrap().clone();
+            inps.insert(
+                InputName("t".to_owned()),
+                inputs[&InputName("t".to_owned())],
+            );
             let node = &self.digraph[node_id];
             // run the processing logic for this node, which will store its results directly in our output cache
             node.processor.process(
-                t,
                 sample_rate,
                 node.sibling_node.as_ref(),
                 &inps,
@@ -440,13 +475,12 @@ where
 {
     fn process(
         &self,
-        t: Scalar,
         sample_rate: Scalar,
         _sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<T>>,
         outputs: &mut FxHashMap<OutputName, Signal<T>>,
     ) {
-        self.process_graph(t, sample_rate, inputs, outputs)
+        self.process_graph(sample_rate, inputs, outputs)
     }
 }
 

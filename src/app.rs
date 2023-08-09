@@ -39,9 +39,11 @@ impl AudioContext {
         }
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
             graph.process_graph(
-                t as Scalar + frame_idx as Scalar / sample_rate,
                 sample_rate,
-                &FxHashMap::default(),
+                &FxHashMap::from_iter([(
+                    InputName("t".to_owned()),
+                    Signal::new(t as Scalar + frame_idx as Scalar / sample_rate),
+                )]),
                 &mut out,
             );
             for (c, sample) in frame.iter_mut().enumerate() {
@@ -115,7 +117,7 @@ impl PaprApp {
 
     pub fn create_graphs(&mut self, sample_rate: Scalar, control_rate: Scalar) {
         let main_graphs = parse_script(
-            include_str!("../test-scripts/test3.papr"),
+            include_str!("../test-scripts/test4.papr"),
             sample_rate,
             control_rate,
         )
@@ -249,9 +251,8 @@ impl PaprApp {
                     let mut t = 0 as Scalar;
                     loop {
                         control_graph.process_graph(
-                            t,
                             control_rate,
-                            &FxHashMap::default(),
+                            &FxHashMap::from_iter([(InputName("t".to_owned()), Signal::new(t))]),
                             &mut FxHashMap::default(),
                         );
                         clk.tick().await;

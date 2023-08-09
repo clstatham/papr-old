@@ -97,7 +97,6 @@ where
 {
     fn process(
         &self,
-        t: Scalar,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<T>>,
