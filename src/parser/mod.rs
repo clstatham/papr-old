@@ -17,6 +17,10 @@ use crate::{
     Scalar,
 };
 
+use self::builtins::{let_statement, BuiltinNode};
+
+pub mod builtins;
+
 #[derive(Clone)]
 pub enum Binding {
     AudioIo {
@@ -88,24 +92,6 @@ pub enum Expr {
 pub enum ConnectionOrLet {
     Connection(ParsedConnection),
     Let(ParsedLet),
-}
-
-pub enum BuiltinNode {
-    SineOsc {
-        amp: Signal<ControlRate>,
-        freq: Signal<ControlRate>,
-        fm_amt: Signal<ControlRate>,
-    },
-}
-
-impl BuiltinNode {
-    pub fn create_graphs(&self, name: &str) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        match self {
-            Self::SineOsc { amp, freq, fm_amt } => {
-                SineOsc::create_nodes(name, amp.value(), freq.value(), fm_amt.value())
-            }
-        }
-    }
 }
 
 pub enum LetRhs {
@@ -500,38 +486,6 @@ pub fn connection<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedConnection
         |(to_inputs, _, xpr, _)| ParsedConnection {
             from: xpr,
             to: to_inputs,
-        },
-    )
-}
-
-pub fn let_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedLet> {
-    map(
-        tuple((
-            tag("let"),
-            whitespace1(),
-            ident(),
-            ignore_garbage(tag(":")),
-            ident(),
-            opt(delimited(
-                ignore_garbage(tag("<")),
-                many1(ignore_garbage(float)),
-                ignore_garbage(tag(">")),
-            )),
-            ignore_garbage(tag(";")),
-        )),
-        |(_, _, id, _, graph_name, control_input_defaults, _)| ParsedLet {
-            ident: id.to_owned(),
-            graph_name: match graph_name {
-                "sineosc" => {
-                    let defaults = control_input_defaults.unwrap();
-                    LetRhs::BuiltinNode(BuiltinNode::SineOsc {
-                        amp: Signal::new_control(defaults[0] as Scalar),
-                        freq: Signal::new_control(defaults[1] as Scalar),
-                        fm_amt: Signal::new_control(defaults[2] as Scalar),
-                    })
-                }
-                _ => LetRhs::ScriptGraph(NodeName(graph_name.to_owned())),
-            },
         },
     )
 }

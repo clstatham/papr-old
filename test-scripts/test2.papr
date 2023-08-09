@@ -3,21 +3,26 @@ graph main {
     @out { @dac0 @dac1 }
     #in {
         #c_amp(0.0 : 1.0) = 0.5
-        #c_freq(20.0 : 2000.0) = 440.0
+        #c_pitch(0 : 100) = 69
         #m_amp(0.0 : 1.0) = 0.5
-        #m_freq(20.0 : 2000.0) = 440.0
+        #m_mul(0 : 16) = 1
         #fm(0.0:1.0) = 1.0
     }
     #out {}
     ~ {
         let m: sineosc<0.5 440.0 0.0>;
         let c: sineosc<0.5 440.0 1.0>;
+        let c_m2f: m2f;
+
         c.@fm <- m.@out;
         [@dac0 @dac1] <- c.@out;
+
+        c_m2f.#midi <- #c_pitch;
+
         c.#amp <- #c_amp;
-        c.#freq <- #c_freq;
+        c.#freq <- c_m2f.#freq;
         c.#fm_amt <- #fm;
         m.#amp <- #m_amp;
-        m.#freq <- #m_freq;
+        m.#freq <- (c_m2f.#freq * #m_mul);
     }
 }

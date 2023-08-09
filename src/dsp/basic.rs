@@ -175,7 +175,11 @@ impl Processor<ControlRate> for UiInputC {
 
     fn ui_update(&self, ui: &mut Ui) {
         let mut val = { self.value.read().unwrap().current_value().value() };
-        ui.add(Slider::new(&mut val, self.minimum.0..=self.maximum.0).text(&self.name));
+        ui.add(
+            Slider::new(&mut val, self.minimum.0..=self.maximum.0)
+                .text(&self.name)
+                .step_by(0.0001),
+        );
         self.value
             .write()
             .unwrap()

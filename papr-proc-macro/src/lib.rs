@@ -30,7 +30,7 @@ impl Parse for NodeConstructorParser {
         input.parse::<Token![@]>()?;
         match input.parse::<Ident>()?.to_string().as_str() {
             "out" => {}
-            _ => return Err(input.error("expected `@out`")),
+            _ => return Err(input.error("expected `out`")),
         };
         let audio_outputs;
         braced!(audio_outputs in input);
@@ -45,7 +45,7 @@ impl Parse for NodeConstructorParser {
         input.parse::<Token![#]>()?;
         match input.parse::<Ident>()?.to_string().as_str() {
             "out" => {}
-            _ => return Err(input.error("expected `#out`")),
+            _ => return Err(input.error("expected `out`")),
         };
         let control_outputs;
         braced!(control_outputs in input);
@@ -76,7 +76,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
     let struc_name = &struc.ident;
     let control_inputs_args = control_inputs
         .iter()
-        .map(|inp| quote! { #inp: Scalar })
+        .map(|inp| quote! { #inp: crate::Scalar })
         .collect::<Punctuated<_, Comma>>();
 
     let fields_args = &struc

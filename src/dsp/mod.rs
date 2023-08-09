@@ -11,6 +11,7 @@ use crate::{
 pub mod basic;
 pub mod generators;
 pub mod graph_util;
+pub mod midi;
 
 pub trait SignalType
 where

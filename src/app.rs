@@ -123,7 +123,6 @@ impl PaprApp {
             mut control,
         } = main_graphs;
 
-        // test stuff follows
         for c_in_idx in control.graph_inputs.clone() {
             let c_in = &control.digraph[c_in_idx];
             let ui_name = c_in.name.0.to_owned();
@@ -140,11 +139,11 @@ impl PaprApp {
                 },
             );
         }
+
         for c_out_idx in control.graph_outputs.clone() {
             let c_out = &control.digraph[c_out_idx];
             let dbg_name = format!("{}_dbg", &c_out.name.0);
             let (_an, cn) = DebugNode::create_nodes(dbg_name.to_owned());
-            // let debug0_an = audio.add_node(an, "debug0");
             let debug0_cn = control.add_node(cn);
             control.add_edge(
                 c_out_idx,
@@ -155,83 +154,6 @@ impl PaprApp {
                 },
             );
         }
-        // {
-        //     let (an, cn) = UiInput::create_nodes(
-        //         "debug0_ui",
-        //         Signal::new_control(0.0),
-        //         Signal::new_control(100.0),
-        //         Signal::new_control(50.0),
-        //     );
-        //     self.ui_control_inputs.push(cn.clone());
-        //     audio.add_node(an, "debug0_ui");
-        //     let debug0_ui_cn = control.add_node(cn, "debug0_ui");
-        //     control.add_edge(
-        //         debug0_ui_cn,
-        //         control.get_input_id(&InputName("ci0".to_owned())).unwrap(),
-        //         Connection {
-        //             source_output: OutputName("debug0_ui".to_owned()),
-        //             sink_input: InputName::default(),
-        //         },
-        //     );
-
-        //     let (_an, cn) = DebugNode::create_nodes("debug0");
-        //     // let debug0_an = audio.add_node(an, "debug0");
-        //     let debug0_cn = control.add_node(cn, "debug0");
-        //     control.add_edge(
-        //         control
-        //             .get_output_id(&OutputName("co0".to_owned()))
-        //             .unwrap(),
-        //         debug0_cn,
-        //         Connection {
-        //             source_output: OutputName::default(),
-        //             sink_input: InputName::default(),
-        //         },
-        //     );
-        // }
-
-        // let (an, cn) = SineOsc::create_nodes();
-
-        // let sine_an = audio_graph.add_node(an, "sine");
-        // audio_graph.add_edge(
-        //     sine_an,
-        //     audio_graph
-        //         .get_output_id(&OutputName("dac0".to_owned()))
-        //         .unwrap(),
-        //     Connection {
-        //         source_output: OutputName::default(),
-        //         sink_input: InputName::default(),
-        //     },
-        // );
-        // let sine_cn = control_graph.add_node(cn, "sine");
-
-        // let (sine_amp_inp_an, sine_amp_inp_cn) =
-        //     UiInput::create_nodes("sine_amp", 0.0.into(), 1.0.into(), 0.5.into());
-        // let (sine_freq_inp_an, sine_freq_inp_cn) =
-        //     UiInput::create_nodes("sine_freq", 20.0.into(), 2000.0.into(), 440.0.into());
-        // self.ui_control_inputs.push(sine_amp_inp_cn.clone());
-        // self.ui_control_inputs.push(sine_freq_inp_cn.clone());
-        // let sine_amp_cn = control_graph.add_node(sine_amp_inp_cn, "sine_amp");
-        // let sine_freq_cn = control_graph.add_node(sine_freq_inp_cn, "sine_freq");
-        // audio_graph.add_node(sine_amp_inp_an, "sine_amp");
-        // audio_graph.add_node(sine_freq_inp_an, "sine_freq");
-        // control_graph.add_edge(
-        //     sine_amp_cn,
-        //     sine_cn,
-        //     Connection {
-        //         source_output: OutputName("sine_amp".to_owned()),
-        //         sink_input: InputName("amp".to_owned()),
-        //     },
-        // );
-        // control_graph.add_edge(
-        //     sine_freq_cn,
-        //     sine_cn,
-        //     Connection {
-        //         source_output: OutputName("sine_freq".to_owned()),
-        //         sink_input: InputName("freq".to_owned()),
-        //     },
-        // );
-
-        // end test stuff
 
         self.audio_graph = Some(Arc::new(audio));
         self.control_graph = Some(Arc::new(control));
