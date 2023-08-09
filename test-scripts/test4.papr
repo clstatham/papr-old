@@ -1,18 +1,21 @@
 graph sineosc_manual {
-    @in {}
+    @in { @fm }
     @out { @out }
     #in {
         #amp = 1.0
         #freq = 440.0
+        #fm_amt = 0.0
     }
     #out {}
     ~ {
         let s: sin;
         let amp_e2a: e2a;
         let freq_e2a: e2a;
+        let fm_amt_e2a: e2a;
         amp_e2a.#e <- #amp;
         freq_e2a.#e <- #freq;
-        s.@input <- ((@TAU * @t) * freq_e2a.@a);
+        fm_amt_e2a.#e <- #fm_amt;
+        s.@input <- (((@TAU * @t) * freq_e2a.@a) + (@TAU * (@fm * fm_amt_e2a.@a)));
         @out <- (amp_e2a.@a * s.@out);
     }
 }
@@ -21,14 +24,24 @@ graph main {
     @in {}
     @out { @dac0 @dac1 }
     #in {
-        #amp(0.0 : 1.0) = 0.5
-        #freq(20.0 : 2000.0) = 440.0
+        #amp0(0.0 : 1.0) = 0.5
+        #freq0(20.0 : 2000.0) = 440.0
+        #fm_amt0(0.0 : 1.0) = 1.0
+
+        #amp1(0.0 : 1.0) = 0.5
+        #freq1(20.0 : 2000.0) = 440.0
     }
     #out {}
     ~ {
-        let so: sineosc_manual;
-        so.#amp <- #amp;
-        so.#freq <- #freq;
-        [@dac0 @dac1] <- so.@out;
+        let so0: sineosc_manual;
+        let so1: sineosc_manual;
+        so0.#fm_amt <- #fm_amt0;
+        so0.#amp <- #amp0;
+        so0.#freq <- #freq0;
+
+        so1.#amp <- #amp1;
+        so1.#freq <- #freq1;
+        so0.@fm <- so1.@out;
+        [@dac0 @dac1] <- so0.@out;
     }
 }

@@ -26,12 +26,15 @@ cfg_if::cfg_if! {
 struct Args {
     #[arg(short, long, default_value_t = 400)]
     control_rate: u64,
+    #[arg(short, long, default_value_t = 48000)]
+    sample_rate: u64,
+    #[arg(short, long, default_value_t = 1024)]
+    buffer_len: u64,
 }
 
 fn main() {
     env_logger::init();
     log::trace!("Logger initialized.");
-
     let args = Args::parse();
     eframe::run_native(
         "PAPR",
@@ -39,7 +42,11 @@ fn main() {
         Box::new(move |cc| {
             cc.egui_ctx.set_visuals(Visuals::dark());
 
-            let mut app = PaprApp::new(args.control_rate as Scalar);
+            let mut app = PaprApp::new(
+                args.sample_rate as Scalar,
+                args.control_rate as Scalar,
+                args.buffer_len as usize,
+            );
             app.init();
             app.spawn();
 

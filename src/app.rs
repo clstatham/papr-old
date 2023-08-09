@@ -21,6 +21,7 @@ use crate::{
 
 pub struct AudioContext {
     out_device: cpal::Device,
+    stream: Option<cpal::Stream>,
 }
 
 impl AudioContext {
@@ -29,10 +30,14 @@ impl AudioContext {
         graph: &Arc<Graph<AudioRate>>,
         output: &mut [T],
         channels: usize,
+        buffer_len: usize,
         t: Scalar,
     ) where
         T: SizedSample + FromSample<Scalar>,
     {
+        if output.len() != buffer_len {
+            panic!("Buffer len mismatch: {} vs {}", output.len(), buffer_len);
+        }
         let mut out = FxHashMap::default();
         for c in 0..channels {
             out.insert(
@@ -54,45 +59,40 @@ impl AudioContext {
         }
     }
 
-    pub fn run<T>(self, graph: Arc<Graph<AudioRate>>)
-    where
+    pub fn run<T>(
+        &mut self,
+        graph: Arc<Graph<AudioRate>>,
+        config: cpal::StreamConfig,
+        buffer_len: usize,
+    ) where
         T: SizedSample + FromSample<Scalar>,
     {
-        std::thread::Builder::new()
-            .name("PAPR Audio".into())
-            .spawn(move || {
-                let config = self.out_device.default_output_config().unwrap();
-                let sample_rate = config.sample_rate().0 as Scalar;
-                let channels = config.channels() as usize;
+        let mut sample_clock = 0 as Scalar;
+        let err_fn = |err| eprintln!("Error occurred on stream: {err}");
 
-                let mut sample_clock = 0 as Scalar;
-                let err_fn = |err| eprintln!("Error occurred on stream: {err}");
-
-                let stream = self
-                    .out_device
-                    .build_output_stream(
-                        &config.into(),
-                        move |data: &mut [T], _info: &cpal::OutputCallbackInfo| {
-                            sample_clock +=
-                                (data.len() as Scalar / channels as Scalar) / sample_rate;
-                            Self::write_data(
-                                sample_rate as Scalar,
-                                &graph,
-                                data,
-                                channels,
-                                sample_clock,
-                            );
-                        },
-                        err_fn,
-                        None,
-                    )
-                    .unwrap();
-                stream.play().unwrap();
-                loop {
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-            })
-            .expect("AudioContext::run(): error spawning audio rate thread");
+        let channels = 1;
+        let sample_rate = config.sample_rate.0 as Scalar;
+        let stream = self
+            .out_device
+            .build_output_stream(
+                &config,
+                move |data: &mut [T], _info: &cpal::OutputCallbackInfo| {
+                    sample_clock += (data.len() as Scalar / channels as Scalar) / sample_rate;
+                    Self::write_data(
+                        sample_rate as Scalar,
+                        &graph,
+                        data,
+                        channels,
+                        buffer_len,
+                        sample_clock,
+                    );
+                },
+                err_fn,
+                None,
+            )
+            .unwrap();
+        stream.play().unwrap();
+        self.stream = Some(stream);
     }
 }
 
@@ -102,11 +102,13 @@ pub struct PaprApp {
     control_graph: Option<Arc<Graph<ControlRate>>>,
     ui_control_inputs: Vec<Arc<Node<ControlRate>>>,
     rt: Option<Runtime>,
+    sample_rate: Scalar,
     control_rate: Scalar,
+    audio_buffer_len: usize,
 }
 
 impl PaprApp {
-    pub fn new(control_rate: Scalar) -> Self {
+    pub fn new(sample_rate: Scalar, control_rate: Scalar, audio_buffer_len: usize) -> Self {
         Self {
             audio_cx: None,
             audio_graph: None,
@@ -114,6 +116,8 @@ impl PaprApp {
             ui_control_inputs: Vec::new(),
             rt: None,
             control_rate,
+            sample_rate,
+            audio_buffer_len,
         }
     }
 
@@ -124,7 +128,7 @@ impl PaprApp {
         control_rate: Scalar,
     ) {
         let main_graphs = parse_script(
-            include_str!("../test-scripts/test4.papr"),
+            include_str!("../test-scripts/fm.papr"),
             audio_buffer_len,
             sample_rate,
             control_rate,
@@ -181,7 +185,10 @@ impl PaprApp {
             let out_device = host
                 .default_output_device()
                 .expect("PaprApp::init(): failed to find output device");
-            let inner = AudioContext { out_device };
+            let inner = AudioContext {
+                out_device,
+                stream: None,
+            };
             self.audio_cx = Some(inner);
         } else {
             eprintln!("PaprApp::init(): audio context already initialized");
@@ -204,25 +211,25 @@ impl PaprApp {
             .rt
             .take()
             .expect("PaprApp::spawn(): runtime not initialized");
-        let audio_cx = self
+        let mut audio_cx = self
             .audio_cx
             .take()
             .expect("PaprApp::spawn(): audio context not initialized");
 
-        let config = audio_cx.out_device.default_output_config().unwrap();
-        let audio_buffer_len = if let SupportedBufferSize::Range { min, max } = config.buffer_size()
-        {
-            (*max) as usize
-        } else {
-            panic!("PaprApp::spawn(): unknown buffer size not supported")
+        // let config = audio_cx.out_device.default_output_config().unwrap();
+        let config = cpal::StreamConfig {
+            channels: cpal::ChannelCount::from(1u16),
+            sample_rate: cpal::SampleRate(self.sample_rate as u32),
+            buffer_size: cpal::BufferSize::Fixed(self.audio_buffer_len as u32),
         };
+        // let audio_buffer_len = if let SupportedBufferSize::Range { min, max } = config.buffer_size()
         println!("Output device: {}", audio_cx.out_device.name().unwrap());
         println!("Output config: {:?}", config);
         println!("Control rate: {} Hz", self.control_rate);
 
         self.create_graphs(
-            audio_buffer_len,
-            config.sample_rate().0 as Scalar,
+            self.audio_buffer_len,
+            self.sample_rate as Scalar,
             self.control_rate as Scalar,
         );
 
@@ -235,19 +242,8 @@ impl PaprApp {
             .take()
             .expect("PaprApp::spawn(): control graph not initialized");
 
-        match config.sample_format() {
-            cpal::SampleFormat::I8 => audio_cx.run::<i8>(audio_graph),
-            cpal::SampleFormat::I16 => audio_cx.run::<i16>(audio_graph),
-            cpal::SampleFormat::I32 => audio_cx.run::<i32>(audio_graph),
-            cpal::SampleFormat::I64 => audio_cx.run::<i64>(audio_graph),
-            cpal::SampleFormat::U8 => audio_cx.run::<u8>(audio_graph),
-            cpal::SampleFormat::U16 => audio_cx.run::<u16>(audio_graph),
-            cpal::SampleFormat::U32 => audio_cx.run::<u32>(audio_graph),
-            cpal::SampleFormat::U64 => audio_cx.run::<u64>(audio_graph),
-            cpal::SampleFormat::F32 => audio_cx.run::<f32>(audio_graph),
-            cpal::SampleFormat::F64 => audio_cx.run::<f64>(audio_graph),
-            f => panic!("PaprApp::spawn(): unsupported sample format {f:?}"),
-        }
+        audio_cx.run::<f32>(audio_graph, config, self.audio_buffer_len);
+        self.audio_cx = Some(audio_cx);
         let control_rate = self.control_rate;
         std::thread::Builder::new()
             .name("PAPR Control".into())

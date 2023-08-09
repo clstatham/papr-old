@@ -122,16 +122,23 @@ where
             audio_buffer_len = inp.len();
             check
         }));
-
+        let mut inp = FxHashMap::from_iter(
+            inputs
+                .iter()
+                .map(|(name, inp)| (name.to_owned(), Signal::new(0.0))),
+        );
+        let mut out = FxHashMap::from_iter(
+            outputs
+                .iter()
+                .map(|(name, out)| (name.to_owned(), Signal::new(0.0))),
+        );
         for i in 0..audio_buffer_len {
-            let inp =
-                FxHashMap::from_iter(inputs.iter().map(|(name, inp)| (name.to_owned(), inp[i])));
-            let mut out =
-                FxHashMap::from_iter(outputs.iter().map(|(name, out)| (name.to_owned(), out[i])));
-
+            for (name, val) in inp.iter_mut() {
+                *val = inputs[name][i];
+            }
             self.process_sample(i, sample_rate, sibling_node, &inp, &mut out);
-            for (out_name, out_val) in out {
-                outputs.get_mut(&out_name).unwrap()[i] = out_val;
+            for (out_name, out_val) in &out {
+                outputs.get_mut(out_name).unwrap()[i] = *out_val;
             }
         }
     }
