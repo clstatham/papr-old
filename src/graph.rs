@@ -129,16 +129,34 @@ impl<T: SignalType + 'static> Processor<T> for ProcessorType<T>
 where
     Graph<T>: Processor<T>,
 {
-    fn process(
+    fn process_sample(
         &self,
+        buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<T>>,
         outputs: &mut FxHashMap<OutputName, Signal<T>>,
     ) {
         match self {
-            Self::Boxed(p) => p.process(sample_rate, sibling_node, inputs, outputs),
-            Self::Subgraph(p) => p.process(sample_rate, sibling_node, inputs, outputs),
+            Self::Boxed(p) => {
+                p.process_sample(buffer_idx, sample_rate, sibling_node, inputs, outputs)
+            }
+            Self::Subgraph(p) => {
+                p.process_sample(buffer_idx, sample_rate, sibling_node, inputs, outputs)
+            }
+        }
+    }
+
+    fn process_buffer(
+        &self,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Vec<Signal<T>>>,
+        outputs: &mut FxHashMap<OutputName, Vec<Signal<T>>>,
+    ) {
+        match self {
+            Self::Boxed(p) => p.process_buffer(sample_rate, sibling_node, inputs, outputs),
+            Self::Subgraph(p) => p.process_buffer(sample_rate, sibling_node, inputs, outputs),
         }
     }
 
@@ -169,8 +187,8 @@ where
     pub inputs: FxHashMap<InputName, Input<T>>,
     pub outputs: FxHashMap<OutputName, Output>,
     pub processor: ProcessorType<T>,
-    inputs_cache: RwLock<FxHashMap<InputName, Signal<T>>>,
-    outputs_cache: RwLock<FxHashMap<OutputName, Signal<T>>>,
+    inputs_cache: RwLock<FxHashMap<InputName, Vec<Signal<T>>>>,
+    outputs_cache: RwLock<FxHashMap<OutputName, Vec<Signal<T>>>>,
 }
 
 impl<T: SignalType + 'static> Node<T>
@@ -179,6 +197,7 @@ where
 {
     pub fn new(
         name: NodeName,
+        signaltype_buffer_len: usize,
         mut inputs: FxHashMap<InputName, Input<T>>,
         outputs: FxHashMap<OutputName, Output>,
         processor: ProcessorType<T>,
@@ -199,15 +218,21 @@ where
             inputs_cache: RwLock::new(
                 inputs
                     .iter()
-                    .map(|(k, v)| (k.to_owned(), v.default.unwrap_or(Signal::new(0.0))))
+                    .map(|(k, v)| {
+                        (
+                            k.to_owned(),
+                            vec![v.default.unwrap_or(Signal::new(0.0)); signaltype_buffer_len],
+                        )
+                    })
                     .collect(),
             ),
             outputs_cache: RwLock::new(
                 outputs
                     .keys()
-                    .map(|k| (k.to_owned(), Signal::new(0.0)))
+                    .map(|k| (k.to_owned(), vec![Signal::new(0.0); signaltype_buffer_len]))
                     .collect(),
             ),
+
             inputs,
             outputs,
             processor,
@@ -218,6 +243,7 @@ where
     pub fn from_graph(graph: Graph<T>) -> Self {
         Self::new(
             graph.name.clone(),
+            graph.signaltype_buffer_len,
             graph
                 .graph_inputs
                 .iter()
@@ -246,9 +272,11 @@ where
             None,
         )
     }
+}
 
-    pub fn cached_input(&self, inp_name: &InputName) -> Option<Signal<T>> {
-        self.inputs_cache.read().unwrap().get(inp_name).copied()
+impl Node<ControlRate> {
+    pub fn cached_input(&self, inp: &InputName) -> Option<Signal<ControlRate>> {
+        self.inputs_cache.read().unwrap().get(inp).map(|inp| inp[0])
     }
 }
 
@@ -257,6 +285,7 @@ where
     Self: Processor<T>,
 {
     pub name: NodeName,
+    signaltype_buffer_len: usize,
     pub digraph: DiGraph<Arc<Node<T>>, Connection>,
     node_indices_by_name: FxHashMap<NodeName, NodeIndex>,
     pub graph_inputs: Vec<NodeIndex>,
@@ -266,11 +295,13 @@ where
 impl Graph<AudioRate> {
     pub fn new(
         name: Option<NodeName>,
+        audio_buffer_len: usize,
         mut inputs: Vec<Input<AudioRate>>,
         outputs: Vec<Output>,
     ) -> Graph<AudioRate> {
         let mut this = Self {
             name: name.unwrap_or(NodeName("graph".to_owned())),
+            signaltype_buffer_len: audio_buffer_len,
             digraph: DiGraph::new(),
             node_indices_by_name: FxHashMap::default(),
             graph_inputs: Vec::default(),
@@ -285,7 +316,7 @@ impl Graph<AudioRate> {
         };
         inputs.push(t);
         for inp in inputs {
-            let an = GraphInput::create_audio_node(&inp.name.0, inp.clone());
+            let an = GraphInput::create_audio_node(&inp.name.0, audio_buffer_len, inp.clone());
             let idx = this.add_node(an);
             this.node_indices_by_name
                 .insert(NodeName(inp.name.0.to_owned()), idx);
@@ -294,7 +325,7 @@ impl Graph<AudioRate> {
             }
         }
         for out in outputs {
-            let (an, _cn) = GraphOutput::create_nodes(&out.name.0, 0.0);
+            let (an, _cn) = GraphOutput::create_nodes(&out.name.0, audio_buffer_len, 0.0);
             let idx = this.add_node(an);
             this.node_indices_by_name
                 .insert(NodeName(out.name.0.to_owned()), idx);
@@ -313,6 +344,7 @@ impl Graph<ControlRate> {
     ) -> Graph<ControlRate> {
         let mut this = Self {
             name: name.unwrap_or(NodeName("graph".to_owned())),
+            signaltype_buffer_len: 1, // control rate graph doesn't use buffers
             digraph: DiGraph::new(),
             node_indices_by_name: FxHashMap::default(),
             graph_inputs: Vec::default(),
@@ -336,7 +368,7 @@ impl Graph<ControlRate> {
             }
         }
         for out in outputs {
-            let (_an, cn) = GraphOutput::create_nodes(&out.name.0, 0.0);
+            let (_an, cn) = GraphOutput::create_nodes(&out.name.0, 1, 0.0);
             let idx = this.add_node(cn);
             this.node_indices_by_name
                 .insert(NodeName(out.name.0.to_owned()), idx);
@@ -388,8 +420,8 @@ where
     pub fn process_graph(
         &self,
         sample_rate: Scalar,
-        inputs: &FxHashMap<InputName, Signal<T>>,
-        outputs: &mut FxHashMap<OutputName, Signal<T>>,
+        inputs: &FxHashMap<InputName, Vec<Signal<T>>>,
+        outputs: &mut FxHashMap<OutputName, Vec<Signal<T>>>,
     ) {
         // early check for empty graph (nothing to do)
         if self.digraph.node_count() == 0 {
@@ -399,12 +431,13 @@ where
         // copy the provided input values into each input node's input chache
         for (input_name, value) in inputs.iter() {
             let inp_idx = self.node_id_by_name(&input_name.clone().into()).unwrap();
-            *self.digraph[inp_idx]
+            self.digraph[inp_idx]
                 .inputs_cache
                 .write()
                 .unwrap()
                 .get_mut(&InputName::default())
-                .unwrap() = *value;
+                .unwrap()
+                .copy_from_slice(value);
         }
 
         // initialize a breadth-first search starting at the input nodes
@@ -430,37 +463,61 @@ where
             // - copy them to the input cache of the currently visited node
             for edge in self.digraph.edges_directed(node_id, Direction::Incoming) {
                 let out = {
-                    self.digraph[edge.source()].outputs_cache.read().unwrap()
+                    &self.digraph[edge.source()].outputs_cache.read().unwrap()
                         [&edge.weight().source_output]
                 };
-                *self.digraph[node_id]
+                self.digraph[node_id]
                     .inputs_cache
                     .write()
                     .unwrap()
                     .get_mut(&edge.weight().sink_input)
-                    .unwrap() = out;
+                    .unwrap()
+                    .copy_from_slice(&out);
             }
 
             // create a copy of the inputs from the cache (necessary because we mutably borrow `self` in the next step)
-            let mut inps = self.digraph[node_id].inputs_cache.read().unwrap().clone();
+            let mut inps = self.digraph[node_id]
+                .inputs_cache
+                .read()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.to_owned(), v.clone()))
+                .collect::<FxHashMap<_, _>>();
             inps.insert(
                 InputName("t".to_owned()),
-                inputs[&InputName("t".to_owned())],
+                inputs[&InputName("t".to_owned())].clone(),
             );
-            let node = &self.digraph[node_id];
+            let mut outs = self.digraph[node_id]
+                .outputs_cache
+                .read()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.to_owned(), vec![Signal::new(0.0); v.len()]))
+                .collect::<FxHashMap<_, _>>();
             // run the processing logic for this node, which will store its results directly in our output cache
-            node.processor.process(
+
+            self.digraph[node_id].processor.process_buffer(
                 sample_rate,
-                node.sibling_node.as_ref(),
+                self.digraph[node_id].sibling_node.as_ref(),
                 &inps,
-                &mut node.outputs_cache.write().unwrap(),
-            )
+                &mut outs,
+            );
+            for (name, out) in self.digraph[node_id]
+                .outputs_cache
+                .write()
+                .unwrap()
+                .iter_mut()
+            {
+                out.copy_from_slice(&outs[name]);
+            }
         }
 
         // copy the cached (and now updated) output values into the mutable passed outputs
         for (out_name, out) in outputs.iter_mut() {
             let node_idx = self.node_id_by_name(&out_name.clone().into()).unwrap();
-            *out = self.digraph[node_idx].outputs_cache.read().unwrap()[&OutputName::default()];
+            out.copy_from_slice(
+                &self.digraph[node_idx].outputs_cache.read().unwrap()[&OutputName::default()],
+            );
         }
     }
 
@@ -473,12 +530,22 @@ impl<T: SignalType> Processor<T> for Graph<T>
 where
     Self: Send + Sync,
 {
-    fn process(
+    fn process_sample(
+        &self,
+        buffer_idx: usize,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<T>>,
+        outputs: &mut FxHashMap<OutputName, Signal<T>>,
+    ) {
+        unimplemented!()
+    }
+    fn process_buffer(
         &self,
         sample_rate: Scalar,
         _sibling_node: Option<&Arc<<T as SignalType>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<T>>,
-        outputs: &mut FxHashMap<OutputName, Signal<T>>,
+        inputs: &FxHashMap<InputName, Vec<Signal<T>>>,
+        outputs: &mut FxHashMap<OutputName, Vec<Signal<T>>>,
     ) {
         self.process_graph(sample_rate, inputs, outputs)
     }
@@ -488,6 +555,7 @@ where
 macro_rules! dual_graphs {
     {
         $name:literal
+        $audio_buffer_len:expr;
         @in {$($audio_inputs:literal = $ai_default_values:expr)*}
         @out {$($audio_outputs:literal)*}
         #in {$($control_inputs:literal = $ci_default_values:expr)*}
@@ -498,7 +566,7 @@ macro_rules! dual_graphs {
             let c_outs = vec![$(($crate::graph::Output { name: $crate::graph::OutputName($control_outputs.to_owned()) })),*];
             let a_ins = vec![$(($crate::graph::Input::new($audio_inputs, Some($crate::dsp::Signal::new_audio($ai_default_values))))),*];
             let c_ins = vec![$(($crate::graph::Input::new($control_inputs, Some($crate::dsp::Signal::new_control($ci_default_values))))),*];
-            let ag = $crate::graph::Graph::<AudioRate>::new(Some($crate::graph::NodeName($name.to_owned())), a_ins, a_outs);
+            let ag = $crate::graph::Graph::<AudioRate>::new(Some($crate::graph::NodeName($name.to_owned())), $audio_buffer_len, a_ins, a_outs);
             let cg = $crate::graph::Graph::<ControlRate>::new(Some($crate::graph::NodeName($name.to_owned())), c_ins, c_outs);
             (ag, cg)
         }

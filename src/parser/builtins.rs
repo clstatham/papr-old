@@ -36,25 +36,35 @@ pub enum BuiltinNode {
 }
 
 impl BuiltinNode {
-    pub fn create_graphs(&self, name: &str) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+    pub fn create_graphs(
+        &self,
+        name: &str,
+        audio_buffer_len: usize,
+    ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
         match self {
-            Self::Sine => crate::dsp::basic::Sine::create_nodes(name, 0.0),
+            Self::Sine => crate::dsp::basic::Sine::create_nodes(name, audio_buffer_len, 0.0),
             Self::SineOsc { amp, freq, fm_amt } => crate::dsp::generators::SineOsc::create_nodes(
                 name,
+                audio_buffer_len,
                 amp.value(),
                 freq.value(),
                 fm_amt.value(),
             ),
             Self::BlSawOsc { amp, freq } => crate::dsp::generators::BlSawOsc::create_nodes(
                 name,
+                audio_buffer_len,
                 Arc::new(Mutex::new(0.0)),
                 Arc::new(Mutex::new(1.0)),
                 Arc::new(Mutex::new(0.0)),
                 amp.value(),
                 freq.value(),
             ),
-            Self::EventToAudio => crate::dsp::basic::EventToAudio::create_nodes(name, 0.0),
-            Self::MidiToFreq => crate::dsp::midi::MidiToFreq::create_nodes(name, 0.0),
+            Self::EventToAudio => {
+                crate::dsp::basic::EventToAudio::create_nodes(name, audio_buffer_len, 0.0)
+            }
+            Self::MidiToFreq => {
+                crate::dsp::midi::MidiToFreq::create_nodes(name, audio_buffer_len, 0.0)
+            }
         }
     }
 }

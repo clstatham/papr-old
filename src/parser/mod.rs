@@ -143,14 +143,16 @@ pub fn global_const_or_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (Stri
     alt((global_const(), map(float, |f| (f.to_string(), f as Scalar))))
 }
 
-pub fn audio_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
+pub fn audio_binding<'a>(
+    audio_buffer_len: usize,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
     // nom::error::context(
     //     "audio_binding",
     alt((
         map(
             preceded(tag("@"), global_const_or_const()),
-            |(name, num)| {
-                let (an, _cn) = Constant::create_nodes(&name, num as Scalar);
+            move |(name, num)| {
+                let (an, _cn) = Constant::create_nodes(&name, audio_buffer_len, num as Scalar);
                 Binding::AudioConstant(an)
             },
         ),
@@ -204,14 +206,16 @@ pub fn control_input_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Bi
     )
 }
 
-pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
+pub fn control_binding<'a>(
+    audio_buffer_len: usize,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Binding> {
     // nom::error::context(
     //     "control_binding",
     alt((
         map(
             preceded(tag("#"), global_const_or_const()),
-            |(name, num)| {
-                let (_an, cn) = Constant::create_nodes(&name, num as Scalar);
+            move |(name, num)| {
+                let (_an, cn) = Constant::create_nodes(&name, audio_buffer_len, num as Scalar);
                 Binding::ControlConstant(cn)
             },
         ),
@@ -234,6 +238,7 @@ pub fn control_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Binding>
 fn solve_expr(
     super_audio: &mut Graph<AudioRate>,
     super_control: &mut Graph<ControlRate>,
+    ctx: &ParserContext,
     a: &Expr,
     op: BinaryOp,
     b: &Expr,
@@ -305,7 +310,7 @@ fn solve_expr(
         },
         Expr::Expr(a1, a_op, a2) => {
             let (subexpr_is_audio, subexpr_idx_supergraph) =
-                solve_expr(super_audio, super_control, a1, *a_op, a2);
+                solve_expr(super_audio, super_control, ctx, a1, *a_op, a2);
             (
                 subexpr_is_audio,
                 subexpr_idx_supergraph,
@@ -319,16 +324,17 @@ fn solve_expr(
 
     let (mut expr_ag, mut expr_cg) = dual_graphs! {
         "expr"
+        ctx.audio_buffer_len;
         @in { "a" = 0.0 "b" = 0.0 }
         @out { "out" }
         #in { "a" = 0.0 "b" = 0.0 }
         #out { "out" }
     };
     let (op_an, op_cn) = match op {
-        BinaryOp::Add => Add::create_nodes("add", 0.0, 0.0),
-        BinaryOp::Sub => Subtract::create_nodes("sub", 0.0, 0.0),
-        BinaryOp::Mul => Multiply::create_nodes("mul", 0.0, 0.0),
-        BinaryOp::Div => Divide::create_nodes("div", 0.0, 0.0),
+        BinaryOp::Add => Add::create_nodes("add", ctx.audio_buffer_len, 0.0, 0.0),
+        BinaryOp::Sub => Subtract::create_nodes("sub", ctx.audio_buffer_len, 0.0, 0.0),
+        BinaryOp::Mul => Multiply::create_nodes("mul", ctx.audio_buffer_len, 0.0, 0.0),
+        BinaryOp::Div => Divide::create_nodes("div", ctx.audio_buffer_len, 0.0, 0.0),
     };
     let op_an = expr_ag.add_node(op_an);
     let op_cn = expr_cg.add_node(op_cn);
@@ -433,23 +439,27 @@ fn solve_expr(
     }
 }
 
-pub fn expr(inp: &str) -> IResult<&str, Expr> {
+pub fn expr(inp: &str, audio_buffer_len: usize) -> IResult<&str, Expr> {
     alt((
-        map(alt((audio_binding(), control_binding())), |b| {
-            Expr::Binding(b)
-        }),
+        map(
+            alt((
+                audio_binding(audio_buffer_len),
+                control_binding(audio_buffer_len),
+            )),
+            |b| Expr::Binding(b),
+        ),
         map(
             delimited(
                 ignore_garbage(tag("(")),
                 tuple((
-                    ignore_garbage(expr),
+                    ignore_garbage(|a| expr(a, audio_buffer_len)),
                     ignore_garbage(alt((
                         value(BinaryOp::Add, tag("+")),
                         value(BinaryOp::Sub, tag("-")),
                         value(BinaryOp::Mul, tag("*")),
                         value(BinaryOp::Div, tag("/")),
                     ))),
-                    ignore_garbage(expr),
+                    ignore_garbage(|a| expr(a, audio_buffer_len)),
                 )),
                 ignore_garbage(tag(")")),
             ),
@@ -485,19 +495,30 @@ pub fn many_in_braces<'a, O>(
     // )
 }
 
-pub fn connection<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedConnection> {
+pub fn connection<'a>(
+    audio_buffer_len: usize,
+) -> impl FnMut(&'a str) -> IResult<&str, ParsedConnection> {
     map(
         tuple((
             ignore_garbage(alt((
-                map(alt((audio_binding(), control_binding())), |b| vec![b]),
+                map(
+                    alt((
+                        audio_binding(audio_buffer_len),
+                        control_binding(audio_buffer_len),
+                    )),
+                    |b| vec![b],
+                ),
                 delimited(
                     ignore_garbage(tag("[")),
-                    many1(ignore_garbage(alt((audio_binding(), control_binding())))),
+                    many1(ignore_garbage(alt((
+                        audio_binding(audio_buffer_len),
+                        control_binding(audio_buffer_len),
+                    )))),
                     ignore_garbage(tag("]")),
                 ),
             ))),
             tag("<-"),
-            ignore_garbage(expr),
+            ignore_garbage(move |a| expr(a, audio_buffer_len)),
             tag(";"),
         )),
         |(to_inputs, _, xpr, _)| ParsedConnection {
@@ -507,9 +528,9 @@ pub fn connection<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedConnection
     )
 }
 
-pub fn connection_or_let(inp: &str) -> IResult<&str, ConnectionOrLet> {
+pub fn connection_or_let(inp: &str, audio_buffer_len: usize) -> IResult<&str, ConnectionOrLet> {
     alt((
-        map(connection(), ConnectionOrLet::Connection),
+        map(connection(audio_buffer_len), ConnectionOrLet::Connection),
         map(let_statement(), ConnectionOrLet::Let),
     ))(inp)
 }
@@ -523,10 +544,13 @@ pub struct DualGraphs {
 pub struct ParserContext {
     known_node_defs: FxHashMap<NodeName, String>,
     sample_rate: Scalar,
+    audio_buffer_len: usize,
     control_rate: Scalar,
 }
 
-pub fn graph_def<'a>() -> impl FnMut(
+pub fn graph_def<'a>(
+    audio_buffer_len: usize,
+) -> impl FnMut(
     &'a str,
 ) -> IResult<
     &str,
@@ -546,11 +570,11 @@ pub fn graph_def<'a>() -> impl FnMut(
         ignore_garbage(in_braces(ignore_garbage(tuple((
             preceded(
                 ignore_garbage(tag("@in")),
-                many_in_braces(ignore_garbage(audio_binding())),
+                many_in_braces(ignore_garbage(audio_binding(audio_buffer_len))),
             ),
             preceded(
                 ignore_garbage(tag("@out")),
-                many_in_braces(ignore_garbage(audio_binding())),
+                many_in_braces(ignore_garbage(audio_binding(audio_buffer_len))),
             ),
             preceded(
                 ignore_garbage(tag("#in")),
@@ -558,11 +582,13 @@ pub fn graph_def<'a>() -> impl FnMut(
             ),
             preceded(
                 ignore_garbage(tag("#out")),
-                many_in_braces(ignore_garbage(control_binding())),
+                many_in_braces(ignore_garbage(control_binding(audio_buffer_len))),
             ),
             preceded(
                 ignore_garbage(tag("~")),
-                many_in_braces(ignore_garbage(connection_or_let)),
+                many_in_braces(ignore_garbage(move |a| {
+                    connection_or_let(a, audio_buffer_len)
+                })),
             ),
         ))))),
     ))
@@ -573,7 +599,7 @@ pub fn graph_def_instantiation<'a>(
     ctx: &mut ParserContext,
 ) -> IResult<&'a str, DualGraphs> {
     map(
-        graph_def(),
+        graph_def(ctx.audio_buffer_len),
         |(id, (audio_inputs, audio_outputs, control_inputs, control_outputs, connections))| {
             let id = NodeName(id.to_owned());
             let audio_inputs = audio_inputs
@@ -641,6 +667,7 @@ pub fn graph_def_instantiation<'a>(
             );
             let mut ag = Graph::<AudioRate>::new(
                 Some(id.to_owned()),
+                ctx.audio_buffer_len,
                 audio_inputs.clone(),
                 audio_outputs.clone(),
             );
@@ -695,7 +722,7 @@ pub fn graph_def_instantiation<'a>(
                                 }
                             },
                             Expr::Expr(a, op, b) => {
-                                let (is_audio, idx) = solve_expr(&mut ag, &mut cg, a, *op, b);
+                                let (is_audio, idx) = solve_expr(&mut ag, &mut cg, ctx, a, *op, b);
                                 (is_audio, idx, OutputName::default())
                             }
                         };
@@ -761,7 +788,9 @@ pub fn graph_def_instantiation<'a>(
                                     Arc::new(Node::from_graph(control)),
                                 )
                             }
-                            LetRhs::BuiltinNode(node) => node.create_graphs(&pl.ident),
+                            LetRhs::BuiltinNode(node) => {
+                                node.create_graphs(&pl.ident, ctx.audio_buffer_len)
+                            }
                         };
 
                         ag.add_node(an);
@@ -781,22 +810,25 @@ pub fn graph_def_instantiation<'a>(
 
 pub fn parse_script(
     inp: &str,
+    audio_buffer_len: usize,
     sample_rate: Scalar,
     control_rate: Scalar,
 ) -> FxHashMap<NodeName, DualGraphs> {
-    let (garbage, defs) = many1(ignore_garbage(recognize(graph_def())))(inp).unwrap();
+    let (garbage, defs) =
+        many1(ignore_garbage(recognize(graph_def(audio_buffer_len))))(inp).unwrap();
     if !garbage.is_empty() {
         panic!("Parsing error: couldn't recognize `{garbage}` as graph definition");
     }
     let mut out = FxHashMap::default();
     let mut ctx = ParserContext {
         known_node_defs: FxHashMap::default(),
+        audio_buffer_len,
         sample_rate,
         control_rate,
     };
 
     for def in defs {
-        let (_, (id, _)) = ignore_garbage(graph_def())(def).unwrap();
+        let (_, (id, _)) = ignore_garbage(graph_def(audio_buffer_len))(def).unwrap();
         ctx.known_node_defs
             .insert(NodeName(id.to_owned()), def.to_owned());
     }

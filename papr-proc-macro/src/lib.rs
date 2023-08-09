@@ -150,10 +150,11 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
 
         #[allow(unused_variables)]
         impl #struc_name {
-            pub fn create_nodes(name: &str, #args) -> (std::sync::Arc<crate::graph::Node<crate::dsp::AudioRate>>, std::sync::Arc<crate::graph::Node<crate::dsp::ControlRate>>) {
+            pub fn create_nodes(name: &str, audio_buffer_len: usize, #args) -> (std::sync::Arc<crate::graph::Node<crate::dsp::AudioRate>>, std::sync::Arc<crate::graph::Node<crate::dsp::ControlRate>>) {
                 let this = Self { #fields };
                 let cn = std::sync::Arc::new(crate::graph::Node::new(
                     crate::graph::NodeName(name.to_owned()),
+                    1,
                     rustc_hash::FxHashMap::from_iter([#c_ins]),
                     rustc_hash::FxHashMap::from_iter([#c_outs]),
                     crate::graph::ProcessorType::Boxed(Box::new(this.clone())),
@@ -161,6 +162,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
                 ));
                 let an = std::sync::Arc::new(crate::graph::Node::new(
                     crate::graph::NodeName(name.to_owned()),
+                    audio_buffer_len,
                     rustc_hash::FxHashMap::from_iter([#a_ins]),
                     rustc_hash::FxHashMap::from_iter([#a_outs]),
                     crate::graph::ProcessorType::Boxed(Box::new(this)),

@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    FromSample, SizedSample,
+    FromSample, SizedSample, SupportedBufferSize,
 };
 
 use eframe::egui::CentralPanel;
@@ -35,19 +35,21 @@ impl AudioContext {
     {
         let mut out = FxHashMap::default();
         for c in 0..channels {
-            out.insert(OutputName(format!("dac{c}")), Signal::new_audio(0.0));
-        }
-        for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
-            graph.process_graph(
-                sample_rate,
-                &FxHashMap::from_iter([(
-                    InputName("t".to_owned()),
-                    Signal::new(t as Scalar + frame_idx as Scalar / sample_rate),
-                )]),
-                &mut out,
+            out.insert(
+                OutputName(format!("dac{c}")),
+                vec![Signal::new_audio(0.0); output.len() / channels],
             );
+        }
+        let ins = FxHashMap::from_iter([(
+            InputName("t".to_owned()),
+            (0usize..(output.len() / channels))
+                .map(|frame_idx| Signal::new(t as Scalar + frame_idx as Scalar / sample_rate))
+                .collect::<Vec<_>>(),
+        )]);
+        graph.process_graph(sample_rate, &ins, &mut out);
+        for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
             for (c, sample) in frame.iter_mut().enumerate() {
-                *sample = T::from_sample(out[&OutputName(format!("dac{c}"))].value());
+                *sample = T::from_sample(out[&OutputName(format!("dac{c}"))][frame_idx].value());
             }
         }
     }
@@ -115,9 +117,15 @@ impl PaprApp {
         }
     }
 
-    pub fn create_graphs(&mut self, sample_rate: Scalar, control_rate: Scalar) {
+    pub fn create_graphs(
+        &mut self,
+        audio_buffer_len: usize,
+        sample_rate: Scalar,
+        control_rate: Scalar,
+    ) {
         let main_graphs = parse_script(
             include_str!("../test-scripts/test4.papr"),
+            audio_buffer_len,
             sample_rate,
             control_rate,
         )
@@ -132,7 +140,8 @@ impl PaprApp {
         for c_in_idx in control.graph_inputs.clone() {
             let c_in = &control.digraph[c_in_idx];
             let ui_name = c_in.name.0.to_owned();
-            let (an, cn) = UiInput::create_nodes(c_in.inputs[&InputName::default()].clone());
+            let (an, cn) =
+                UiInput::create_nodes(c_in.inputs[&InputName::default()].clone(), audio_buffer_len);
             self.ui_control_inputs.push(cn.clone());
             audio.add_node(an);
             let c_in_ui_idx = control.add_node(cn);
@@ -188,18 +197,6 @@ impl PaprApp {
         } else {
             eprintln!("PaprApp::init(): tokio runtime already initialized");
         }
-
-        self.create_graphs(
-            self.audio_cx
-                .as_ref()
-                .unwrap()
-                .out_device
-                .default_output_config()
-                .unwrap()
-                .sample_rate()
-                .0 as Scalar,
-            self.control_rate as Scalar,
-        );
     }
 
     pub fn spawn(&mut self) {
@@ -211,6 +208,24 @@ impl PaprApp {
             .audio_cx
             .take()
             .expect("PaprApp::spawn(): audio context not initialized");
+
+        let config = audio_cx.out_device.default_output_config().unwrap();
+        let audio_buffer_len = if let SupportedBufferSize::Range { min, max } = config.buffer_size()
+        {
+            (*max) as usize
+        } else {
+            panic!("PaprApp::spawn(): unknown buffer size not supported")
+        };
+        println!("Output device: {}", audio_cx.out_device.name().unwrap());
+        println!("Output config: {:?}", config);
+        println!("Control rate: {} Hz", self.control_rate);
+
+        self.create_graphs(
+            audio_buffer_len,
+            config.sample_rate().0 as Scalar,
+            self.control_rate as Scalar,
+        );
+
         let audio_graph = self
             .audio_graph
             .take()
@@ -219,12 +234,6 @@ impl PaprApp {
             .control_graph
             .take()
             .expect("PaprApp::spawn(): control graph not initialized");
-
-        let config = audio_cx.out_device.default_output_config().unwrap();
-
-        println!("Output device: {}", audio_cx.out_device.name().unwrap());
-        println!("Output config: {:?}", config);
-        println!("Control rate: {} Hz", self.control_rate);
 
         match config.sample_format() {
             cpal::SampleFormat::I8 => audio_cx.run::<i8>(audio_graph),
@@ -250,9 +259,13 @@ impl PaprApp {
                     ));
                     let mut t = 0 as Scalar;
                     loop {
-                        control_graph.process_graph(
+                        control_graph.process_buffer(
                             control_rate,
-                            &FxHashMap::from_iter([(InputName("t".to_owned()), Signal::new(t))]),
+                            None,
+                            &FxHashMap::from_iter([(
+                                InputName("t".to_owned()),
+                                vec![Signal::new(t)],
+                            )]),
                             &mut FxHashMap::default(),
                         );
                         clk.tick().await;

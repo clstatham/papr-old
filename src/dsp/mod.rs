@@ -95,13 +95,46 @@ pub trait Processor<T: SignalType>
 where
     Self: Send + Sync,
 {
-    fn process(
+    fn process_sample(
         &self,
+        buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<T>>,
         outputs: &mut FxHashMap<OutputName, Signal<T>>,
     );
+
+    fn process_buffer(
+        &self,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<T::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Vec<Signal<T>>>,
+        outputs: &mut FxHashMap<OutputName, Vec<Signal<T>>>,
+    ) {
+        let mut audio_buffer_len = inputs.iter().next().unwrap().1.len();
+        assert!(inputs.iter().all(|(_, inp)| {
+            let check = inp.len() == audio_buffer_len;
+            audio_buffer_len = inp.len();
+            check
+        }));
+        assert!(outputs.iter().all(|(_, inp)| {
+            let check = inp.len() == audio_buffer_len;
+            audio_buffer_len = inp.len();
+            check
+        }));
+
+        for i in 0..audio_buffer_len {
+            let inp =
+                FxHashMap::from_iter(inputs.iter().map(|(name, inp)| (name.to_owned(), inp[i])));
+            let mut out =
+                FxHashMap::from_iter(outputs.iter().map(|(name, out)| (name.to_owned(), out[i])));
+
+            self.process_sample(i, sample_rate, sibling_node, &inp, &mut out);
+            for (out_name, out_val) in out {
+                outputs.get_mut(&out_name).unwrap()[i] = out_val;
+            }
+        }
+    }
 
     #[allow(unused_variables)]
     fn ui_update(&self, ui: &mut Ui) {}
