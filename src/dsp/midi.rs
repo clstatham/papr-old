@@ -14,18 +14,18 @@ node_constructor! {
     pub struct MidiToFreq;
     @in {}
     @out {}
-    #in { midi }
-    #out { freq }
+    #in { m }
+    #out { f }
 }
 
 impl Processor<AudioRate> for MidiToFreq {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as SignalType>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as SignalType>::SiblingNode>>,
+        _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        _outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
     }
 }
@@ -33,14 +33,14 @@ impl Processor<AudioRate> for MidiToFreq {
 impl Processor<ControlRate> for MidiToFreq {
     fn process(
         &self,
-        t: Scalar,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as SignalType>::SiblingNode>>,
+        _t: Scalar,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as SignalType>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
-        let midi = inputs[&InputName("midi".to_owned())];
-        *outputs.get_mut(&OutputName("freq".to_owned())).unwrap() =
+        let midi = inputs[&InputName("m".to_owned())];
+        *outputs.get_mut(&OutputName("f".to_owned())).unwrap() =
             ((2.0 as Scalar).powf((midi.value() - 69.0) / 12.0) * 440.0).into();
     }
 }

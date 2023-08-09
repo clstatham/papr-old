@@ -5,10 +5,11 @@ use eframe::egui::Ui;
 
 use crate::{
     graph::{InputName, Node, OutputName},
-    Scalar, PI,
+    Scalar, TAU,
 };
 
 pub mod basic;
+pub mod filters;
 pub mod generators;
 pub mod graph_util;
 pub mod midi;
@@ -118,7 +119,7 @@ pub struct SmoothControlSignal {
 
 impl SmoothControlSignal {
     pub fn new(initial_value: Signal<ControlRate>, filter_time_samples: usize) -> Self {
-        let cosf = 2.0 - Scalar::cos(2.0 * PI * (2.0 / filter_time_samples as Scalar));
+        let cosf = 2.0 - Scalar::cos(TAU * (2.0 / filter_time_samples as Scalar));
         let cb1 = cosf - Scalar::sqrt(cosf * cosf - 1.0);
         let mut this = Self {
             current: initial_value.value(),

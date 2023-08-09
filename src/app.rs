@@ -15,7 +15,7 @@ use crate::{
         AudioRate, ControlRate, Processor, Signal,
     },
     graph::{Connection, Graph, InputName, Node, NodeName, OutputName},
-    parser::{parse_script, GraphPtrs},
+    parser::{parse_script, DualGraphs},
     Scalar,
 };
 
@@ -34,8 +34,8 @@ impl AudioContext {
         T: SizedSample + FromSample<Scalar>,
     {
         let mut out = FxHashMap::default();
-        for i in 0..channels {
-            out.insert(OutputName(format!("dac{i}")), Signal::new_audio(0.0));
+        for c in 0..channels {
+            out.insert(OutputName(format!("dac{c}")), Signal::new_audio(0.0));
         }
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
             graph.process_graph(
@@ -113,11 +113,15 @@ impl PaprApp {
         }
     }
 
-    pub fn create_graphs(&mut self, _n_dacs: usize) {
-        let main_graphs = parse_script(include_str!("../test-scripts/test2.papr"))
-            .remove(&NodeName("main".to_owned()))
-            .unwrap();
-        let GraphPtrs {
+    pub fn create_graphs(&mut self, sample_rate: Scalar, control_rate: Scalar) {
+        let main_graphs = parse_script(
+            include_str!("../test-scripts/test3.papr"),
+            sample_rate,
+            control_rate,
+        )
+        .remove(&NodeName("main".to_owned()))
+        .unwrap();
+        let DualGraphs {
             mut audio,
             name: _,
             mut control,
@@ -190,7 +194,9 @@ impl PaprApp {
                 .out_device
                 .default_output_config()
                 .unwrap()
-                .channels() as usize,
+                .sample_rate()
+                .0 as Scalar,
+            self.control_rate as Scalar,
         );
     }
 

@@ -1,0 +1,17 @@
+graph main {
+    @in {}
+    @out { @dac0 @dac1 }
+    #in {
+        #c_amp(0.0 : 1.0) = 0.5
+        #c_pitch(0 : 100) = 69
+    }
+    #out {}
+    ~ {
+        let sw: sawosc<1.0 440.0>;
+        let sw_mf: m2f;
+        [@dac0 @dac1] <- sw.@out;
+        sw.#amp <- #c_amp;
+        sw_mf.#m <- #c_pitch;
+        sw.#freq <- sw_mf.#f;
+    }
+}

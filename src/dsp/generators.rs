@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     dsp::{AudioRate, ControlRate},
     graph::{InputName, Node, OutputName},
-    node_constructor, Scalar, PI,
+    node_constructor, Scalar, PI, TAU,
 };
 
 use super::{Processor, Signal};
@@ -39,8 +39,7 @@ impl Processor<AudioRate> for SineOsc {
             .unwrap();
         let fm = inputs[&InputName("fm".to_owned())];
         *outputs.get_mut(&OutputName::default()).unwrap() = Signal::new_audio(
-            Scalar::sin(t * PI * 2.0 * freq.value() + fm.value() * PI * 2.0 * fm_amt.value())
-                * amp.value(),
+            Scalar::sin(t * TAU * freq.value() + fm.value() * TAU * fm_amt.value()) * amp.value(),
         );
     }
 }
@@ -53,6 +52,75 @@ impl Processor<ControlRate> for SineOsc {
         _control_node: Option<&Arc<Node<AudioRate>>>,
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+    ) {
+    }
+}
+
+use std::sync::Mutex;
+node_constructor! {
+    pub struct BlSawOsc {
+        p: Arc<Mutex<Scalar>>,
+        /// SET TO 1.0 INITIALLY
+        dp: Arc<Mutex<Scalar>>,
+        saw: Arc<Mutex<Scalar>>,
+    }
+    @in {}
+    @out { out }
+    #in { amp, freq }
+    #out {}
+}
+
+impl Processor<AudioRate> for BlSawOsc {
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+    ) {
+        let sibling_node = sibling_node.as_ref().unwrap();
+        let amp = sibling_node
+            .cached_input(&InputName("amp".to_owned()))
+            .unwrap();
+        let freq = sibling_node
+            .cached_input(&InputName("freq".to_owned()))
+            .unwrap();
+        let mut saw = self.saw.lock().unwrap();
+        let mut p = self.p.lock().unwrap();
+        let mut dp = self.dp.lock().unwrap();
+
+        // algorithm courtesy of https://www.musicdsp.org/en/latest/Synthesis/12-bandlimited-waveforms.html
+
+        let pmax = 0.5 * sample_rate / freq.value();
+        let dc = -0.498 / pmax;
+
+        *p += *dp;
+        if *p < 0.0 {
+            *p = -*p;
+            *dp = -*dp;
+        } else if *p > pmax {
+            *p = pmax + pmax - *p;
+            *dp = -*dp;
+        }
+        let mut x = PI * *p;
+        if x < 0.00001 {
+            x = 0.00001;
+        }
+        *saw = 0.995 * *saw + dc + x.sin() / x;
+
+        *outputs.get_mut(&OutputName::default()).unwrap() = Signal::new_audio(*saw * amp.value());
+    }
+}
+
+impl Processor<ControlRate> for BlSawOsc {
+    fn process(
+        &self,
+        t: Scalar,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
+        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
+        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
     }
 }

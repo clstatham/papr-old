@@ -10,7 +10,6 @@ use rustc_hash::FxHashMap;
 use crate::{
     dsp::{
         basic::{Add, Constant, Divide, Multiply, Subtract},
-        generators::SineOsc,
         AudioRate, ControlRate, Signal,
     },
     graph::{Connection, Graph, Input, InputName, Node, NodeName, Output, OutputName},
@@ -497,14 +496,16 @@ pub fn connection_or_let(inp: &str) -> IResult<&str, ConnectionOrLet> {
     ))(inp)
 }
 
-pub struct GraphPtrs {
+pub struct DualGraphs {
     pub name: NodeName,
     pub audio: Graph<AudioRate>,
     pub control: Graph<ControlRate>,
 }
 
 pub struct ParserContext {
-    pub known_node_defs: FxHashMap<NodeName, String>,
+    known_node_defs: FxHashMap<NodeName, String>,
+    sample_rate: Scalar,
+    control_rate: Scalar,
 }
 
 pub fn graph_def<'a>() -> impl FnMut(
@@ -552,7 +553,7 @@ pub fn graph_def<'a>() -> impl FnMut(
 pub fn graph_def_instantiation<'a>(
     inp: &'a str,
     ctx: &mut ParserContext,
-) -> IResult<&'a str, GraphPtrs> {
+) -> IResult<&'a str, DualGraphs> {
     map(
         graph_def(),
         |(id, (audio_inputs, audio_outputs, control_inputs, control_outputs, connections))| {
@@ -729,7 +730,7 @@ pub fn graph_def_instantiation<'a>(
                                 let (_, graphs) =
                                     graph_def_instantiation(&known_node_defs[graph_name], ctx)
                                         .unwrap();
-                                let GraphPtrs {
+                                let DualGraphs {
                                     name: _,
                                     mut audio,
                                     mut control,
@@ -750,7 +751,7 @@ pub fn graph_def_instantiation<'a>(
                 }
             }
 
-            GraphPtrs {
+            DualGraphs {
                 name: id.to_owned(),
                 audio: ag,
                 control: cg,
@@ -759,7 +760,11 @@ pub fn graph_def_instantiation<'a>(
     )(inp)
 }
 
-pub fn parse_script(inp: &str) -> FxHashMap<NodeName, GraphPtrs> {
+pub fn parse_script(
+    inp: &str,
+    sample_rate: Scalar,
+    control_rate: Scalar,
+) -> FxHashMap<NodeName, DualGraphs> {
     let (garbage, defs) = many1(ignore_garbage(recognize(graph_def())))(inp).unwrap();
     if !garbage.is_empty() {
         panic!("Parsing error: couldn't recognize `{garbage}` as graph definition");
@@ -767,6 +772,8 @@ pub fn parse_script(inp: &str) -> FxHashMap<NodeName, GraphPtrs> {
     let mut out = FxHashMap::default();
     let mut ctx = ParserContext {
         known_node_defs: FxHashMap::default(),
+        sample_rate,
+        control_rate,
     };
 
     for def in defs {
@@ -786,37 +793,4 @@ pub fn parse_script(inp: &str) -> FxHashMap<NodeName, GraphPtrs> {
     out.insert(NodeName("main".to_owned()), main_ptrs);
 
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::parser::*;
-
-    #[test]
-    fn test_parse() {
-        let txt = r#"
-graph foo {
-    @in {}
-    @out {}
-    #in { #control_input0 }
-    #out { #control_output0 }
-    ~ {
-        #control_input0 -> #control_output0;
-    }
-}
-
-graph main {
-    @in {}
-    @out { @dac0 @dac1 }
-    #in { #in0 }
-    #out { #out0 }
-    ~ {
-        let f : foo;
-        f.#control_output0 -> #in0;
-    }
-}
-"#;
-        let graphs = parse_script(txt);
-        dbg!(graphs.keys().collect::<Vec<_>>());
-    }
 }

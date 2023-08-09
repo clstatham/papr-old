@@ -138,13 +138,19 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         })
         .collect::<Punctuated<_, Comma>>();
 
+    let args = if fields_args.is_empty() {
+        quote! { #control_inputs_args }
+    } else {
+        quote! { #fields_args, #control_inputs_args }
+    };
+
     quote! {
         #[derive(Clone)]
         #struc
 
         #[allow(unused_variables)]
         impl #struc_name {
-            pub fn create_nodes(name: &str, #fields_args #control_inputs_args) -> (std::sync::Arc<crate::graph::Node<crate::dsp::AudioRate>>, std::sync::Arc<crate::graph::Node<crate::dsp::ControlRate>>) {
+            pub fn create_nodes(name: &str, #args) -> (std::sync::Arc<crate::graph::Node<crate::dsp::AudioRate>>, std::sync::Arc<crate::graph::Node<crate::dsp::ControlRate>>) {
                 let this = Self { #fields };
                 let cn = std::sync::Arc::new(crate::graph::Node::new(
                     crate::graph::NodeName(name.to_owned()),

@@ -1,7 +1,7 @@
 use nom::{
     bytes::complete::*, combinator::*, multi::*, number::complete::float, sequence::*, IResult,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     dsp::{AudioRate, ControlRate, Signal},
@@ -17,6 +17,10 @@ pub enum BuiltinNode {
         freq: Signal<ControlRate>,
         fm_amt: Signal<ControlRate>,
     },
+    BlSawOsc {
+        amp: Signal<ControlRate>,
+        freq: Signal<ControlRate>,
+    },
     MidiToFreq,
 }
 
@@ -28,6 +32,14 @@ impl BuiltinNode {
                 amp.value(),
                 freq.value(),
                 fm_amt.value(),
+            ),
+            Self::BlSawOsc { amp, freq } => crate::dsp::generators::BlSawOsc::create_nodes(
+                name,
+                Arc::new(Mutex::new(0.0)),
+                Arc::new(Mutex::new(1.0)),
+                Arc::new(Mutex::new(0.0)),
+                amp.value(),
+                freq.value(),
             ),
             Self::MidiToFreq => crate::dsp::midi::MidiToFreq::create_nodes(name, 0.0),
         }
@@ -58,6 +70,13 @@ pub fn let_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedLet> {
                         amp: Signal::new_control(defaults[0] as Scalar),
                         freq: Signal::new_control(defaults[1] as Scalar),
                         fm_amt: Signal::new_control(defaults[2] as Scalar),
+                    })
+                }
+                "sawosc" => {
+                    let defaults = control_input_defaults.unwrap();
+                    LetRhs::BuiltinNode(BuiltinNode::BlSawOsc {
+                        amp: Signal::new_control(defaults[0] as Scalar),
+                        freq: Signal::new_control(defaults[1] as Scalar),
                     })
                 }
                 "m2f" => LetRhs::BuiltinNode(BuiltinNode::MidiToFreq),
