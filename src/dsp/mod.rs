@@ -14,7 +14,7 @@ pub mod generators;
 pub mod graph_util;
 pub mod midi;
 
-pub trait SignalType
+pub trait SignalRate
 where
     Self: Copy,
 {
@@ -25,17 +25,17 @@ where
 pub struct AudioRate;
 #[derive(Clone, Copy)]
 pub struct ControlRate;
-impl SignalType for AudioRate {
+impl SignalRate for AudioRate {
     type SiblingNode = Node<ControlRate>;
 }
-impl SignalType for ControlRate {
+impl SignalRate for ControlRate {
     type SiblingNode = Node<AudioRate>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Signal<T: SignalType>(Scalar, PhantomData<T>);
+pub struct Signal<T: SignalRate>(Scalar, PhantomData<T>);
 
-impl<T: SignalType> Signal<T> {
+impl<T: SignalRate> Signal<T> {
     pub const fn new(val: Scalar) -> Self {
         Self(val, PhantomData)
     }
@@ -57,41 +57,41 @@ impl Signal<AudioRate> {
     }
 }
 
-impl<T: SignalType> From<Scalar> for Signal<T> {
+impl<T: SignalRate> From<Scalar> for Signal<T> {
     fn from(value: Scalar) -> Self {
         Self::new(value)
     }
 }
 
-impl<T: SignalType> std::ops::Add<Self> for Signal<T> {
+impl<T: SignalRate> std::ops::Add<Self> for Signal<T> {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Self::new(self.value() + rhs.value())
     }
 }
 
-impl<T: SignalType> std::ops::Sub<Self> for Signal<T> {
+impl<T: SignalRate> std::ops::Sub<Self> for Signal<T> {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Self::new(self.value() - rhs.value())
     }
 }
 
-impl<T: SignalType> std::ops::Mul<Self> for Signal<T> {
+impl<T: SignalRate> std::ops::Mul<Self> for Signal<T> {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
         Self::new(self.value() * rhs.value())
     }
 }
 
-impl<T: SignalType> std::ops::Div<Self> for Signal<T> {
+impl<T: SignalRate> std::ops::Div<Self> for Signal<T> {
     type Output = Self;
     fn div(self, rhs: Self) -> Self::Output {
         Self::new(self.value() / rhs.value())
     }
 }
 
-pub trait Processor<T: SignalType>
+pub trait Processor<T: SignalRate>
 where
     Self: Send + Sync,
 {

@@ -8,7 +8,7 @@ use crate::{
     Scalar,
 };
 
-use super::{AudioRate, ControlRate, Processor, Signal, SignalType};
+use super::{AudioRate, ControlRate, Processor, Signal, SignalRate};
 
 node_constructor! {
     pub struct MidiToFreq;
@@ -23,7 +23,7 @@ impl Processor<AudioRate> for MidiToFreq {
         &self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<AudioRate as SignalRate>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         _outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
@@ -35,12 +35,12 @@ impl Processor<ControlRate> for MidiToFreq {
         &self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<ControlRate as SignalRate>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
-        let midi = inputs[&InputName("m".to_owned())];
-        *outputs.get_mut(&OutputName("f".to_owned())).unwrap() =
+        let midi = inputs[&InputName::new("m")];
+        *outputs.get_mut(&OutputName::new("f")).unwrap() =
             ((2.0 as Scalar).powf((midi.value() - 69.0) / 12.0) * 440.0).into();
     }
 }

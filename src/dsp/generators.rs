@@ -29,16 +29,16 @@ impl Processor<AudioRate> for SineOsc {
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
         let amp = sibling_node
-            .cached_input(&InputName("amp".to_owned()))
+            .cached_input(&InputName::new("amp"))
             .unwrap();
         let freq = sibling_node
-            .cached_input(&InputName("freq".to_owned()))
+            .cached_input(&InputName::new("freq"))
             .unwrap();
         let fm_amt = sibling_node
-            .cached_input(&InputName("fm_amt".to_owned()))
+            .cached_input(&InputName::new("fm_amt"))
             .unwrap();
-        let t = inputs[&InputName("t".to_owned())].value();
-        let fm = inputs[&InputName("fm".to_owned())];
+        let t = inputs[&InputName::new("t")].value();
+        let fm = inputs[&InputName::new("fm")];
         *outputs.get_mut(&OutputName::default()).unwrap() = Signal::new_audio(
             Scalar::sin(t * TAU * freq.value() + fm.value() * TAU * fm_amt.value()) * amp.value(),
         );
@@ -75,16 +75,16 @@ impl Processor<AudioRate> for BlSawOsc {
         &self,
         _buffer_idx: usize,
         sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as super::SignalType>::SiblingNode>>,
+        sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
         let amp = sibling_node
-            .cached_input(&InputName("amp".to_owned()))
+            .cached_input(&InputName::new("amp"))
             .unwrap();
         let freq = sibling_node
-            .cached_input(&InputName("freq".to_owned()))
+            .cached_input(&InputName::new("freq"))
             .unwrap();
         let mut saw = self.saw.lock().unwrap();
         let mut p = self.p.lock().unwrap();
@@ -118,7 +118,7 @@ impl Processor<ControlRate> for BlSawOsc {
         &self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
         _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {

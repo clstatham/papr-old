@@ -19,7 +19,7 @@ impl GraphInput {
         for_input: Input<AudioRate>,
     ) -> Arc<Node<AudioRate>> {
         Arc::new(Node::new(
-            NodeName(name.to_owned()),
+            NodeName::new(name),
             audio_buffer_len,
             FxHashMap::from_iter([(InputName::default(), for_input)]),
             FxHashMap::from_iter([(
@@ -38,7 +38,7 @@ impl GraphInput {
         for_input: Input<ControlRate>,
     ) -> Arc<Node<ControlRate>> {
         Arc::new(Node::new(
-            NodeName(name.to_owned()),
+            NodeName::new(name),
             1,
             FxHashMap::from_iter([(InputName::default(), for_input)]),
             FxHashMap::from_iter([(
@@ -71,7 +71,7 @@ impl Processor<ControlRate> for GraphInput {
         &self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {
@@ -105,7 +105,7 @@ impl Processor<ControlRate> for GraphOutput {
         &self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalType>::SiblingNode>>,
+        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
         inputs: &FxHashMap<InputName, Signal<ControlRate>>,
         outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
     ) {

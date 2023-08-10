@@ -105,7 +105,7 @@ pub fn let_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedLet> {
                 }
                 "e2a" => LetRhs::BuiltinNode(BuiltinNode::EventToAudio),
                 "m2f" => LetRhs::BuiltinNode(BuiltinNode::MidiToFreq),
-                _ => LetRhs::ScriptGraph(NodeName(graph_name.to_owned())),
+                _ => LetRhs::ScriptGraph(NodeName::new(graph_name)),
             },
         },
     )

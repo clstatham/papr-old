@@ -102,8 +102,8 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .iter()
         .map(|out| {
             quote! {(
-                crate::graph::OutputName(stringify!(#out).to_owned()),
-                crate::graph::Output { name: crate::graph::OutputName(stringify!(#out).to_owned()) }
+                crate::graph::OutputName::new(stringify!(#out)),
+                crate::graph::Output { name: crate::graph::OutputName::new(stringify!(#out)) }
             )}
         })
         .collect::<Punctuated<_, Comma>>();
@@ -112,8 +112,8 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .iter()
         .map(|out| {
             quote! {(
-                crate::graph::OutputName(stringify!(#out).to_owned()),
-                crate::graph::Output { name: crate::graph::OutputName(stringify!(#out).to_owned()) }
+                crate::graph::OutputName::new(stringify!(#out)),
+                crate::graph::Output { name: crate::graph::OutputName::new(stringify!(#out)) }
             )}
         })
         .collect::<Punctuated<_, Comma>>();
@@ -122,7 +122,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .iter()
         .map(|inp| {
             quote! {(
-                crate::graph::InputName(stringify!(#inp).to_owned()),
+                crate::graph::InputName::new(stringify!(#inp)),
                 crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new(0.0))),
             )}
         })
@@ -132,7 +132,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .iter()
         .map(|inp| {
             quote! {(
-                crate::graph::InputName(stringify!(#inp).to_owned()),
+                crate::graph::InputName::new(stringify!(#inp)),
                 crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new(0.0))),
             )}
         })
@@ -153,7 +153,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
             pub fn create_nodes(name: &str, audio_buffer_len: usize, #args) -> (std::sync::Arc<crate::graph::Node<crate::dsp::AudioRate>>, std::sync::Arc<crate::graph::Node<crate::dsp::ControlRate>>) {
                 let this = Self { #fields };
                 let cn = std::sync::Arc::new(crate::graph::Node::new(
-                    crate::graph::NodeName(name.to_owned()),
+                    crate::graph::NodeName::new(name),
                     1,
                     rustc_hash::FxHashMap::from_iter([#c_ins]),
                     rustc_hash::FxHashMap::from_iter([#c_outs]),
@@ -161,7 +161,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
                     None,
                 ));
                 let an = std::sync::Arc::new(crate::graph::Node::new(
-                    crate::graph::NodeName(name.to_owned()),
+                    crate::graph::NodeName::new(name),
                     audio_buffer_len,
                     rustc_hash::FxHashMap::from_iter([#a_ins]),
                     rustc_hash::FxHashMap::from_iter([#a_outs]),
