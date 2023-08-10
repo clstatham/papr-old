@@ -139,32 +139,36 @@ impl PaprApp {
         } = main_graphs;
 
         for c_in_idx in control.graph_inputs.clone() {
-            let c_in = &control.nodes[c_in_idx];
+            let c_in = &control.digraph[c_in_idx];
             let ui_name: String = c_in.name.to_owned().into();
             let (an, cn) =
                 UiInput::create_nodes(c_in.inputs[&InputName::default()].clone(), audio_buffer_len);
             self.ui_control_inputs.push(cn.clone());
             audio.add_node(an);
             let c_in_ui_idx = control.add_node(cn);
-            control.add_edge(Connection {
-                from: c_in_ui_idx,
-                to: c_in_idx,
-                from_output: OutputName::new(&ui_name),
-                to_input: InputName::default(),
-            });
+            control.add_edge(
+                c_in_ui_idx,
+                c_in_idx,
+                Connection {
+                    source_output: OutputName::new(&ui_name),
+                    sink_input: InputName::default(),
+                },
+            );
         }
 
         for c_out_idx in control.graph_outputs.clone() {
-            let c_out = &control.nodes[c_out_idx];
+            let c_out = &control.digraph[c_out_idx];
             let dbg_name = format!("{}_dbg", &c_out.name);
             let (_an, cn) = DebugNode::create_nodes(dbg_name.to_owned());
             let debug0_cn = control.add_node(cn);
-            control.add_edge(Connection {
-                from: c_out_idx,
-                to: debug0_cn,
-                from_output: OutputName::default(),
-                to_input: InputName::default(),
-            });
+            control.add_edge(
+                c_out_idx,
+                debug0_cn,
+                Connection {
+                    source_output: OutputName::default(),
+                    sink_input: InputName::default(),
+                },
+            );
         }
 
         self.audio_graph = Some(audio);

@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-// use petgraph::prelude::*;
+use petgraph::prelude::*;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -14,9 +14,6 @@ use crate::{
     },
     Scalar,
 };
-
-pub type NodeIndex = usize;
-pub type EdgeIndex = usize;
 
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, derive_more::Display, derive_more::Into, derive_more::From,
@@ -107,10 +104,8 @@ impl From<NodeName> for OutputName {
 
 #[derive(Clone, Debug)]
 pub struct Connection {
-    pub from: NodeIndex,
-    pub from_output: OutputName,
-    pub to: NodeIndex,
-    pub to_input: InputName,
+    pub source_output: OutputName,
+    pub sink_input: InputName,
 }
 
 #[derive(Clone)]
@@ -240,7 +235,6 @@ where
     Graph<T>: Processor<T>,
 {
     pub name: NodeName,
-    pub id: Option<NodeIndex>,
     pub sibling_node: Option<Arc<T::SiblingNode>>,
     pub inputs: FxHashMap<InputName, Input<T>>,
     pub outputs: FxHashMap<OutputName, Output>,
@@ -273,7 +267,6 @@ where
         );
         Self {
             name,
-            id: None,
             inputs_cache: RwLock::new(
                 inputs
                     .iter()
@@ -307,7 +300,7 @@ where
                 .graph_inputs
                 .iter()
                 .map(|idx| {
-                    let node = &graph.nodes[*idx];
+                    let node = &graph.digraph[*idx];
                     (
                         InputName::new(&node.name.0.to_owned()),
                         Input::new(&node.name.0, node.inputs[&InputName::default()].default),
@@ -318,7 +311,7 @@ where
                 .graph_outputs
                 .iter()
                 .map(|idx| {
-                    let node = &graph.nodes[*idx];
+                    let node = &graph.digraph[*idx];
                     (
                         node.name.clone().into(),
                         Output {
@@ -345,10 +338,7 @@ where
 {
     pub name: NodeName,
     signaltype_buffer_len: usize,
-    pub nodes: Vec<Arc<Node<T>>>,
-    pub connections: Vec<Connection>,
-    outgoing_connections: Vec<Vec<EdgeIndex>>,
-    incoming_connections: Vec<Vec<EdgeIndex>>,
+    pub digraph: DiGraph<Arc<Node<T>>, Connection>,
     node_indices_by_name: FxHashMap<NodeName, NodeIndex>,
     pub graph_inputs: Vec<NodeIndex>,
     pub graph_outputs: Vec<NodeIndex>,
@@ -364,11 +354,8 @@ impl Graph<AudioRate> {
     ) -> Graph<AudioRate> {
         let mut this = Self {
             name: name.unwrap_or(NodeName::new("graph")),
-            nodes: Vec::default(),
-            connections: Vec::default(),
-            outgoing_connections: Vec::default(),
-            incoming_connections: Vec::default(),
             signaltype_buffer_len: audio_buffer_len,
+            digraph: DiGraph::new(),
             node_indices_by_name: FxHashMap::default(),
             graph_inputs: Vec::default(),
             graph_outputs: Vec::default(),
@@ -411,11 +398,8 @@ impl Graph<ControlRate> {
     ) -> Graph<ControlRate> {
         let mut this = Self {
             name: name.unwrap_or(NodeName::new("graph")),
-            nodes: Vec::default(),
-            connections: Vec::default(),
-            outgoing_connections: Vec::default(),
-            incoming_connections: Vec::default(),
             signaltype_buffer_len: 1, // control rate graph doesn't use buffers
+            digraph: DiGraph::new(),
             node_indices_by_name: FxHashMap::default(),
             graph_inputs: Vec::default(),
             graph_outputs: Vec::default(),
@@ -456,49 +440,39 @@ where
 {
     pub fn add_node(&mut self, node: Arc<Node<T>>) -> NodeIndex {
         let name = node.name.to_owned();
-        let idx = self.nodes.len();
-        self.nodes.push(node);
-        self.outgoing_connections.push(Vec::new());
-        self.incoming_connections.push(Vec::new());
+        let idx = self.digraph.add_node(node);
         self.node_indices_by_name.insert(name, idx);
         self.repartition();
         idx
     }
 
-    pub fn add_edge(&mut self, connection: Connection) -> EdgeIndex {
+    pub fn add_edge(
+        &mut self,
+        source: NodeIndex,
+        sink: NodeIndex,
+        connection: Connection,
+    ) -> EdgeIndex {
         assert!(
-            self.nodes[connection.from]
+            self.digraph[source]
                 .outputs
-                .contains_key(&connection.from_output),
+                .contains_key(&connection.source_output),
             "Graph::add_edge(): No output named `{}` on node",
-            &connection.from_output.0
+            &connection.source_output.0
         );
         assert!(
-            self.nodes[connection.to]
+            self.digraph[sink]
                 .inputs
-                .contains_key(&connection.to_input),
+                .contains_key(&connection.sink_input),
             "Graph::add_edge(): No input named `{}` on node",
-            &connection.from_output.0
+            &connection.source_output.0
         );
-        let idx = self.connections.len();
-        self.outgoing_connections[connection.from].push(idx);
-        self.incoming_connections[connection.to].push(idx);
-        self.connections.push(connection);
-        idx
-    }
-
-    pub fn incoming_externals(&self) -> impl Iterator<Item = NodeIndex> + '_ {
-        self.nodes
-            .iter()
-            .enumerate()
-            .map(|(i, _)| i)
-            .filter(|i| self.incoming_connections[*i].is_empty())
+        self.digraph.add_edge(source, sink, connection)
     }
 
     fn repartition(&mut self) {
         self.partitions.clear();
 
-        let starts = self.incoming_externals();
+        let starts = self.digraph.externals(Direction::Incoming);
         let mut bfs_stack = VecDeque::new();
         let mut bfs_visited = FxHashSet::default();
         if let Some(id) = self.node_id_by_name(&NodeName::new("t")) {
@@ -522,15 +496,15 @@ where
             while let Some(node) = bfs_stack.pop_front() {
                 if !bfs_visited.contains(&node) {
                     bfs_visited.insert(node);
-                    for edge in self.outgoing_connections[node].iter() {
-                        let edge = &self.connections[*edge];
-                        if !next_layer.contains(&edge.to)
-                            && !bfs_visited.contains(&edge.to)
-                            && self.incoming_connections[node]
-                                .iter()
-                                .all(|edge| bfs_visited.contains(&self.connections[*edge].from))
+                    for edge in self.digraph.edges_directed(node, Direction::Outgoing) {
+                        if !next_layer.contains(&edge.target())
+                            && !bfs_visited.contains(&edge.target())
+                            && self
+                                .digraph
+                                .edges_directed(node, Direction::Incoming)
+                                .all(|edge| bfs_visited.contains(&edge.source()))
                         {
-                            next_layer.push(edge.to);
+                            next_layer.push(edge.target());
                         }
                     }
                 }
@@ -556,14 +530,14 @@ where
         outputs: &mut FxHashMap<OutputName, Vec<Signal<T>>>,
     ) {
         // early check for empty graph (nothing to do)
-        if self.nodes.is_empty() {
+        if self.digraph.node_count() == 0 {
             return;
         }
 
         // copy the provided input values into each input node's input chache
         for (input_name, value) in inputs.iter() {
             let inp_idx = self.node_id_by_name(&input_name.clone().into()).unwrap();
-            self.nodes[inp_idx]
+            self.digraph[inp_idx]
                 .inputs_cache
                 .write()
                 .unwrap()
@@ -579,29 +553,33 @@ where
                 // for each incoming connection into the visited node:
                 // - grab the cached outputs from earlier in the graph
                 // - copy them to the input cache of the currently visited node
-                for edge in self.incoming_connections[node_id].iter() {
-                    let edge = &self.connections[*edge];
-                    let out =
-                        { &self.nodes[edge.from].outputs_cache.read().unwrap()[&edge.from_output] };
-                    self.nodes[node_id]
+                for edge in self.digraph.edges_directed(node_id, Direction::Incoming) {
+                    let out = {
+                        &self.digraph[edge.source()].outputs_cache.read().unwrap()
+                            [&edge.weight().source_output]
+                    };
+                    self.digraph[node_id]
                         .inputs_cache
                         .write()
                         .unwrap()
-                        .get_mut(&edge.to_input)
+                        .get_mut(&edge.weight().sink_input)
                         .unwrap()
                         .copy_from_slice(out);
                 }
 
                 // create a copy of the inputs from the cache (necessary because we mutably borrow `self` in the next step)
-                let mut inps = self.nodes[node_id]
+                let mut inps = self.digraph[node_id]
                     .inputs_cache
                     .read()
                     .unwrap()
                     .iter()
                     .map(|(k, v)| (k.to_owned(), v.clone()))
                     .collect::<FxHashMap<_, _>>();
-                inps.insert(InputName::new("t"), inputs[&InputName::new("t")].clone());
-                let mut outs = self.nodes[node_id]
+                inps.insert(
+                    InputName::new("t"),
+                    inputs[&InputName::new("t")].clone(),
+                );
+                let mut outs = self.digraph[node_id]
                     .outputs_cache
                     .read()
                     .unwrap()
@@ -610,13 +588,13 @@ where
                     .collect::<FxHashMap<_, _>>();
                 // run the processing logic for this node, which will store its results directly in our output cache
 
-                self.nodes[node_id].processor.process_buffer(
+                self.digraph[node_id].processor.process_buffer(
                     sample_rate,
-                    self.nodes[node_id].sibling_node.as_ref(),
+                    self.digraph[node_id].sibling_node.as_ref(),
                     &inps,
                     &mut outs,
                 );
-                for (name, out) in self.nodes[node_id]
+                for (name, out) in self.digraph[node_id]
                     .outputs_cache
                     .write()
                     .unwrap()
@@ -631,7 +609,7 @@ where
         for (out_name, out) in outputs.iter_mut() {
             let node_idx = self.node_id_by_name(&out_name.clone().into()).unwrap();
             out.copy_from_slice(
-                &self.nodes[node_idx].outputs_cache.read().unwrap()[&OutputName::default()],
+                &self.digraph[node_idx].outputs_cache.read().unwrap()[&OutputName::default()],
             );
         }
     }
