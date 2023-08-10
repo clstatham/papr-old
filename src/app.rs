@@ -27,7 +27,7 @@ pub struct AudioContext {
 impl AudioContext {
     fn write_data<T>(
         sample_rate: Scalar,
-        graph: &Arc<Graph<AudioRate>>,
+        graph: &Graph<AudioRate>,
         output: &mut [T],
         channels: usize,
         buffer_len: usize,
@@ -60,12 +60,8 @@ impl AudioContext {
         }
     }
 
-    pub fn run<T>(
-        &mut self,
-        graph: Arc<Graph<AudioRate>>,
-        config: cpal::StreamConfig,
-        buffer_len: usize,
-    ) where
+    pub fn run<T>(&mut self, graph: Graph<AudioRate>, config: cpal::StreamConfig, buffer_len: usize)
+    where
         T: SizedSample + FromSample<Scalar>,
     {
         let mut sample_clock = 0 as Scalar;
@@ -99,8 +95,8 @@ impl AudioContext {
 
 pub struct PaprApp {
     audio_cx: Option<AudioContext>,
-    audio_graph: Option<Arc<Graph<AudioRate>>>,
-    control_graph: Option<Arc<Graph<ControlRate>>>,
+    audio_graph: Option<Graph<AudioRate>>,
+    control_graph: Option<Graph<ControlRate>>,
     ui_control_inputs: Vec<Arc<Node<ControlRate>>>,
     rt: Option<Runtime>,
     sample_rate: Scalar,
@@ -129,7 +125,7 @@ impl PaprApp {
         control_rate: Scalar,
     ) {
         let main_graphs = parse_script(
-            include_str!("../test-scripts/fm.papr"),
+            include_str!("../test-scripts/test4.papr"),
             audio_buffer_len,
             sample_rate,
             control_rate,
@@ -171,8 +167,8 @@ impl PaprApp {
             });
         }
 
-        self.audio_graph = Some(Arc::new(audio));
-        self.control_graph = Some(Arc::new(control));
+        self.audio_graph = Some(audio);
+        self.control_graph = Some(control);
     }
 
     pub fn init(&mut self) {
