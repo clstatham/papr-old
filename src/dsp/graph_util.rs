@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate},
-    graph::{Input, InputName, Node, NodeName, Output, OutputName},
+    graph::{Input, Node, NodeName, Output},
     node_constructor, Scalar,
 };
 
@@ -21,11 +21,11 @@ impl GraphInput {
         Arc::new(Node::new(
             NodeName::new(name),
             audio_buffer_len,
-            FxHashMap::from_iter([(InputName::default(), for_input)]),
+            FxHashMap::from_iter([("input".to_owned(), for_input)]),
             FxHashMap::from_iter([(
-                OutputName::default(),
+                "out".to_owned(),
                 Output {
-                    name: OutputName::default(),
+                    name: "out".to_owned(),
                 },
             )]),
             crate::graph::ProcessorType::Boxed(Box::new(Self)),
@@ -40,11 +40,11 @@ impl GraphInput {
         Arc::new(Node::new(
             NodeName::new(name),
             1,
-            FxHashMap::from_iter([(InputName::default(), for_input)]),
+            FxHashMap::from_iter([("input".to_owned(), for_input)]),
             FxHashMap::from_iter([(
-                OutputName::default(),
+                "out".to_owned(),
                 Output {
-                    name: OutputName::default(),
+                    name: "out".to_owned(),
                 },
             )]),
             crate::graph::ProcessorType::Boxed(Box::new(Self)),
@@ -59,10 +59,10 @@ impl Processor<AudioRate> for GraphInput {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+        inputs: &FxHashMap<&str, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
     ) {
-        *outputs.get_mut(&OutputName::default()).unwrap() = inputs[&InputName::default()];
+        *outputs.get_mut("out").unwrap() = inputs["input"];
     }
 }
 
@@ -72,10 +72,10 @@ impl Processor<ControlRate> for GraphInput {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+        inputs: &FxHashMap<&str, Signal<ControlRate>>,
+        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
     ) {
-        *outputs.get_mut(&OutputName::default()).unwrap() = inputs[&InputName::default()];
+        *outputs.get_mut("out").unwrap() = inputs["input"];
     }
 }
 
@@ -93,10 +93,10 @@ impl Processor<AudioRate> for GraphOutput {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+        inputs: &FxHashMap<&str, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
     ) {
-        *outputs.get_mut(&OutputName::default()).unwrap() = inputs[&InputName::default()];
+        *outputs.get_mut("out").unwrap() = inputs["input"];
     }
 }
 
@@ -106,9 +106,9 @@ impl Processor<ControlRate> for GraphOutput {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+        inputs: &FxHashMap<&str, Signal<ControlRate>>,
+        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
     ) {
-        *outputs.get_mut(&OutputName::default()).unwrap() = inputs[&InputName::default()];
+        *outputs.get_mut("out").unwrap() = inputs["input"];
     }
 }

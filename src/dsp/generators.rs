@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate},
-    graph::{InputName, Node, OutputName},
+    graph::Node,
     node_constructor, Scalar, PI, TAU,
 };
 
@@ -24,22 +24,16 @@ impl Processor<AudioRate> for SineOsc {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         sibling_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &FxHashMap<InputName, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+        inputs: &FxHashMap<&str, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
-        let amp = sibling_node
-            .cached_input(&InputName::new("amp"))
-            .unwrap();
-        let freq = sibling_node
-            .cached_input(&InputName::new("freq"))
-            .unwrap();
-        let fm_amt = sibling_node
-            .cached_input(&InputName::new("fm_amt"))
-            .unwrap();
-        let t = inputs[&InputName::new("t")].value();
-        let fm = inputs[&InputName::new("fm")];
-        *outputs.get_mut(&OutputName::default()).unwrap() = Signal::new_audio(
+        let amp = sibling_node.cached_input("amp").unwrap();
+        let freq = sibling_node.cached_input("freq").unwrap();
+        let fm_amt = sibling_node.cached_input("fm_amt").unwrap();
+        let t = inputs["t"].value();
+        let fm = inputs["fm"];
+        *outputs.get_mut("out").unwrap() = Signal::new_audio(
             Scalar::sin(t * TAU * freq.value() + fm.value() * TAU * fm_amt.value()) * amp.value(),
         );
     }
@@ -51,8 +45,8 @@ impl Processor<ControlRate> for SineOsc {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
-        _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
-        _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+        _inputs: &FxHashMap<&str, Signal<ControlRate>>,
+        _outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
     ) {
     }
 }
@@ -76,16 +70,12 @@ impl Processor<AudioRate> for BlSawOsc {
         _buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<InputName, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<OutputName, Signal<AudioRate>>,
+        _inputs: &FxHashMap<&str, Signal<AudioRate>>,
+        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
-        let amp = sibling_node
-            .cached_input(&InputName::new("amp"))
-            .unwrap();
-        let freq = sibling_node
-            .cached_input(&InputName::new("freq"))
-            .unwrap();
+        let amp = sibling_node.cached_input("amp").unwrap();
+        let freq = sibling_node.cached_input("freq").unwrap();
         let mut saw = self.saw.lock().unwrap();
         let mut p = self.p.lock().unwrap();
         let mut dp = self.dp.lock().unwrap();
@@ -109,7 +99,7 @@ impl Processor<AudioRate> for BlSawOsc {
         }
         *saw = 0.995 * *saw + dc + x.sin() / x;
 
-        *outputs.get_mut(&OutputName::default()).unwrap() = Signal::new_audio(*saw * amp.value());
+        *outputs.get_mut("out").unwrap() = Signal::new_audio(*saw * amp.value());
     }
 }
 
@@ -119,8 +109,8 @@ impl Processor<ControlRate> for BlSawOsc {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<InputName, Signal<ControlRate>>,
-        _outputs: &mut FxHashMap<OutputName, Signal<ControlRate>>,
+        _inputs: &FxHashMap<&str, Signal<ControlRate>>,
+        _outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
     ) {
     }
 }

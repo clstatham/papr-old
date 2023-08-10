@@ -102,8 +102,8 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .iter()
         .map(|out| {
             quote! {(
-                crate::graph::OutputName::new(stringify!(#out)),
-                crate::graph::Output { name: crate::graph::OutputName::new(stringify!(#out)) }
+                stringify!(#out).to_owned(),
+                crate::graph::Output { name: stringify!(#out).to_owned() }
             )}
         })
         .collect::<Punctuated<_, Comma>>();
@@ -112,8 +112,8 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .iter()
         .map(|out| {
             quote! {(
-                crate::graph::OutputName::new(stringify!(#out)),
-                crate::graph::Output { name: crate::graph::OutputName::new(stringify!(#out)) }
+                stringify!(#out).to_owned(),
+                crate::graph::Output { name: stringify!(#out).to_owned() }
             )}
         })
         .collect::<Punctuated<_, Comma>>();
@@ -122,7 +122,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .iter()
         .map(|inp| {
             quote! {(
-                crate::graph::InputName::new(stringify!(#inp)),
+                stringify!(#inp).to_owned(),
                 crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new(0.0))),
             )}
         })
@@ -132,7 +132,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .iter()
         .map(|inp| {
             quote! {(
-                crate::graph::InputName::new(stringify!(#inp)),
+                stringify!(#inp).to_owned(),
                 crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new(0.0))),
             )}
         })

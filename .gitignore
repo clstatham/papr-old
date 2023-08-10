@@ -2,3 +2,4 @@
 profile.json
 perf.data*
 flamegraph.svg
+*.dot

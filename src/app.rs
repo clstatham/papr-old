@@ -14,7 +14,7 @@ use crate::{
         basic::{DebugNode, UiInput},
         AudioRate, ControlRate, Processor, Signal,
     },
-    graph::{Connection, Graph, InputName, Node, NodeName, OutputName},
+    graph::{Connection, Graph, Node, NodeName},
     parser::{parse_script, DualGraphs},
     Scalar,
 };
@@ -39,14 +39,11 @@ impl AudioContext {
             panic!("Buffer len mismatch: {} vs {}", output.len(), buffer_len);
         }
         let mut out = FxHashMap::default();
-        for c in 0..channels {
-            out.insert(
-                OutputName::new(&format!("dac{c}")),
-                vec![Signal::new(0.0); output.len() / channels],
-            );
-        }
+        // for c in 0..channels {
+        out.insert("dac0", vec![Signal::new(0.0); output.len() / channels]);
+        // }
         let ins = FxHashMap::from_iter([(
-            InputName::new("t"),
+            "t",
             (0usize..(output.len() / channels))
                 .map(|frame_idx| Signal::new(t as Scalar + frame_idx as Scalar / sample_rate))
                 .collect::<Vec<_>>(),
@@ -54,8 +51,7 @@ impl AudioContext {
         graph.process_graph(sample_rate, &ins, &mut out);
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
             for (c, sample) in frame.iter_mut().enumerate() {
-                *sample =
-                    T::from_sample(out[&OutputName::new(&format!("dac{c}"))][frame_idx].value());
+                *sample = T::from_sample(out[&*format!("dac{c}")][frame_idx].value());
             }
         }
     }
@@ -141,8 +137,7 @@ impl PaprApp {
         for c_in_idx in control.graph_inputs.clone() {
             let c_in = &control.digraph[c_in_idx];
             let ui_name: String = c_in.name.to_owned().into();
-            let (an, cn) =
-                UiInput::create_nodes(c_in.inputs[&InputName::default()].clone(), audio_buffer_len);
+            let (an, cn) = UiInput::create_nodes(c_in.inputs["input"].clone(), audio_buffer_len);
             self.ui_control_inputs.push(cn.clone());
             audio.add_node(an);
             let c_in_ui_idx = control.add_node(cn);
@@ -150,8 +145,8 @@ impl PaprApp {
                 c_in_ui_idx,
                 c_in_idx,
                 Connection {
-                    source_output: OutputName::new(&ui_name),
-                    sink_input: InputName::default(),
+                    source_output: ui_name,
+                    sink_input: "input".to_owned(),
                 },
             );
         }
@@ -165,8 +160,8 @@ impl PaprApp {
                 c_out_idx,
                 debug0_cn,
                 Connection {
-                    source_output: OutputName::default(),
-                    sink_input: InputName::default(),
+                    source_output: "out".to_owned(),
+                    sink_input: "input".to_owned(),
                 },
             );
         }
@@ -255,7 +250,7 @@ impl PaprApp {
                         control_graph.process_buffer(
                             control_rate,
                             None,
-                            &FxHashMap::from_iter([(InputName::new("t"), vec![Signal::new(t)])]),
+                            &FxHashMap::from_iter([("t", vec![Signal::new(t)])]),
                             &mut FxHashMap::default(),
                         );
                         clk.tick().await;

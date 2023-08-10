@@ -12,7 +12,7 @@ use crate::{
         basic::{Add, Constant, Divide, Multiply, Subtract},
         AudioRate, ControlRate, Signal,
     },
-    graph::{Connection, Graph, Input, InputName, Node, NodeName, Output, OutputName},
+    graph::{Connection, Graph, Input, Node, NodeName, Output},
     Scalar,
 };
 
@@ -42,22 +42,18 @@ pub enum Binding {
 }
 
 impl Binding {
-    pub fn into_input_name(self) -> Option<InputName> {
+    pub fn into_input_name(self) -> Option<String> {
         match self {
-            Self::AudioIo { port, .. } | Self::ControlIo { port, .. } => {
-                Some(InputName::new(&port))
-            }
-            Self::ControlIoBounded { port, .. } => Some(InputName::new(&port)),
+            Self::AudioIo { port, .. } | Self::ControlIo { port, .. } => Some(port),
+            Self::ControlIoBounded { port, .. } => Some(port),
             Self::AudioConstant(_) | Self::ControlConstant(_) => None,
         }
     }
 
-    pub fn into_output_name(self) -> Option<OutputName> {
+    pub fn into_output_name(self) -> Option<String> {
         match self {
-            Self::AudioIo { port, .. } | Self::ControlIo { port, .. } => {
-                Some(OutputName::new(&port))
-            }
-            Self::ControlIoBounded { port, .. } => Some(OutputName::new(&port)),
+            Self::AudioIo { port, .. } | Self::ControlIo { port, .. } => Some(port),
+            Self::ControlIoBounded { port, .. } => Some(port),
             Self::AudioConstant(_) | Self::ControlConstant(_) => None,
         }
     }
@@ -249,35 +245,27 @@ fn solve_expr(
 ) -> (bool, NodeIndex) {
     let mut expr_to_node_idxs = |a: &Expr| match a {
         Expr::Binding(a) => match a {
-            Binding::AudioConstant(a) => {
-                (true, super_audio.add_node(a.clone()), OutputName::default())
+            Binding::AudioConstant(a) => (true, super_audio.add_node(a.clone()), "out".to_owned()),
+            Binding::ControlConstant(a) => {
+                (false, super_control.add_node(a.clone()), "out".to_owned())
             }
-            Binding::ControlConstant(a) => (
-                false,
-                super_control.add_node(a.clone()),
-                OutputName::default(),
-            ),
 
             Binding::AudioIo { node, port } => {
                 if let Some(node) = node {
                     (
                         true,
-                        super_audio
-                            .node_id_by_name(&NodeName::new(&node.to_owned()))
-                            .unwrap_or_else(|| {
-                                panic!("Parsing error: No node named `{node}` found on supergraph")
-                            }),
-                        OutputName::new(port),
+                        super_audio.node_id_by_name(node).unwrap_or_else(|| {
+                            panic!("Parsing error: No node named `{node}` found on supergraph")
+                        }),
+                        port.to_owned(),
                     )
                 } else {
                     (
                         true,
-                        super_audio
-                            .node_id_by_name(&NodeName::new(&port.to_owned()))
-                            .unwrap_or_else(|| {
-                                panic!("Parsing error: No node named `{port}` found on supergraph")
-                            }),
-                        OutputName::default(),
+                        super_audio.node_id_by_name(port).unwrap_or_else(|| {
+                            panic!("Parsing error: No node named `{port}` found on supergraph")
+                        }),
+                        "out".to_owned(),
                     )
                 }
             }
@@ -292,22 +280,18 @@ fn solve_expr(
                 if let Some(node) = node {
                     (
                         false,
-                        super_control
-                            .node_id_by_name(&NodeName::new(&node.to_owned()))
-                            .unwrap_or_else(|| {
-                                panic!("Parsing error: No node named `{node}` found on supergraph")
-                            }),
-                        OutputName::new(port),
+                        super_control.node_id_by_name(node).unwrap_or_else(|| {
+                            panic!("Parsing error: No node named `{node}` found on supergraph")
+                        }),
+                        port.to_owned(),
                     )
                 } else {
                     (
                         false,
-                        super_control
-                            .node_id_by_name(&NodeName::new(&port.to_owned()))
-                            .unwrap_or_else(|| {
-                                panic!("Parsing error: No node named `{port}` found on supergraph")
-                            }),
-                        OutputName::default(),
+                        super_control.node_id_by_name(port).unwrap_or_else(|| {
+                            panic!("Parsing error: No node named `{port}` found on supergraph")
+                        }),
+                        "out".to_owned(),
                     )
                 }
             }
@@ -315,11 +299,7 @@ fn solve_expr(
         Expr::Expr(a1, a_op, a2) => {
             let (subexpr_is_audio, subexpr_idx_supergraph) =
                 solve_expr(super_audio, super_control, ctx, a1, *a_op, a2);
-            (
-                subexpr_is_audio,
-                subexpr_idx_supergraph,
-                OutputName::default(),
-            )
+            (subexpr_is_audio, subexpr_idx_supergraph, "out".to_owned())
         }
     };
 
@@ -344,52 +324,52 @@ fn solve_expr(
     let op_cn = expr_cg.add_node(op_cn);
 
     expr_ag.add_edge(
-        expr_ag.node_id_by_name(&NodeName::new("a")).unwrap(),
+        expr_ag.node_id_by_name("a").unwrap(),
         op_an,
         Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("a"),
+            source_output: "out".to_owned(),
+            sink_input: "a".to_owned(),
         },
     );
     expr_ag.add_edge(
-        expr_ag.node_id_by_name(&NodeName::new("b")).unwrap(),
+        expr_ag.node_id_by_name("b").unwrap(),
         op_an,
         Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("b"),
+            source_output: "out".to_owned(),
+            sink_input: "b".to_owned(),
         },
     );
     expr_ag.add_edge(
         op_an,
-        expr_ag.node_id_by_name(&NodeName::new("out")).unwrap(),
+        expr_ag.node_id_by_name("out").unwrap(),
         Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("input"),
+            source_output: "out".to_owned(),
+            sink_input: "input".to_owned(),
         },
     );
 
     expr_cg.add_edge(
-        expr_cg.node_id_by_name(&NodeName::new("a")).unwrap(),
+        expr_cg.node_id_by_name("a").unwrap(),
         op_cn,
         Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("a"),
+            source_output: "out".to_owned(),
+            sink_input: "a".to_owned(),
         },
     );
     expr_cg.add_edge(
-        expr_cg.node_id_by_name(&NodeName::new("b")).unwrap(),
+        expr_cg.node_id_by_name("b").unwrap(),
         op_cn,
         Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("b"),
+            source_output: "out".to_owned(),
+            sink_input: "b".to_owned(),
         },
     );
     expr_cg.add_edge(
         op_cn,
-        expr_cg.node_id_by_name(&NodeName::new("out")).unwrap(),
+        expr_cg.node_id_by_name("out").unwrap(),
         Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("input"),
+            source_output: "out".to_owned(),
+            sink_input: "input".to_owned(),
         },
     );
 
@@ -402,7 +382,7 @@ fn solve_expr(
             expr_an_idx_supergraph,
             Connection {
                 source_output: a_out_supergraph,
-                sink_input: InputName::new("a"),
+                sink_input: "a".to_owned(),
             },
         );
         super_audio.add_edge(
@@ -410,7 +390,7 @@ fn solve_expr(
             expr_an_idx_supergraph,
             Connection {
                 source_output: b_out_supergraph,
-                sink_input: InputName::new("b"),
+                sink_input: "b".to_owned(),
             },
         );
         (true, expr_an_idx_supergraph)
@@ -422,7 +402,7 @@ fn solve_expr(
             expr_cn_idx_supergraph,
             Connection {
                 source_output: a_out_supergraph,
-                sink_input: InputName::new("a"),
+                sink_input: "a".to_owned(),
             },
         );
         super_control.add_edge(
@@ -430,7 +410,7 @@ fn solve_expr(
             expr_cn_idx_supergraph,
             Connection {
                 source_output: b_out_supergraph,
-                sink_input: InputName::new("b"),
+                sink_input: "b".to_owned(),
             },
         );
         (false, expr_cn_idx_supergraph)
@@ -622,7 +602,7 @@ pub fn graph_def_instantiation<'a>(
                     } = inp
                     {
                         Input {
-                            name: InputName::new(&port),
+                            name: port.to_owned(),
                             minimum: Some(min),
                             maximum: Some(max),
                             default: Some(default.expect(
@@ -679,19 +659,9 @@ pub fn graph_def_instantiation<'a>(
                             Expr::Binding(from) => match from {
                                 Binding::AudioIo { node, port } => {
                                     if let Some(node) = node {
-                                        (
-                                            true,
-                                            ag.node_id_by_name(&NodeName::new(&node.to_owned()))
-                                                .unwrap(),
-                                            OutputName::new(port),
-                                        )
+                                        (true, ag.node_id_by_name(node).unwrap(), port.to_owned())
                                     } else {
-                                        (
-                                            true,
-                                            ag.node_id_by_name(&NodeName::new(&port.to_owned()))
-                                                .unwrap(),
-                                            OutputName::default(),
-                                        )
+                                        (true, ag.node_id_by_name(port).unwrap(), "out".to_owned())
                                     }
                                 }
                                 Binding::ControlIoBounded { .. } => unreachable!(),
@@ -701,33 +671,23 @@ pub fn graph_def_instantiation<'a>(
                                     default: _,
                                 } => {
                                     if let Some(node) = node {
-                                        (
-                                            false,
-                                            cg.node_id_by_name(&NodeName::new(&node.to_owned()))
-                                                .unwrap(),
-                                            OutputName::new(port),
-                                        )
+                                        (false, cg.node_id_by_name(node).unwrap(), port.to_owned())
                                     } else {
-                                        (
-                                            false,
-                                            cg.node_id_by_name(&NodeName::new(&port.to_owned()))
-                                                .unwrap(),
-                                            OutputName::default(),
-                                        )
+                                        (false, cg.node_id_by_name(port).unwrap(), "out".to_owned())
                                     }
                                 }
                                 Binding::AudioConstant(con) => {
                                     let idx = ag.add_node(con.to_owned());
-                                    (true, idx, OutputName::default())
+                                    (true, idx, "out".to_owned())
                                 }
                                 Binding::ControlConstant(con) => {
                                     let idx = cg.add_node(con.to_owned());
-                                    (false, idx, OutputName::default())
+                                    (false, idx, "out".to_owned())
                                 }
                             },
                             Expr::Expr(a, op, b) => {
                                 let (is_audio, idx) = solve_expr(&mut ag, &mut cg, ctx, a, *op, b);
-                                (is_audio, idx, OutputName::default())
+                                (is_audio, idx, "out".to_owned())
                             }
                         };
                         for conn_to in &conn.to {
@@ -736,14 +696,14 @@ pub fn graph_def_instantiation<'a>(
                                     let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
                                         // cross-graph connection, use the external names for things
                                         (
-                                            InputName::new(&to.clone()),
-                                            ag.node_id_by_name(&NodeName::new(&to_node.to_owned())).unwrap(),
+                                            to.to_owned(),
+                                            ag.node_id_by_name(to_node).unwrap(),
                                         )
                                     } else {
                                         // self-input is the sink, use our own names for things
                                         (
-                                            InputName::default(),
-                                            ag.node_id_by_name(&NodeName::new(&to.clone())).unwrap(),
+                                            "input".to_owned(),
+                                            ag.node_id_by_name(to).unwrap(),
                                         )
                                     };
                                     ag.add_edge(from, sink, Connection { source_output: from_output.clone(), sink_input });
@@ -752,14 +712,14 @@ pub fn graph_def_instantiation<'a>(
                                     let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
                                         // cross-graph connection, use the external names for things
                                         (
-                                            InputName::new(&to.clone()),
-                                            cg.node_id_by_name(&NodeName::new(&to_node.to_owned())).unwrap(),
+                                            to.to_owned(),
+                                            cg.node_id_by_name(to_node).unwrap(),
                                         )
                                     } else {
                                         // self-input is the sink, use our own names for things
                                         (
-                                            InputName::default(),
-                                            cg.node_id_by_name(&NodeName::new(&to.clone())).unwrap(),
+                                            "input".to_owned(),
+                                            cg.node_id_by_name(to).unwrap(),
                                         )
                                     };
                                     // let con_id = cg.add_node(con.to_owned(), Default::default());
@@ -802,6 +762,9 @@ pub fn graph_def_instantiation<'a>(
                     }
                 }
             }
+
+            ag.write_dot(&format!("{}_audio.dot", id));
+            cg.write_dot(&format!("{}_control.dot", id));
 
             DualGraphs {
                 name: id.to_owned(),

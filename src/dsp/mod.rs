@@ -3,10 +3,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use eframe::egui::Ui;
 
-use crate::{
-    graph::{InputName, Node, OutputName},
-    Scalar, TAU,
-};
+use crate::{graph::Node, Scalar, TAU};
 
 pub mod basic;
 pub mod filters;
@@ -100,16 +97,16 @@ where
         buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Signal<T>>,
-        outputs: &mut FxHashMap<OutputName, Signal<T>>,
+        inputs: &FxHashMap<&str, Signal<T>>,
+        outputs: &mut FxHashMap<&str, Signal<T>>,
     );
 
     fn process_buffer(
         &self,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
-        inputs: &FxHashMap<InputName, Vec<Signal<T>>>,
-        outputs: &mut FxHashMap<OutputName, Vec<Signal<T>>>,
+        inputs: &FxHashMap<&str, Vec<Signal<T>>>,
+        outputs: &mut FxHashMap<&str, Vec<Signal<T>>>,
     ) {
         let mut audio_buffer_len = inputs.iter().next().unwrap().1.len();
         assert!(inputs.iter().all(|(_, inp)| {
@@ -122,19 +119,13 @@ where
             audio_buffer_len = inp.len();
             check
         }));
-        let mut inp = FxHashMap::from_iter(
-            inputs
-                .iter()
-                .map(|(name, _inp)| (name.to_owned(), Signal::new(0.0))),
-        );
-        let mut out = FxHashMap::from_iter(
-            outputs
-                .iter()
-                .map(|(name, _out)| (name.to_owned(), Signal::new(0.0))),
-        );
+        let mut inp =
+            FxHashMap::from_iter(inputs.iter().map(|(name, _inp)| (*name, Signal::new(0.0))));
+        let mut out =
+            FxHashMap::from_iter(outputs.iter().map(|(name, _out)| (*name, Signal::new(0.0))));
         for i in 0..audio_buffer_len {
             for (name, val) in inp.iter_mut() {
-                *val = inputs[name][i];
+                *val = inputs[*name][i];
             }
             self.process_sample(i, sample_rate, sibling_node, &inp, &mut out);
             for (out_name, out_val) in &out {
