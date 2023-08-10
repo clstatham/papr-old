@@ -6,7 +6,7 @@ use cpal::{
 };
 
 use eframe::egui::CentralPanel;
-use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -38,11 +38,11 @@ impl AudioContext {
         if output.len() != buffer_len {
             panic!("Buffer len mismatch: {} vs {}", output.len(), buffer_len);
         }
-        let mut out = FxHashMap::default();
+        let mut out = BTreeMap::default();
         // for c in 0..channels {
         out.insert("dac0", vec![Signal::new(0.0); output.len() / channels]);
         // }
-        let ins = FxHashMap::from_iter([(
+        let ins = BTreeMap::from_iter([(
             "t",
             (0usize..(output.len() / channels))
                 .map(|frame_idx| Signal::new(t as Scalar + frame_idx as Scalar / sample_rate))
@@ -250,8 +250,8 @@ impl PaprApp {
                         control_graph.process_buffer(
                             control_rate,
                             None,
-                            &FxHashMap::from_iter([("t", vec![Signal::new(t)])]),
-                            &mut FxHashMap::default(),
+                            &BTreeMap::from_iter([("t", vec![Signal::new(t)])]),
+                            &mut BTreeMap::default(),
                         );
                         clk.tick().await;
                         t += control_rate.recip();

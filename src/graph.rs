@@ -8,7 +8,7 @@ use petgraph::{
     prelude::*,
 };
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
-use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     dsp::{
@@ -18,7 +18,9 @@ use crate::{
     Scalar,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::Display, derive_more::Into)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, derive_more::Display, derive_more::Into, PartialOrd, Ord,
+)]
 pub struct NodeName(String);
 
 impl NodeName {
@@ -135,8 +137,8 @@ where
         buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<T>>,
-        outputs: &mut FxHashMap<&str, Signal<T>>,
+        inputs: &BTreeMap<&str, Signal<T>>,
+        outputs: &mut BTreeMap<&str, Signal<T>>,
     ) {
         match self {
             Self::Boxed(p) => {
@@ -152,8 +154,8 @@ where
         &self,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Vec<Signal<T>>>,
-        outputs: &mut FxHashMap<&str, Vec<Signal<T>>>,
+        inputs: &BTreeMap<&str, Vec<Signal<T>>>,
+        outputs: &mut BTreeMap<&str, Vec<Signal<T>>>,
     ) {
         match self {
             Self::Boxed(p) => p.process_buffer(sample_rate, sibling_node, inputs, outputs),
@@ -185,11 +187,11 @@ where
 {
     pub name: NodeName,
     pub sibling_node: Option<Arc<T::SiblingNode>>,
-    pub inputs: FxHashMap<String, Input<T>>,
-    pub outputs: FxHashMap<String, Output>,
+    pub inputs: BTreeMap<String, Input<T>>,
+    pub outputs: BTreeMap<String, Output>,
     pub processor: ProcessorType<T>,
-    inputs_cache: RwLock<FxHashMap<String, Vec<Signal<T>>>>,
-    outputs_cache: RwLock<FxHashMap<String, Vec<Signal<T>>>>,
+    inputs_cache: RwLock<BTreeMap<String, Vec<Signal<T>>>>,
+    outputs_cache: RwLock<BTreeMap<String, Vec<Signal<T>>>>,
 }
 
 impl<T: SignalRate> std::fmt::Debug for Node<T>
@@ -208,8 +210,8 @@ where
     pub fn new(
         name: NodeName,
         signaltype_buffer_len: usize,
-        mut inputs: FxHashMap<String, Input<T>>,
-        outputs: FxHashMap<String, Output>,
+        mut inputs: BTreeMap<String, Input<T>>,
+        outputs: BTreeMap<String, Output>,
         processor: ProcessorType<T>,
         sibling_node: Option<Arc<T::SiblingNode>>,
     ) -> Self {
@@ -297,7 +299,7 @@ where
     pub name: NodeName,
     signaltype_buffer_len: usize,
     pub digraph: DiGraph<Arc<Node<T>>, Connection>,
-    node_indices_by_name: FxHashMap<String, NodeIndex>,
+    node_indices_by_name: BTreeMap<String, NodeIndex>,
     pub graph_inputs: Vec<NodeIndex>,
     pub graph_outputs: Vec<NodeIndex>,
     partitions: Vec<Vec<NodeIndex>>,
@@ -314,7 +316,7 @@ impl Graph<AudioRate> {
             name: name.unwrap_or(NodeName::new("graph")),
             signaltype_buffer_len: audio_buffer_len,
             digraph: DiGraph::new(),
-            node_indices_by_name: FxHashMap::default(),
+            node_indices_by_name: BTreeMap::default(),
             graph_inputs: Vec::default(),
             graph_outputs: Vec::default(),
             partitions: Vec::default(),
@@ -356,7 +358,7 @@ impl Graph<ControlRate> {
             name: name.unwrap_or(NodeName::new("graph")),
             signaltype_buffer_len: 1, // control rate graph doesn't use buffers
             digraph: DiGraph::new(),
-            node_indices_by_name: FxHashMap::default(),
+            node_indices_by_name: BTreeMap::default(),
             graph_inputs: Vec::default(),
             graph_outputs: Vec::default(),
             partitions: Vec::default(),
@@ -438,8 +440,8 @@ where
         self.partitions.clear();
 
         let starts = self.digraph.externals(Direction::Incoming);
-        let mut bfs_stack = VecDeque::new();
-        let mut bfs_visited = FxHashSet::default();
+        let mut bfs_stack: VecDeque<NodeIndex> = VecDeque::new();
+        let mut bfs_visited = BTreeSet::default();
         if let Some(id) = self.node_id_by_name("t") {
             bfs_stack.push_back(id);
         }
@@ -491,8 +493,8 @@ where
     pub fn process_graph(
         &self,
         sample_rate: Scalar,
-        inputs: &FxHashMap<&str, Vec<Signal<T>>>,
-        outputs: &mut FxHashMap<&str, Vec<Signal<T>>>,
+        inputs: &BTreeMap<&str, Vec<Signal<T>>>,
+        outputs: &mut BTreeMap<&str, Vec<Signal<T>>>,
     ) {
         // early check for empty graph (nothing to do)
         if self.digraph.node_count() == 0 {
@@ -537,13 +539,13 @@ where
                 let mut inps = in_cache
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
-                    .collect::<FxHashMap<_, _>>();
+                    .collect::<BTreeMap<_, _>>();
                 inps.insert("t", inputs["t"].clone());
                 let out_cache = { self.digraph[node_id].outputs_cache.read().unwrap().clone() };
                 let mut outs = out_cache
                     .iter()
                     .map(|(k, v)| (k.as_str(), vec![Signal::new(0.0); v.len()]))
-                    .collect::<FxHashMap<_, _>>();
+                    .collect::<BTreeMap<_, _>>();
                 // run the processing logic for this node, which will store its results directly in our output cache
 
                 self.digraph[node_id].processor.process_buffer(
@@ -580,8 +582,8 @@ where
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<T>>,
-        _outputs: &mut FxHashMap<&str, Signal<T>>,
+        _inputs: &BTreeMap<&str, Signal<T>>,
+        _outputs: &mut BTreeMap<&str, Signal<T>>,
     ) {
         unimplemented!()
     }
@@ -589,8 +591,8 @@ where
         &self,
         sample_rate: Scalar,
         _sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Vec<Signal<T>>>,
-        outputs: &mut FxHashMap<&str, Vec<Signal<T>>>,
+        inputs: &BTreeMap<&str, Vec<Signal<T>>>,
+        outputs: &mut BTreeMap<&str, Vec<Signal<T>>>,
     ) {
         self.process_graph(sample_rate, inputs, outputs)
     }

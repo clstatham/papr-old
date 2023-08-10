@@ -5,7 +5,7 @@ use nom::{
     number::complete::float, sequence::*, IResult,
 };
 use petgraph::stable_graph::NodeIndex;
-use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 
 use crate::{
     dsp::{
@@ -522,7 +522,7 @@ pub struct DualGraphs {
 }
 
 pub struct ParserContext {
-    known_node_defs: FxHashMap<NodeName, String>,
+    known_node_defs: BTreeMap<NodeName, String>,
     sample_rate: Scalar,
     audio_buffer_len: usize,
     control_rate: Scalar,
@@ -780,15 +780,15 @@ pub fn parse_script(
     audio_buffer_len: usize,
     sample_rate: Scalar,
     control_rate: Scalar,
-) -> FxHashMap<NodeName, DualGraphs> {
+) -> BTreeMap<NodeName, DualGraphs> {
     let (garbage, defs) =
         many1(ignore_garbage(recognize(graph_def(audio_buffer_len))))(inp).unwrap();
     if !garbage.is_empty() {
         panic!("Parsing error: couldn't recognize `{garbage}` as graph definition");
     }
-    let mut out = FxHashMap::default();
+    let mut out = BTreeMap::default();
     let mut ctx = ParserContext {
-        known_node_defs: FxHashMap::default(),
+        known_node_defs: BTreeMap::default(),
         audio_buffer_len,
         sample_rate,
         control_rate,

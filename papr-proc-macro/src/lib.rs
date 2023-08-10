@@ -155,16 +155,16 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
                 let cn = std::sync::Arc::new(crate::graph::Node::new(
                     crate::graph::NodeName::new(name),
                     1,
-                    rustc_hash::FxHashMap::from_iter([#c_ins]),
-                    rustc_hash::FxHashMap::from_iter([#c_outs]),
+                    std::collections::BTreeMap::from_iter([#c_ins]),
+                    std::collections::BTreeMap::from_iter([#c_outs]),
                     crate::graph::ProcessorType::Boxed(Box::new(this.clone())),
                     None,
                 ));
                 let an = std::sync::Arc::new(crate::graph::Node::new(
                     crate::graph::NodeName::new(name),
                     audio_buffer_len,
-                    rustc_hash::FxHashMap::from_iter([#a_ins]),
-                    rustc_hash::FxHashMap::from_iter([#a_outs]),
+                    std::collections::BTreeMap::from_iter([#a_ins]),
+                    std::collections::BTreeMap::from_iter([#a_outs]),
                     crate::graph::ProcessorType::Boxed(Box::new(this)),
                     Some(cn.clone()),
                 ));

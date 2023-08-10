@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate},
@@ -24,8 +24,8 @@ impl Processor<AudioRate> for SineOsc {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         sibling_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
         let amp = sibling_node.cached_input("amp").unwrap();
@@ -45,8 +45,8 @@ impl Processor<ControlRate> for SineOsc {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
-        _inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
     }
 }
@@ -70,8 +70,8 @@ impl Processor<AudioRate> for BlSawOsc {
         _buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
         let amp = sibling_node.cached_input("amp").unwrap();
@@ -109,8 +109,8 @@ impl Processor<ControlRate> for BlSawOsc {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
     }
 }

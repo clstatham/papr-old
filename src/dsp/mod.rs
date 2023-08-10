@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 use std::{marker::PhantomData, sync::Arc};
 
 use eframe::egui::Ui;
@@ -97,16 +97,16 @@ where
         buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<T>>,
-        outputs: &mut FxHashMap<&str, Signal<T>>,
+        inputs: &BTreeMap<&str, Signal<T>>,
+        outputs: &mut BTreeMap<&str, Signal<T>>,
     );
 
     fn process_buffer(
         &self,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
-        inputs: &FxHashMap<&str, Vec<Signal<T>>>,
-        outputs: &mut FxHashMap<&str, Vec<Signal<T>>>,
+        inputs: &BTreeMap<&str, Vec<Signal<T>>>,
+        outputs: &mut BTreeMap<&str, Vec<Signal<T>>>,
     ) {
         let mut audio_buffer_len = inputs.iter().next().unwrap().1.len();
         assert!(inputs.iter().all(|(_, inp)| {
@@ -120,12 +120,12 @@ where
             check
         }));
         let mut inp =
-            FxHashMap::from_iter(inputs.iter().map(|(name, _inp)| (*name, Signal::new(0.0))));
+            BTreeMap::from_iter(inputs.iter().map(|(name, _inp)| (*name, Signal::new(0.0))));
         let mut out =
-            FxHashMap::from_iter(outputs.iter().map(|(name, _out)| (*name, Signal::new(0.0))));
+            BTreeMap::from_iter(outputs.iter().map(|(name, _out)| (*name, Signal::new(0.0))));
         for i in 0..audio_buffer_len {
-            for (name, val) in inp.iter_mut() {
-                *val = inputs[*name][i];
+            for ((_, val), (_, inp)) in inp.iter_mut().zip(inputs.iter()) {
+                *val = inp[i];
             }
             self.process_sample(i, sample_rate, sibling_node, &inp, &mut out);
             for (out_name, out_val) in &out {

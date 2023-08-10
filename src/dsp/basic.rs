@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use eframe::egui::{Slider, Ui};
 use papr_proc_macro::node_constructor;
-use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate, Signal},
@@ -26,8 +26,8 @@ impl Processor<AudioRate> for Dummy {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        _inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
     }
 }
@@ -38,8 +38,8 @@ impl Processor<ControlRate> for Dummy {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<Node<AudioRate>>>,
-        _inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
     }
 }
@@ -53,19 +53,19 @@ impl DebugNode {
         let cn = Arc::new(Node::new(
             NodeName::new(&name.clone()),
             1,
-            FxHashMap::from_iter([(
+            BTreeMap::from_iter([(
                 "input".to_owned(),
                 Input::new("input".to_owned().as_ref(), Some(Signal::new(0.0))),
             )]),
-            FxHashMap::default(),
+            BTreeMap::default(),
             crate::graph::ProcessorType::Boxed(Box::new(Self { name: name.clone() })),
             None,
         ));
         let an = Arc::new(Node::new(
             NodeName::new(&name.clone()),
             0,
-            FxHashMap::default(),
-            FxHashMap::default(),
+            BTreeMap::default(),
+            BTreeMap::default(),
             crate::graph::ProcessorType::Boxed(Box::new(Self { name: name.clone() })),
             Some(cn.clone()),
         ));
@@ -79,8 +79,8 @@ impl Processor<AudioRate> for DebugNode {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
     }
 }
@@ -91,8 +91,8 @@ impl Processor<ControlRate> for DebugNode {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
-        inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
         let t = inputs["t"].value();
         log::debug!("{} = {} (t={t})", self.name, inputs["input"].value());
@@ -113,8 +113,8 @@ impl Processor<AudioRate> for Dac {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         *outputs.get_mut(&"out").unwrap() = inputs["input"];
     }
@@ -126,8 +126,8 @@ impl Processor<ControlRate> for Dac {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
     }
 }
@@ -149,8 +149,8 @@ impl Processor<AudioRate> for UiInputA {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        _inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         self.value.write().unwrap().next_value();
     }
@@ -162,8 +162,8 @@ impl Processor<ControlRate> for UiInputC {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
-        _inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
         *outputs.get_mut(self.name.as_str()).unwrap() = self.value.read().unwrap().current_value();
     }
@@ -195,8 +195,8 @@ impl UiInput {
         let cn = Arc::new(Node::new(
             for_input.name.clone().into(),
             1,
-            FxHashMap::default(),
-            FxHashMap::from_iter(
+            BTreeMap::default(),
+            BTreeMap::from_iter(
                 [(
                     for_input.name.clone(),
                     Output {
@@ -217,8 +217,8 @@ impl UiInput {
         let an = Arc::new(Node::new(
             for_input.name.clone().into(),
             audio_buffer_len,
-            FxHashMap::default(),
-            FxHashMap::default(),
+            BTreeMap::default(),
+            BTreeMap::default(),
             Box::new(UiInputA { value }).into(),
             Some(cn.clone()),
         ));
@@ -239,8 +239,8 @@ impl Constant {
         let cn = Arc::new(Node::new(
             NodeName::new(name),
             1,
-            FxHashMap::default(),
-            FxHashMap::from_iter([(
+            BTreeMap::default(),
+            BTreeMap::from_iter([(
                 "out".to_owned(),
                 Output {
                     name: "out".to_owned(),
@@ -252,8 +252,8 @@ impl Constant {
         let an = Arc::new(Node::new(
             NodeName::new(name),
             audio_buffer_len,
-            FxHashMap::default(),
-            FxHashMap::from_iter([(
+            BTreeMap::default(),
+            BTreeMap::from_iter([(
                 "out".to_owned(),
                 Output {
                     name: "out".to_owned(),
@@ -272,8 +272,8 @@ impl Processor<AudioRate> for Constant {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = self.value.into();
     }
@@ -285,8 +285,8 @@ impl Processor<ControlRate> for Constant {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = self.value.into();
     }
@@ -306,8 +306,8 @@ impl Processor<AudioRate> for Multiply {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = inputs["a"] * inputs["b"];
     }
@@ -319,8 +319,8 @@ impl Processor<ControlRate> for Multiply {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = inputs["a"] * inputs["b"];
     }
@@ -340,8 +340,8 @@ impl Processor<AudioRate> for Divide {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = inputs["a"] / inputs["b"];
     }
@@ -353,8 +353,8 @@ impl Processor<ControlRate> for Divide {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = inputs["a"] / inputs["b"];
     }
@@ -374,8 +374,8 @@ impl Processor<AudioRate> for Add {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = inputs["a"] + inputs["b"];
     }
@@ -387,8 +387,8 @@ impl Processor<ControlRate> for Add {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = inputs["a"] + inputs["b"];
     }
@@ -408,8 +408,8 @@ impl Processor<AudioRate> for Subtract {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = inputs["a"] - inputs["b"];
     }
@@ -421,8 +421,8 @@ impl Processor<ControlRate> for Subtract {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = inputs["a"] - inputs["b"];
     }
@@ -442,8 +442,8 @@ impl Processor<AudioRate> for Sine {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         *outputs.get_mut("out").unwrap() = Signal::new_audio(Scalar::sin(inputs["input"].value()));
     }
@@ -455,8 +455,8 @@ impl Processor<ControlRate> for Sine {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
         *outputs.get_mut("out").unwrap() =
             Signal::new_control(Scalar::sin(inputs["input"].value()));
@@ -477,8 +477,8 @@ impl Processor<AudioRate> for EventToAudio {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
         let input = sibling_node.cached_input("e").unwrap();
@@ -492,8 +492,8 @@ impl Processor<ControlRate> for EventToAudio {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
     }
 }

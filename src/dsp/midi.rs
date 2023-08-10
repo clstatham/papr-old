@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use papr_proc_macro::node_constructor;
-use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 
 use crate::Scalar;
 
@@ -21,8 +21,8 @@ impl Processor<AudioRate> for MidiToFreq {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as SignalRate>::SiblingNode>>,
-        _inputs: &FxHashMap<&str, Signal<AudioRate>>,
-        _outputs: &mut FxHashMap<&str, Signal<AudioRate>>,
+        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
+        _outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
     ) {
     }
 }
@@ -33,8 +33,8 @@ impl Processor<ControlRate> for MidiToFreq {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as SignalRate>::SiblingNode>>,
-        inputs: &FxHashMap<&str, Signal<ControlRate>>,
-        outputs: &mut FxHashMap<&str, Signal<ControlRate>>,
+        inputs: &BTreeMap<&str, Signal<ControlRate>>,
+        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
     ) {
         let midi = inputs["m"];
         *outputs.get_mut("f").unwrap() =
