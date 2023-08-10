@@ -4,7 +4,6 @@ use nom::{
     branch::*, bytes::complete::*, character::complete::*, combinator::*, multi::*,
     number::complete::float, sequence::*, IResult,
 };
-use petgraph::stable_graph::NodeIndex;
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -12,7 +11,7 @@ use crate::{
         basic::{Add, Constant, Divide, Multiply, Subtract},
         AudioRate, ControlRate, Signal,
     },
-    graph::{Connection, Graph, Input, InputName, Node, NodeName, Output, OutputName},
+    graph::{Connection, Graph, Input, InputName, Node, NodeIndex, NodeName, Output, OutputName},
     Scalar,
 };
 
@@ -343,96 +342,76 @@ fn solve_expr(
     let op_an = expr_ag.add_node(op_an);
     let op_cn = expr_cg.add_node(op_cn);
 
-    expr_ag.add_edge(
-        expr_ag.node_id_by_name(&NodeName::new("a")).unwrap(),
-        op_an,
-        Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("a"),
-        },
-    );
-    expr_ag.add_edge(
-        expr_ag.node_id_by_name(&NodeName::new("b")).unwrap(),
-        op_an,
-        Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("b"),
-        },
-    );
-    expr_ag.add_edge(
-        op_an,
-        expr_ag.node_id_by_name(&NodeName::new("out")).unwrap(),
-        Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("input"),
-        },
-    );
+    expr_ag.add_edge(Connection {
+        from: expr_ag.node_id_by_name(&NodeName::new("a")).unwrap(),
+        to: op_an,
+        from_output: OutputName::default(),
+        to_input: InputName::new("a"),
+    });
+    expr_ag.add_edge(Connection {
+        from: expr_ag.node_id_by_name(&NodeName::new("b")).unwrap(),
+        to: op_an,
+        from_output: OutputName::default(),
+        to_input: InputName::new("b"),
+    });
+    expr_ag.add_edge(Connection {
+        from: op_an,
+        to: expr_ag.node_id_by_name(&NodeName::new("out")).unwrap(),
+        from_output: OutputName::default(),
+        to_input: InputName::new("input"),
+    });
 
-    expr_cg.add_edge(
-        expr_cg.node_id_by_name(&NodeName::new("a")).unwrap(),
-        op_cn,
-        Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("a"),
-        },
-    );
-    expr_cg.add_edge(
-        expr_cg.node_id_by_name(&NodeName::new("b")).unwrap(),
-        op_cn,
-        Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("b"),
-        },
-    );
-    expr_cg.add_edge(
-        op_cn,
-        expr_cg.node_id_by_name(&NodeName::new("out")).unwrap(),
-        Connection {
-            source_output: OutputName::default(),
-            sink_input: InputName::new("input"),
-        },
-    );
+    expr_cg.add_edge(Connection {
+        from: expr_cg.node_id_by_name(&NodeName::new("a")).unwrap(),
+        to: op_cn,
+        from_output: OutputName::default(),
+        to_input: InputName::new("a"),
+    });
+    expr_cg.add_edge(Connection {
+        from: expr_cg.node_id_by_name(&NodeName::new("b")).unwrap(),
+        to: op_cn,
+        from_output: OutputName::default(),
+        to_input: InputName::new("b"),
+    });
+    expr_cg.add_edge(Connection {
+        from: op_cn,
+        to: expr_cg.node_id_by_name(&NodeName::new("out")).unwrap(),
+        from_output: OutputName::default(),
+        to_input: InputName::new("input"),
+    });
 
     if a_is_audio && b_is_audio {
         // package it up and insert into supergraph
         let expr_an = Arc::new(expr_ag.into_node());
         let expr_an_idx_supergraph = super_audio.add_node(expr_an);
-        super_audio.add_edge(
-            a_idx_supergraph,
-            expr_an_idx_supergraph,
-            Connection {
-                source_output: a_out_supergraph,
-                sink_input: InputName::new("a"),
-            },
-        );
-        super_audio.add_edge(
-            b_idx_supergraph,
-            expr_an_idx_supergraph,
-            Connection {
-                source_output: b_out_supergraph,
-                sink_input: InputName::new("b"),
-            },
-        );
+        super_audio.add_edge(Connection {
+            from: a_idx_supergraph,
+            to: expr_an_idx_supergraph,
+            from_output: a_out_supergraph,
+            to_input: InputName::new("a"),
+        });
+        super_audio.add_edge(Connection {
+            from: b_idx_supergraph,
+            to: expr_an_idx_supergraph,
+            from_output: b_out_supergraph,
+            to_input: InputName::new("b"),
+        });
         (true, expr_an_idx_supergraph)
     } else if !a_is_audio && !b_is_audio {
         let expr_cn = Arc::new(expr_cg.into_node());
         let expr_cn_idx_supergraph = super_control.add_node(expr_cn);
-        super_control.add_edge(
-            a_idx_supergraph,
-            expr_cn_idx_supergraph,
-            Connection {
-                source_output: a_out_supergraph,
-                sink_input: InputName::new("a"),
-            },
-        );
-        super_control.add_edge(
-            b_idx_supergraph,
-            expr_cn_idx_supergraph,
-            Connection {
-                source_output: b_out_supergraph,
-                sink_input: InputName::new("b"),
-            },
-        );
+        super_control.add_edge(Connection {
+            from: a_idx_supergraph,
+            to: expr_cn_idx_supergraph,
+            from_output: a_out_supergraph,
+            to_input: InputName::new("a"),
+        });
+        super_control.add_edge(Connection {
+            from: b_idx_supergraph,
+            to: expr_cn_idx_supergraph,
+            from_output: b_out_supergraph,
+            to_input: InputName::new("b"),
+        });
         (false, expr_cn_idx_supergraph)
     } else {
         panic!("Parsing error: mixing audio/control signals in expr")
@@ -746,7 +725,7 @@ pub fn graph_def_instantiation<'a>(
                                             ag.node_id_by_name(&NodeName::new(&to.clone())).unwrap(),
                                         )
                                     };
-                                    ag.add_edge(from, sink, Connection { source_output: from_output.clone(), sink_input });
+                                    ag.add_edge(Connection { from, to: sink, from_output: from_output.clone(), to_input: sink_input });
                                 }
                                 (false, Binding::ControlIo { port: to, .. }) => {
                                     let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
@@ -763,7 +742,7 @@ pub fn graph_def_instantiation<'a>(
                                         )
                                     };
                                     // let con_id = cg.add_node(con.to_owned(), Default::default());
-                                    cg.add_edge(from, sink, Connection { source_output: from_output.clone(), sink_input });
+                                    cg.add_edge(Connection { from, to: sink, from_output: from_output.clone(), to_input: sink_input });
                                 }
                                 (false, Binding::AudioIo { port: io, .. }) => panic!("Parsing error: cannot attach control constant to audio input `{io}`"),
                                 (true, Binding::ControlIo { port: io, .. }) => panic!("Parsing error: cannot attach audio constant to control input `{io}`"),
