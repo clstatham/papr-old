@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use app::PaprApp;
 use clap::Parser;
 use eframe::{egui::Visuals, NativeOptions};
@@ -24,6 +26,8 @@ cfg_if::cfg_if! {
 
 #[derive(clap::Parser)]
 struct Args {
+    script_path: PathBuf,
+
     #[arg(short, long, default_value_t = 1000)]
     control_rate: u64,
     #[arg(short, long, default_value_t = 48000)]
@@ -43,6 +47,7 @@ fn main() {
             cc.egui_ctx.set_visuals(Visuals::dark());
 
             let mut app = PaprApp::new(
+                args.script_path,
                 args.sample_rate as Scalar,
                 args.control_rate as Scalar,
                 args.buffer_len as usize,

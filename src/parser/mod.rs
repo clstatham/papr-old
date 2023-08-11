@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use crate::{
     dsp::{
         basic::{Add, Constant, Divide, Multiply, Subtract},
-        graph_util::LetVar,
+        graph_util::LetBinding,
         AudioRate, ControlRate, Signal,
     },
     graph::{Connection, Graph, Input, Node, NodeName, Output},
@@ -753,7 +753,7 @@ pub fn graph_def_instantiation<'a>(
                                     } else {
                                         // self-input is the sink, use our own names for things
                                         if conn.is_let {
-                                            let (an, cn) = LetVar::create_nodes(to, ctx.audio_buffer_len, 0.0);
+                                            let (an, _cn) = LetBinding::create_nodes(to, ctx.audio_buffer_len, 0.0);
                                             (
                                                 0,
                                                 ag.add_node(an),
@@ -779,7 +779,7 @@ pub fn graph_def_instantiation<'a>(
                                     } else {
                                         // self-input is the sink, use our own names for things
                                         if conn.is_let {
-                                            let (an, cn) = LetVar::create_nodes(to, ctx.audio_buffer_len, 0.0);
+                                            let (_an, cn) = LetBinding::create_nodes(to, ctx.audio_buffer_len, 0.0);
                                             (0,
                                                 cg.add_node(cn),
                                             )

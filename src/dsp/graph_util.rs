@@ -106,14 +106,14 @@ impl Processor<ControlRate> for GraphOutput {
 }
 
 node_constructor! {
-    pub struct LetVar;
+    pub struct LetBinding;
     @in { input }
     @out { out }
     #in { input }
     #out { out }
 }
 
-impl Processor<AudioRate> for LetVar {
+impl Processor<AudioRate> for LetBinding {
     fn process_sample(
         &self,
         _buffer_idx: usize,
@@ -126,7 +126,7 @@ impl Processor<AudioRate> for LetVar {
     }
 }
 
-impl Processor<ControlRate> for LetVar {
+impl Processor<ControlRate> for LetBinding {
     fn process_sample(
         &self,
         _buffer_idx: usize,

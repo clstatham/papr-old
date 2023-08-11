@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, fs::File, io::Read, path::PathBuf, sync::Arc, time::Duration};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -98,10 +98,16 @@ pub struct PaprApp {
     sample_rate: Scalar,
     control_rate: Scalar,
     audio_buffer_len: usize,
+    script_path: PathBuf,
 }
 
 impl PaprApp {
-    pub fn new(sample_rate: Scalar, control_rate: Scalar, audio_buffer_len: usize) -> Self {
+    pub fn new(
+        script_path: PathBuf,
+        sample_rate: Scalar,
+        control_rate: Scalar,
+        audio_buffer_len: usize,
+    ) -> Self {
         Self {
             audio_cx: None,
             audio_graph: None,
@@ -111,6 +117,7 @@ impl PaprApp {
             control_rate,
             sample_rate,
             audio_buffer_len,
+            script_path,
         }
     }
 
@@ -120,14 +127,12 @@ impl PaprApp {
         sample_rate: Scalar,
         control_rate: Scalar,
     ) {
-        let main_graphs = parse_script(
-            include_str!("../test-scripts/time.papr"),
-            audio_buffer_len,
-            sample_rate,
-            control_rate,
-        )
-        .remove(&NodeName::new("main"))
-        .unwrap();
+        let mut file = File::open(&self.script_path).unwrap();
+        let mut script = String::new();
+        file.read_to_string(&mut script).unwrap();
+        let main_graphs = parse_script(&script, audio_buffer_len, sample_rate, control_rate)
+            .remove(&NodeName::new("main"))
+            .unwrap();
         let DualGraphs {
             mut audio,
             name: _,
