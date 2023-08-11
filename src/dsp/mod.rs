@@ -9,6 +9,7 @@ pub mod filters;
 pub mod generators;
 pub mod graph_util;
 pub mod midi;
+pub mod time;
 
 pub trait SignalRate
 where

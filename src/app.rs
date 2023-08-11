@@ -121,7 +121,7 @@ impl PaprApp {
         control_rate: Scalar,
     ) {
         let main_graphs = parse_script(
-            include_str!("../test-scripts/test4.papr"),
+            include_str!("../test-scripts/time.papr"),
             audio_buffer_len,
             sample_rate,
             control_rate,

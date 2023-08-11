@@ -1,0 +1,15 @@
+graph main {
+    @in {}
+    @out { @dac0 @dac1 }
+    #in { 
+        #period(0.1 : 8) = 1.0
+        #width(0.001 : 0.999) = 0.5
+    }
+    #out { #val }
+    ~ {
+        let ck: clock<1.0 0.5>;
+        ck.#period <- #period;
+        ck.#width <- #width;
+        #val <- ck.#out;
+    }
+}

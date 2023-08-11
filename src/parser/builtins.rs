@@ -5,7 +5,7 @@ use nom::{
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    dsp::{AudioRate, ControlRate, Signal},
+    dsp::{time::Clock, AudioRate, ControlRate, Signal},
     graph::{Node, NodeName},
     Scalar,
 };
@@ -33,6 +33,10 @@ pub enum BuiltinNode {
     },
     EventToAudio,
     MidiToFreq,
+    Clock {
+        period: Signal<ControlRate>,
+        width: Signal<ControlRate>,
+    },
 }
 
 impl BuiltinNode {
@@ -65,6 +69,12 @@ impl BuiltinNode {
             Self::MidiToFreq => {
                 crate::dsp::midi::MidiToFreq::create_nodes(name, audio_buffer_len, 0.0)
             }
+            Self::Clock { period, width } => crate::dsp::time::Clock::create_nodes(
+                name,
+                audio_buffer_len,
+                period.value(),
+                width.value(),
+            ),
         }
     }
 }
@@ -105,6 +115,13 @@ pub fn let_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedLet> {
                 }
                 "e2a" => LetRhs::BuiltinNode(BuiltinNode::EventToAudio),
                 "m2f" => LetRhs::BuiltinNode(BuiltinNode::MidiToFreq),
+                "clock" => {
+                    let defaults = control_input_defaults.unwrap();
+                    LetRhs::BuiltinNode(BuiltinNode::Clock {
+                        period: Signal::new_control(defaults[0] as Scalar),
+                        width: Signal::new_control(defaults[1] as Scalar),
+                    })
+                }
                 _ => LetRhs::ScriptGraph(NodeName::new(graph_name)),
             },
         },
