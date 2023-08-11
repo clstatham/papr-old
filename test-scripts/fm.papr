@@ -10,9 +10,9 @@ graph main {
     }
     #out {}
     ~ {
-        let m: sineosc<0.5 440.0 0.0>;
-        let c: sineosc<0.5 440.0 1.0>;
-        let c_m2f: m2f;
+        create m: sineosc;
+        create c: sineosc;
+        create c_m2f: m2f;
 
         c.@fm <- m.@out;
         [@dac0 @dac1] <- c.@out;
