@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::{marker::PhantomData, sync::Arc};
 
 use eframe::egui::Ui;
@@ -18,9 +17,9 @@ where
     type SiblingNode;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct AudioRate;
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ControlRate;
 impl SignalRate for AudioRate {
     type SiblingNode = Node<ControlRate>;
@@ -29,8 +28,20 @@ impl SignalRate for ControlRate {
     type SiblingNode = Node<AudioRate>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct Signal<T: SignalRate>(Scalar, PhantomData<T>);
+
+impl std::fmt::Debug for Signal<AudioRate> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "@{}", self.0)
+    }
+}
+
+impl std::fmt::Debug for Signal<ControlRate> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
 
 impl<T: SignalRate> Signal<T> {
     pub const fn new(val: Scalar) -> Self {
@@ -97,39 +108,43 @@ where
         buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<T>>,
-        outputs: &mut BTreeMap<&str, Signal<T>>,
+        inputs: &[Signal<T>],
+        outputs: &mut [Signal<T>],
     );
 
     fn process_buffer(
         &self,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
-        inputs: &BTreeMap<&str, Vec<Signal<T>>>,
-        outputs: &mut BTreeMap<&str, Vec<Signal<T>>>,
+        inputs: &[Vec<Signal<T>>],
+        outputs: &mut [Vec<Signal<T>>],
     ) {
-        let mut audio_buffer_len = inputs.iter().next().unwrap().1.len();
-        assert!(inputs.iter().all(|(_, inp)| {
+        let mut audio_buffer_len = inputs
+            .iter()
+            .next()
+            .unwrap_or_else(|| outputs.iter().next().unwrap())
+            .len();
+        assert!(inputs.iter().all(|inp| {
             let check = inp.len() == audio_buffer_len;
             audio_buffer_len = inp.len();
             check
         }));
-        assert!(outputs.iter().all(|(_, inp)| {
-            let check = inp.len() == audio_buffer_len;
-            audio_buffer_len = inp.len();
+        assert!(outputs.iter().all(|out| {
+            let check = out.len() == audio_buffer_len;
+            audio_buffer_len = out.len();
             check
         }));
-        let mut inp =
-            BTreeMap::from_iter(inputs.iter().map(|(name, _inp)| (*name, Signal::new(0.0))));
-        let mut out =
-            BTreeMap::from_iter(outputs.iter().map(|(name, _out)| (*name, Signal::new(0.0))));
+        // let mut inp = Vec::from_iter(inputs.iter().map(|(name, _inp)| (*name, Signal::new(0.0))));
+        // let mut out = Vec::from_iter(outputs.iter().map(|(name, _out)| (*name, Signal::new(0.0))));
+        let mut inp = vec![Signal::new(0.0); inputs.len()];
+        let mut out = vec![Signal::new(0.0); outputs.len()];
         for i in 0..audio_buffer_len {
-            for ((_, val), (_, inp)) in inp.iter_mut().zip(inputs.iter()) {
-                *val = inp[i];
+            for (val, buf) in inp.iter_mut().zip(inputs) {
+                *val = buf[i];
             }
             self.process_sample(i, sample_rate, sibling_node, &inp, &mut out);
-            for (out_name, out_val) in &out {
-                outputs.get_mut(out_name).unwrap()[i] = *out_val;
+            for (j, out_val) in out.iter().enumerate() {
+                outputs.get_mut(j).unwrap()[i] = *out_val;
             }
         }
     }

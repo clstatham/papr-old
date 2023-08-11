@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -6,7 +6,7 @@ use cpal::{
 };
 
 use eframe::egui::CentralPanel;
-use std::collections::BTreeMap;
+
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -38,20 +38,20 @@ impl AudioContext {
         if output.len() != buffer_len {
             panic!("Buffer len mismatch: {} vs {}", output.len(), buffer_len);
         }
-        let mut out = BTreeMap::default();
+        let mut out = BTreeMap::new();
         // for c in 0..channels {
-        out.insert("dac0", vec![Signal::new(0.0); output.len() / channels]);
+        let dac0 = graph.node_id_by_name("dac0").unwrap();
+        let mut binding = vec![Signal::new(0.0); output.len() / channels];
+        out.insert(dac0, &mut binding);
         // }
-        let ins = BTreeMap::from_iter([(
-            "t",
-            (0usize..(output.len() / channels))
-                .map(|frame_idx| Signal::new(t as Scalar + frame_idx as Scalar / sample_rate))
-                .collect::<Vec<_>>(),
-        )]);
+        let ts = (0usize..(output.len() / channels))
+            .map(|frame_idx| Signal::new(t as Scalar + frame_idx as Scalar / sample_rate))
+            .collect::<Vec<_>>();
+        let ins = BTreeMap::from_iter([(graph.node_id_by_name("t").unwrap(), &ts)]);
         graph.process_graph(sample_rate, &ins, &mut out);
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
             for (c, sample) in frame.iter_mut().enumerate() {
-                *sample = T::from_sample(out[&*format!("dac{c}")][frame_idx].value());
+                *sample = T::from_sample(out[&dac0][frame_idx].value());
             }
         }
     }
@@ -134,24 +134,25 @@ impl PaprApp {
             mut control,
         } = main_graphs;
 
-        for c_in_idx in control.graph_inputs.clone() {
+        for c_in_idx in control.input_node_indices.clone().iter().copied() {
             let c_in = &control.digraph[c_in_idx];
-            let ui_name: String = c_in.name.to_owned().into();
-            let (an, cn) = UiInput::create_nodes(c_in.inputs["input"].clone(), audio_buffer_len);
-            self.ui_control_inputs.push(cn.clone());
-            audio.add_node(an);
-            let c_in_ui_idx = control.add_node(cn);
-            control.add_edge(
-                c_in_ui_idx,
-                c_in_idx,
-                Connection {
-                    source_output: ui_name,
-                    sink_input: "input".to_owned(),
-                },
-            );
+            if !c_in.inputs[0].implicit {
+                let (an, cn) = UiInput::create_nodes(c_in.inputs[0].clone(), audio_buffer_len);
+                self.ui_control_inputs.push(cn.clone());
+                audio.add_node(an);
+                let c_in_ui_idx = control.add_node(cn);
+                control.add_edge(
+                    c_in_ui_idx,
+                    c_in_idx,
+                    Connection {
+                        source_output: 0,
+                        sink_input: 0,
+                    },
+                );
+            }
         }
 
-        for c_out_idx in control.graph_outputs.clone() {
+        for c_out_idx in control.output_node_indices.clone().iter().copied() {
             let c_out = &control.digraph[c_out_idx];
             let dbg_name = format!("{}_dbg", &c_out.name);
             let (_an, cn) = DebugNode::create_nodes(dbg_name.to_owned());
@@ -160,8 +161,8 @@ impl PaprApp {
                 c_out_idx,
                 debug0_cn,
                 Connection {
-                    source_output: "out".to_owned(),
-                    sink_input: "input".to_owned(),
+                    source_output: 0,
+                    sink_input: 0,
                 },
             );
         }
@@ -236,6 +237,7 @@ impl PaprApp {
 
         audio_cx.run::<f32>(audio_graph, config, self.audio_buffer_len);
         self.audio_cx = Some(audio_cx);
+        let t_idx = control_graph.node_id_by_name("t").unwrap();
         let control_rate = self.control_rate;
         std::thread::Builder::new()
             .name("PAPR Control".into())
@@ -247,10 +249,9 @@ impl PaprApp {
                     ));
                     let mut t = 0 as Scalar;
                     loop {
-                        control_graph.process_buffer(
+                        control_graph.process_graph(
                             control_rate,
-                            None,
-                            &BTreeMap::from_iter([("t", vec![Signal::new(t)])]),
+                            &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t)])]),
                             &mut BTreeMap::default(),
                         );
                         clk.tick().await;

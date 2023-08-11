@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use std::collections::BTreeMap;
+
 
 use crate::{
     dsp::{AudioRate, ControlRate},
@@ -21,13 +21,10 @@ impl GraphInput {
         Arc::new(Node::new(
             NodeName::new(name),
             audio_buffer_len,
-            BTreeMap::from_iter([("input".to_owned(), for_input)]),
-            BTreeMap::from_iter([(
-                "out".to_owned(),
-                Output {
-                    name: "out".to_owned(),
-                },
-            )]),
+            vec![for_input],
+            vec![Output {
+                name: "out".to_owned(),
+            }],
             crate::graph::ProcessorType::Boxed(Box::new(Self)),
             None,
         ))
@@ -40,13 +37,10 @@ impl GraphInput {
         Arc::new(Node::new(
             NodeName::new(name),
             1,
-            BTreeMap::from_iter([("input".to_owned(), for_input)]),
-            BTreeMap::from_iter([(
-                "out".to_owned(),
-                Output {
-                    name: "out".to_owned(),
-                },
-            )]),
+            vec![for_input],
+            vec![Output {
+                name: "out".to_owned(),
+            }],
             crate::graph::ProcessorType::Boxed(Box::new(Self)),
             None,
         ))
@@ -59,10 +53,10 @@ impl Processor<AudioRate> for GraphInput {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
     ) {
-        *outputs.get_mut("out").unwrap() = inputs["input"];
+        *outputs.get_mut(0).unwrap() = inputs[0];
     }
 }
 
@@ -72,10 +66,10 @@ impl Processor<ControlRate> for GraphInput {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
     ) {
-        *outputs.get_mut("out").unwrap() = inputs["input"];
+        *outputs.get_mut(0).unwrap() = inputs[0];
     }
 }
 
@@ -93,10 +87,10 @@ impl Processor<AudioRate> for GraphOutput {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
     ) {
-        *outputs.get_mut("out").unwrap() = inputs["input"];
+        *outputs.get_mut(0).unwrap() = inputs[0];
     }
 }
 
@@ -106,9 +100,9 @@ impl Processor<ControlRate> for GraphOutput {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
     ) {
-        *outputs.get_mut("out").unwrap() = inputs["input"];
+        *outputs.get_mut(0).unwrap() = inputs[0];
     }
 }

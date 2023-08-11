@@ -2,7 +2,6 @@ use std::sync::{Arc, RwLock};
 
 use eframe::egui::{Slider, Ui};
 use papr_proc_macro::node_constructor;
-use std::collections::BTreeMap;
 
 use crate::{
     dsp::{AudioRate, ControlRate, Signal},
@@ -12,13 +11,7 @@ use crate::{
 
 use super::{Processor, SmoothControlSignal};
 
-node_constructor! {
-    pub struct Dummy;
-    @in {}
-    @out {}
-    #in {}
-    #out {}
-}
+pub struct Dummy;
 
 impl Processor<AudioRate> for Dummy {
     fn process_sample(
@@ -26,8 +19,8 @@ impl Processor<AudioRate> for Dummy {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        _outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
+        _inputs: &[Signal<AudioRate>],
+        _outputs: &mut [Signal<AudioRate>],
     ) {
     }
 }
@@ -38,8 +31,8 @@ impl Processor<ControlRate> for Dummy {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<Node<AudioRate>>>,
-        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
+        _inputs: &[Signal<ControlRate>],
+        _outputs: &mut [Signal<ControlRate>],
     ) {
     }
 }
@@ -53,19 +46,19 @@ impl DebugNode {
         let cn = Arc::new(Node::new(
             NodeName::new(&name.clone()),
             1,
-            BTreeMap::from_iter([(
-                "input".to_owned(),
-                Input::new("input".to_owned().as_ref(), Some(Signal::new(0.0))),
-            )]),
-            BTreeMap::default(),
+            vec![Input::new(
+                "input".to_owned().as_ref(),
+                Some(Signal::new(0.0)),
+            )],
+            vec![],
             crate::graph::ProcessorType::Boxed(Box::new(Self { name: name.clone() })),
             None,
         ));
         let an = Arc::new(Node::new(
             NodeName::new(&name.clone()),
             0,
-            BTreeMap::default(),
-            BTreeMap::default(),
+            vec![],
+            vec![],
             crate::graph::ProcessorType::Boxed(Box::new(Self { name: name.clone() })),
             Some(cn.clone()),
         ));
@@ -79,8 +72,8 @@ impl Processor<AudioRate> for DebugNode {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        _outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
+        _inputs: &[Signal<AudioRate>],
+        _outputs: &mut [Signal<AudioRate>],
     ) {
     }
 }
@@ -91,11 +84,11 @@ impl Processor<ControlRate> for DebugNode {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
-        inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
+        inputs: &[Signal<ControlRate>],
+        _outputs: &mut [Signal<ControlRate>],
     ) {
-        let t = inputs["t"].value();
-        log::debug!("{} = {} (t={t})", self.name, inputs["input"].value());
+        let t = inputs[1].value();
+        log::debug!("{} = {} (t={t})", self.name, inputs[0].value());
     }
 }
 
@@ -113,10 +106,10 @@ impl Processor<AudioRate> for Dac {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
     ) {
-        *outputs.get_mut(&"out").unwrap() = inputs["input"];
+        *outputs.get_mut(0).unwrap() = inputs[0];
     }
 }
 
@@ -126,8 +119,8 @@ impl Processor<ControlRate> for Dac {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
+        _inputs: &[Signal<ControlRate>],
+        _outputs: &mut [Signal<ControlRate>],
     ) {
     }
 }
@@ -149,8 +142,8 @@ impl Processor<AudioRate> for UiInputA {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
-        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        _outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
+        _inputs: &[Signal<AudioRate>],
+        _outputs: &mut [Signal<AudioRate>],
     ) {
         self.value.write().unwrap().next_value();
     }
@@ -162,10 +155,10 @@ impl Processor<ControlRate> for UiInputC {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
-        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
+        _inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
     ) {
-        *outputs.get_mut(self.name.as_str()).unwrap() = self.value.read().unwrap().current_value();
+        *outputs.get_mut(0).unwrap() = self.value.read().unwrap().current_value();
     }
 
     fn ui_update(&self, ui: &mut Ui) {
@@ -195,16 +188,10 @@ impl UiInput {
         let cn = Arc::new(Node::new(
             for_input.name.clone().into(),
             1,
-            BTreeMap::default(),
-            BTreeMap::from_iter(
-                [(
-                    for_input.name.clone(),
-                    Output {
-                        name: for_input.name.clone(),
-                    },
-                )]
-                .into_iter(),
-            ),
+            vec![],
+            vec![Output {
+                name: for_input.name.clone(),
+            }],
             Box::new(UiInputC {
                 maximum: for_input.maximum.unwrap(),
                 minimum: for_input.minimum.unwrap(),
@@ -217,8 +204,8 @@ impl UiInput {
         let an = Arc::new(Node::new(
             for_input.name.clone().into(),
             audio_buffer_len,
-            BTreeMap::default(),
-            BTreeMap::default(),
+            vec![],
+            vec![],
             Box::new(UiInputA { value }).into(),
             Some(cn.clone()),
         ));
@@ -239,26 +226,20 @@ impl Constant {
         let cn = Arc::new(Node::new(
             NodeName::new(name),
             1,
-            BTreeMap::default(),
-            BTreeMap::from_iter([(
-                "out".to_owned(),
-                Output {
-                    name: "out".to_owned(),
-                },
-            )]),
+            vec![],
+            vec![Output {
+                name: "out".to_owned(),
+            }],
             crate::graph::ProcessorType::Boxed(Box::new(Self { value })),
             None,
         ));
         let an = Arc::new(Node::new(
             NodeName::new(name),
             audio_buffer_len,
-            BTreeMap::default(),
-            BTreeMap::from_iter([(
-                "out".to_owned(),
-                Output {
-                    name: "out".to_owned(),
-                },
-            )]),
+            vec![],
+            vec![Output {
+                name: "out".to_owned(),
+            }],
             crate::graph::ProcessorType::Boxed(Box::new(Self { value })),
             Some(cn.clone()),
         ));
@@ -272,10 +253,10 @@ impl Processor<AudioRate> for Constant {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
+        _inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
     ) {
-        *outputs.get_mut("out").unwrap() = self.value.into();
+        *outputs.get_mut(0).unwrap() = self.value.into();
     }
 }
 
@@ -285,12 +266,49 @@ impl Processor<ControlRate> for Constant {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
+        _inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
     ) {
-        *outputs.get_mut("out").unwrap() = self.value.into();
+        *outputs.get_mut(0).unwrap() = self.value.into();
     }
 }
+
+macro_rules! impl_arith {
+    ($typ:ident, $op:ident, $use:ident) => {
+        impl Processor<AudioRate> for $typ {
+            fn process_sample(
+                &self,
+                _buffer_idx: usize,
+                _sample_rate: Scalar,
+                _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
+                inputs: &[Signal<AudioRate>],
+                outputs: &mut [Signal<AudioRate>],
+            ) {
+                use std::ops::$use;
+                *outputs.get_mut(0).unwrap() = inputs[0].$op(inputs[1]);
+            }
+        }
+
+        impl Processor<ControlRate> for $typ {
+            fn process_sample(
+                &self,
+                _buffer_idx: usize,
+                _sample_rate: Scalar,
+                _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+                inputs: &[Signal<ControlRate>],
+                outputs: &mut [Signal<ControlRate>],
+            ) {
+                use std::ops::$use;
+                *outputs.get_mut(0).unwrap() = inputs[0].$op(inputs[1]);
+            }
+        }
+    };
+}
+
+impl_arith!(Multiply, mul, Mul);
+impl_arith!(Divide, div, Div);
+impl_arith!(Add, add, Add);
+impl_arith!(Subtract, sub, Sub);
 
 node_constructor! {
     pub struct Multiply;
@@ -298,32 +316,6 @@ node_constructor! {
     @out { out }
     #in { a, b }
     #out { out }
-}
-
-impl Processor<AudioRate> for Multiply {
-    fn process_sample(
-        &self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
-    ) {
-        *outputs.get_mut("out").unwrap() = inputs["a"] * inputs["b"];
-    }
-}
-
-impl Processor<ControlRate> for Multiply {
-    fn process_sample(
-        &self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
-    ) {
-        *outputs.get_mut("out").unwrap() = inputs["a"] * inputs["b"];
-    }
 }
 
 node_constructor! {
@@ -334,32 +326,6 @@ node_constructor! {
     #out { out }
 }
 
-impl Processor<AudioRate> for Divide {
-    fn process_sample(
-        &self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
-    ) {
-        *outputs.get_mut("out").unwrap() = inputs["a"] / inputs["b"];
-    }
-}
-
-impl Processor<ControlRate> for Divide {
-    fn process_sample(
-        &self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
-    ) {
-        *outputs.get_mut("out").unwrap() = inputs["a"] / inputs["b"];
-    }
-}
-
 node_constructor! {
     pub struct Add;
     @in { a, b }
@@ -368,64 +334,12 @@ node_constructor! {
     #out { out }
 }
 
-impl Processor<AudioRate> for Add {
-    fn process_sample(
-        &self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
-    ) {
-        *outputs.get_mut("out").unwrap() = inputs["a"] + inputs["b"];
-    }
-}
-
-impl Processor<ControlRate> for Add {
-    fn process_sample(
-        &self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
-    ) {
-        *outputs.get_mut("out").unwrap() = inputs["a"] + inputs["b"];
-    }
-}
-
 node_constructor! {
     pub struct Subtract;
     @in { a, b }
     @out { out }
     #in { a, b }
     #out { out }
-}
-
-impl Processor<AudioRate> for Subtract {
-    fn process_sample(
-        &self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
-    ) {
-        *outputs.get_mut("out").unwrap() = inputs["a"] - inputs["b"];
-    }
-}
-
-impl Processor<ControlRate> for Subtract {
-    fn process_sample(
-        &self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
-    ) {
-        *outputs.get_mut("out").unwrap() = inputs["a"] - inputs["b"];
-    }
 }
 
 node_constructor! {
@@ -442,10 +356,10 @@ impl Processor<AudioRate> for Sine {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
     ) {
-        *outputs.get_mut("out").unwrap() = Signal::new_audio(Scalar::sin(inputs["input"].value()));
+        *outputs.get_mut(0).unwrap() = Signal::new_audio(Scalar::sin(inputs[0].value()));
     }
 }
 
@@ -455,11 +369,10 @@ impl Processor<ControlRate> for Sine {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
     ) {
-        *outputs.get_mut("out").unwrap() =
-            Signal::new_control(Scalar::sin(inputs["input"].value()));
+        *outputs.get_mut(0).unwrap() = Signal::new_control(Scalar::sin(inputs[0].value()));
     }
 }
 
@@ -477,12 +390,12 @@ impl Processor<AudioRate> for EventToAudio {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &BTreeMap<&str, Signal<AudioRate>>,
-        outputs: &mut BTreeMap<&str, Signal<AudioRate>>,
+        _inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
     ) {
         let sibling_node = sibling_node.as_ref().unwrap();
-        let input = sibling_node.cached_input("e").unwrap();
-        *outputs.get_mut("a").unwrap() = Signal::new_audio(input.value());
+        let input = sibling_node.cached_input(0).unwrap();
+        *outputs.get_mut(0).unwrap() = Signal::new_audio(input.value());
     }
 }
 
@@ -492,8 +405,8 @@ impl Processor<ControlRate> for EventToAudio {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &BTreeMap<&str, Signal<ControlRate>>,
-        _outputs: &mut BTreeMap<&str, Signal<ControlRate>>,
+        _inputs: &[Signal<ControlRate>],
+        _outputs: &mut [Signal<ControlRate>],
     ) {
     }
 }
