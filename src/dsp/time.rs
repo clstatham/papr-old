@@ -1,7 +1,4 @@
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use papr_proc_macro::node_constructor;
 
@@ -20,8 +17,8 @@ node_constructor! {
 impl Processor<AudioRate> for Clock {
     fn process_sample(
         &mut self,
-        buffer_idx: usize,
-        sample_rate: crate::Scalar,
+        _buffer_idx: usize,
+        _sample_rate: crate::Scalar,
         sibling_node: Option<&std::sync::Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
         inputs: &[super::Signal<AudioRate>],
         outputs: &mut [super::Signal<AudioRate>],
@@ -43,9 +40,9 @@ impl Processor<AudioRate> for Clock {
 impl Processor<ControlRate> for Clock {
     fn process_sample(
         &mut self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&std::sync::Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&std::sync::Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
         inputs: &[super::Signal<ControlRate>],
         outputs: &mut [super::Signal<ControlRate>],
     ) {
@@ -77,12 +74,15 @@ node_constructor! {
 impl Processor<AudioRate> for Delay {
     fn process_sample(
         &mut self,
-        buffer_idx: usize,
+        _buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
         inputs: &[Signal<AudioRate>],
         outputs: &mut [Signal<AudioRate>],
     ) {
+        // kinda a port of:
+        // https://github.com/qbroquetas/IV-XDelay/blob/master/IvxDelay/Source/DelayProcessor.cpp
+
         let cn = sibling_node.as_ref().unwrap();
         let delay_desired_secs = cn.cached_input(0).unwrap().value();
 
@@ -122,11 +122,11 @@ impl Processor<AudioRate> for Delay {
 impl Processor<ControlRate> for Delay {
     fn process_sample(
         &mut self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        _inputs: &[Signal<ControlRate>],
+        _outputs: &mut [Signal<ControlRate>],
     ) {
     }
 }

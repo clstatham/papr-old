@@ -5,7 +5,7 @@ use nom::{
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    dsp::{time::Clock, AudioRate, ControlRate, Signal},
+    dsp::{AudioRate, ControlRate},
     graph::{Node, NodeName},
     Scalar,
 };

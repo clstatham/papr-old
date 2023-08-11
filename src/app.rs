@@ -1,11 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fs::File,
-    io::Read,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, fs::File, io::Read, path::PathBuf, sync::Arc, time::Instant};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -19,7 +12,7 @@ use tokio::runtime::Runtime;
 use crate::{
     dsp::{
         basic::{DebugNode, UiInput},
-        AudioRate, ControlRate, Processor, Signal,
+        AudioRate, ControlRate, Signal,
     },
     graph::{Connection, Graph, Node, NodeName},
     parser::{parse_script, DualGraphs},
@@ -216,7 +209,7 @@ impl PaprApp {
     }
 
     pub fn spawn(&mut self) {
-        let rt = self
+        let _rt = self
             .rt
             .take()
             .expect("PaprApp::spawn(): runtime not initialized");
@@ -259,7 +252,7 @@ impl PaprApp {
             .name("PAPR Control".into())
             .spawn(move || {
                 #[allow(clippy::unnecessary_cast)]
-                let clk = std::time::Duration::from_secs_f64((control_rate as f64).recip());
+                let _clk = std::time::Duration::from_secs_f64((control_rate as f64).recip());
                 let mut t = 0 as Scalar;
                 loop {
                     let tik = Instant::now();

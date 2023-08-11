@@ -9,7 +9,7 @@ use crate::{
     Scalar,
 };
 
-use super::{Processor, SmoothControlSignal};
+use super::Processor;
 
 pub struct Dummy;
 
