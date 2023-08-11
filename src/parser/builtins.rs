@@ -22,46 +22,37 @@ pub fn global_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scala
 
 pub enum BuiltinNode {
     Sine,
-    SineOsc {
-        amp: Signal<ControlRate>,
-        freq: Signal<ControlRate>,
-        fm_amt: Signal<ControlRate>,
-    },
-    BlSawOsc {
-        amp: Signal<ControlRate>,
-        freq: Signal<ControlRate>,
-    },
+    SineOsc,
+    BlSawOsc,
     EventToAudio,
     MidiToFreq,
-    Clock {
-        period: Signal<ControlRate>,
-        width: Signal<ControlRate>,
-    },
+    Clock,
+    Delay,
 }
 
 impl BuiltinNode {
-    pub fn create_graphs(
+    pub fn create_nodes(
         &self,
         name: &str,
         audio_buffer_len: usize,
     ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
         match self {
             Self::Sine => crate::dsp::basic::Sine::create_nodes(name, audio_buffer_len, 0.0),
-            Self::SineOsc { amp, freq, fm_amt } => crate::dsp::generators::SineOsc::create_nodes(
+            Self::SineOsc => crate::dsp::generators::SineOsc::create_nodes(
                 name,
                 audio_buffer_len,
-                amp.value(),
-                freq.value(),
-                fm_amt.value(),
+                1.0,
+                440.0,
+                0.0,
             ),
-            Self::BlSawOsc { amp, freq } => crate::dsp::generators::BlSawOsc::create_nodes(
+            Self::BlSawOsc => crate::dsp::generators::BlSawOsc::create_nodes(
                 name,
                 audio_buffer_len,
                 Arc::new(Mutex::new(0.0)),
                 Arc::new(Mutex::new(1.0)),
                 Arc::new(Mutex::new(0.0)),
-                amp.value(),
-                freq.value(),
+                1.0,
+                440.0,
             ),
             Self::EventToAudio => {
                 crate::dsp::basic::EventToAudio::create_nodes(name, audio_buffer_len, 0.0)
@@ -69,11 +60,12 @@ impl BuiltinNode {
             Self::MidiToFreq => {
                 crate::dsp::midi::MidiToFreq::create_nodes(name, audio_buffer_len, 0.0)
             }
-            Self::Clock { period, width } => crate::dsp::time::Clock::create_nodes(
+            Self::Clock => crate::dsp::time::Clock::create_nodes(name, audio_buffer_len, 1.0, 0.5),
+            Self::Delay => crate::dsp::time::Delay::create_nodes(
                 name,
                 audio_buffer_len,
-                period.value(),
-                width.value(),
+                Arc::new(Mutex::new(vec![0.0; 480000].into())), // TODO: don't hardcode
+                1.0,
             ),
         }
     }
@@ -94,34 +86,17 @@ pub fn let_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedLet> {
             )),
             ignore_garbage(tag(";")),
         )),
-        |(_, _, id, _, graph_name, control_input_defaults, _)| ParsedLet {
+        // todo: defaults are broken
+        |(_, _, id, _, graph_name, _control_input_defaults, _)| ParsedLet {
             ident: id.to_owned(),
             graph_name: match graph_name {
                 "sin" => LetRhs::BuiltinNode(BuiltinNode::Sine),
-                "sineosc" => {
-                    let defaults = control_input_defaults.unwrap();
-                    LetRhs::BuiltinNode(BuiltinNode::SineOsc {
-                        amp: Signal::new_control(defaults[0] as Scalar),
-                        freq: Signal::new_control(defaults[1] as Scalar),
-                        fm_amt: Signal::new_control(defaults[2] as Scalar),
-                    })
-                }
-                "sawosc" => {
-                    let defaults = control_input_defaults.unwrap();
-                    LetRhs::BuiltinNode(BuiltinNode::BlSawOsc {
-                        amp: Signal::new_control(defaults[0] as Scalar),
-                        freq: Signal::new_control(defaults[1] as Scalar),
-                    })
-                }
+                "sineosc" => LetRhs::BuiltinNode(BuiltinNode::SineOsc),
+                "sawosc" => LetRhs::BuiltinNode(BuiltinNode::BlSawOsc),
                 "e2a" => LetRhs::BuiltinNode(BuiltinNode::EventToAudio),
                 "m2f" => LetRhs::BuiltinNode(BuiltinNode::MidiToFreq),
-                "clock" => {
-                    let defaults = control_input_defaults.unwrap();
-                    LetRhs::BuiltinNode(BuiltinNode::Clock {
-                        period: Signal::new_control(defaults[0] as Scalar),
-                        width: Signal::new_control(defaults[1] as Scalar),
-                    })
-                }
+                "clock" => LetRhs::BuiltinNode(BuiltinNode::Clock),
+                "delay" => LetRhs::BuiltinNode(BuiltinNode::Delay),
                 _ => LetRhs::ScriptGraph(NodeName::new(graph_name)),
             },
         },

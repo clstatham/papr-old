@@ -24,7 +24,7 @@ cfg_if::cfg_if! {
 
 #[derive(clap::Parser)]
 struct Args {
-    #[arg(short, long, default_value_t = 400)]
+    #[arg(short, long, default_value_t = 1000)]
     control_rate: u64,
     #[arg(short, long, default_value_t = 48000)]
     sample_rate: u64,

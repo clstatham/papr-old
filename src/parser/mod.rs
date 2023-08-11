@@ -797,7 +797,7 @@ pub fn graph_def_instantiation<'a>(
                                 )
                             }
                             LetRhs::BuiltinNode(node) => {
-                                node.create_graphs(&pl.ident, ctx.audio_buffer_len)
+                                node.create_nodes(&pl.ident, ctx.audio_buffer_len)
                             }
                         };
 
