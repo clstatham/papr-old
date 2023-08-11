@@ -393,8 +393,8 @@ where
     pub fn write_dot(&self, name: &str) {
         use std::io::Write;
         let mut f = std::fs::File::create(name).unwrap();
-        dbg!(&self.name, &self.partitions);
-        println!();
+        // dbg!(&self.name, &self.partitions);
+        // println!();
         write!(
             f,
             "{:?}",
@@ -458,7 +458,7 @@ where
                             && self
                                 .digraph
                                 .edges_directed(edge.target(), Direction::Incoming)
-                                .all(|edge| bfs_visited.contains(&edge.source()))
+                                .all(|next_incoming| bfs_visited.contains(&next_incoming.source()))
                         {
                             next_layer.push(edge.target());
                         }

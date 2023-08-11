@@ -10,13 +10,14 @@ use std::collections::BTreeMap;
 use crate::{
     dsp::{
         basic::{Add, Constant, Divide, Multiply, Subtract},
+        graph_util::LetVar,
         AudioRate, ControlRate, Signal,
     },
     graph::{Connection, Graph, Input, Node, NodeName, Output},
     Scalar,
 };
 
-use self::builtins::{global_const, let_statement, BuiltinNode};
+use self::builtins::{create_statement, global_const, BuiltinNode};
 
 pub mod builtins;
 
@@ -121,22 +122,23 @@ impl Expr {
     }
 }
 
-pub enum ConnectionOrLet {
+pub enum Statement {
     Connection(ParsedConnection),
-    Let(ParsedLet),
+    Create(ParsedCreate),
 }
 
-pub enum LetRhs {
+pub enum CreateRhs {
     ScriptGraph(NodeName),
     BuiltinNode(BuiltinNode),
 }
 
-pub struct ParsedLet {
+pub struct ParsedCreate {
     ident: String,
-    graph_name: LetRhs,
+    rhs: CreateRhs,
 }
 
 pub struct ParsedConnection {
+    is_let: bool,
     from: Expr,
     to: Vec<Binding>,
 }
@@ -517,36 +519,43 @@ pub fn connection<'a>(
         tuple((
             ignore_garbage(alt((
                 map(
-                    alt((
-                        audio_binding(audio_buffer_len),
-                        control_binding(audio_buffer_len),
+                    tuple((
+                        map(opt(ignore_garbage(tag("let"))), |l| l.is_some()),
+                        alt((
+                            audio_binding(audio_buffer_len),
+                            control_binding(audio_buffer_len),
+                        )),
                     )),
-                    |b| vec![b],
+                    |(is_let, b)| (is_let, vec![b]),
                 ),
-                delimited(
-                    ignore_garbage(tag("[")),
-                    many1(ignore_garbage(alt((
-                        audio_binding(audio_buffer_len),
-                        control_binding(audio_buffer_len),
-                    )))),
-                    ignore_garbage(tag("]")),
+                map(
+                    delimited(
+                        ignore_garbage(tag("[")),
+                        many1(ignore_garbage(alt((
+                            audio_binding(audio_buffer_len),
+                            control_binding(audio_buffer_len),
+                        )))),
+                        ignore_garbage(tag("]")),
+                    ),
+                    |v| (false, v),
                 ),
             ))),
             tag("<-"),
             ignore_garbage(move |a| expr(a, audio_buffer_len)),
             tag(";"),
         )),
-        |(to_inputs, _, xpr, _)| ParsedConnection {
+        |((is_let, to_inputs), _, xpr, _)| ParsedConnection {
+            is_let,
             from: xpr,
             to: to_inputs,
         },
     )
 }
 
-pub fn connection_or_let(inp: &str, audio_buffer_len: usize) -> IResult<&str, ConnectionOrLet> {
+pub fn statement(inp: &str, audio_buffer_len: usize) -> IResult<&str, Statement> {
     alt((
-        map(connection(audio_buffer_len), ConnectionOrLet::Connection),
-        map(let_statement(), ConnectionOrLet::Let),
+        map(connection(audio_buffer_len), Statement::Connection),
+        map(create_statement(), Statement::Create),
     ))(inp)
 }
 
@@ -576,7 +585,7 @@ pub fn graph_def<'a>(
             Vec<Binding>,
             Vec<Binding>,
             Vec<Binding>,
-            Vec<ConnectionOrLet>,
+            Vec<Statement>,
         ),
     ),
 > {
@@ -601,9 +610,7 @@ pub fn graph_def<'a>(
             ),
             preceded(
                 ignore_garbage(tag("~")),
-                many_in_braces(ignore_garbage(move |a| {
-                    connection_or_let(a, audio_buffer_len)
-                })),
+                many_in_braces(ignore_garbage(move |a| statement(a, audio_buffer_len))),
             ),
         ))))),
     ))
@@ -690,7 +697,7 @@ pub fn graph_def_instantiation<'a>(
 
             for conn in connections {
                 match conn {
-                    ConnectionOrLet::Connection(conn) => {
+                    Statement::Connection(conn) => {
                         let (from_is_audio, from, from_output) = match &conn.from {
                             Expr::Binding(from) => match from {
                                 Binding::AudioIo { node, port } => {
@@ -737,6 +744,7 @@ pub fn graph_def_instantiation<'a>(
                                 (true, Binding::AudioIo { port: to, .. }) => {
                                     let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
                                         // cross-graph connection, use the external names for things
+                                        assert!(!conn.is_let, "Parsing error: Invalid `let` statement");
                                         let node_id = ag.node_id_by_name(to_node).unwrap();
                                         (
                                             ag.digraph[node_id].input_named(to).unwrap(),
@@ -744,16 +752,25 @@ pub fn graph_def_instantiation<'a>(
                                         )
                                     } else {
                                         // self-input is the sink, use our own names for things
-                                        (
-                                            0,
-                                            ag.node_id_by_name(to).unwrap(),
-                                        )
+                                        if conn.is_let {
+                                            let (an, cn) = LetVar::create_nodes(to, ctx.audio_buffer_len, 0.0);
+                                            (
+                                                0,
+                                                ag.add_node(an),
+                                            )
+                                        } else {
+                                            (
+                                                0,
+                                                ag.node_id_by_name(to).unwrap(),
+                                            )
+                                        }
                                     };
                                     ag.add_edge(from, sink, Connection { source_output: from_output, sink_input });
                                 }
                                 (false, Binding::ControlIo { port: to, .. }) => {
                                     let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
                                         // cross-graph connection, use the external names for things
+                                        assert!(!conn.is_let, "Parsing error: Invalid `let` statement");
                                         let node_id = cg.node_id_by_name(to_node).unwrap();
                                         (
                                             cg.digraph[node_id].input_named(to).unwrap(),
@@ -761,10 +778,18 @@ pub fn graph_def_instantiation<'a>(
                                         )
                                     } else {
                                         // self-input is the sink, use our own names for things
-                                        (
-                                            0,
-                                            cg.node_id_by_name(to).unwrap(),
-                                        )
+                                        if conn.is_let {
+                                            let (an, cn) = LetVar::create_nodes(to, ctx.audio_buffer_len, 0.0);
+                                            (0,
+                                                cg.add_node(cn),
+                                            )
+                                        } else {
+                                            (
+                                                0,
+                                                cg.node_id_by_name(to).unwrap(),
+                                            )
+                                        }
+                                        
                                     };
                                     // let con_id = cg.add_node(con.to_owned(), Default::default());
                                     cg.add_edge(from, sink, Connection { source_output: from_output, sink_input });
@@ -777,10 +802,10 @@ pub fn graph_def_instantiation<'a>(
                         }
                     }
 
-                    ConnectionOrLet::Let(pl) => {
+                    Statement::Create(pl) => {
                         let known_node_defs = ctx.known_node_defs.clone();
-                        let (an, cn) = match &pl.graph_name {
-                            LetRhs::ScriptGraph(graph_name) => {
+                        let (an, cn) = match &pl.rhs {
+                            CreateRhs::ScriptGraph(graph_name) => {
                                 let (_, graphs) =
                                     graph_def_instantiation(&known_node_defs[graph_name], ctx)
                                         .unwrap();
@@ -796,7 +821,7 @@ pub fn graph_def_instantiation<'a>(
                                     Arc::new(Node::from_graph(control)),
                                 )
                             }
-                            LetRhs::BuiltinNode(node) => {
+                            CreateRhs::BuiltinNode(node) => {
                                 node.create_nodes(&pl.ident, ctx.audio_buffer_len)
                             }
                         };

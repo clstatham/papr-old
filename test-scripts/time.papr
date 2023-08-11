@@ -8,17 +8,19 @@ graph main {
     }
     #out { #val }
     ~ {
-        let s: sineosc;
-        let dl: delay;
+        create s: sineosc;
+        create dl: delay;
         s.#freq <- #440;
         s.#amp <- #1;
         dl.#delay <- #delay;
 
-        let ck: clock<1.0 0.5>;
+        create ck: clock;
         ck.#period <- #period;
         ck.#width <- #width;
 
-        dl.@input <- (s.@out * ck.@out);
-        @dac0 <- (dl.@out + s.@out);
+        let @final <- (s.@out * ck.@out);
+
+        dl.@input <- @final;
+        @dac0 <- (dl.@out + @final);
     }
 }

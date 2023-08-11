@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-
-
 use crate::{
     dsp::{AudioRate, ControlRate},
     graph::{Input, Node, NodeName, Output},
@@ -95,6 +93,40 @@ impl Processor<AudioRate> for GraphOutput {
 }
 
 impl Processor<ControlRate> for GraphOutput {
+    fn process_sample(
+        &self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
+    ) {
+        *outputs.get_mut(0).unwrap() = inputs[0];
+    }
+}
+
+node_constructor! {
+    pub struct LetVar;
+    @in { input }
+    @out { out }
+    #in { input }
+    #out { out }
+}
+
+impl Processor<AudioRate> for LetVar {
+    fn process_sample(
+        &self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _control_node: Option<&Arc<Node<ControlRate>>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
+    ) {
+        *outputs.get_mut(0).unwrap() = inputs[0];
+    }
+}
+
+impl Processor<ControlRate> for LetVar {
     fn process_sample(
         &self,
         _buffer_idx: usize,

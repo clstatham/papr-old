@@ -10,7 +10,7 @@ use crate::{
     Scalar,
 };
 
-use super::{ident, ignore_garbage, whitespace1, LetRhs, ParsedLet};
+use super::{ident, ignore_garbage, whitespace1, CreateRhs, ParsedCreate};
 
 pub fn global_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scalar)> {
     alt((
@@ -71,10 +71,10 @@ impl BuiltinNode {
     }
 }
 
-pub fn let_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedLet> {
+pub fn create_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedCreate> {
     map(
         tuple((
-            tag("let"),
+            tag("create"),
             whitespace1(),
             ident(),
             ignore_garbage(tag(":")),
@@ -87,17 +87,17 @@ pub fn let_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedLet> {
             ignore_garbage(tag(";")),
         )),
         // todo: defaults are broken
-        |(_, _, id, _, graph_name, _control_input_defaults, _)| ParsedLet {
+        |(_, _, id, _, graph_name, _control_input_defaults, _)| ParsedCreate {
             ident: id.to_owned(),
-            graph_name: match graph_name {
-                "sin" => LetRhs::BuiltinNode(BuiltinNode::Sine),
-                "sineosc" => LetRhs::BuiltinNode(BuiltinNode::SineOsc),
-                "sawosc" => LetRhs::BuiltinNode(BuiltinNode::BlSawOsc),
-                "e2a" => LetRhs::BuiltinNode(BuiltinNode::EventToAudio),
-                "m2f" => LetRhs::BuiltinNode(BuiltinNode::MidiToFreq),
-                "clock" => LetRhs::BuiltinNode(BuiltinNode::Clock),
-                "delay" => LetRhs::BuiltinNode(BuiltinNode::Delay),
-                _ => LetRhs::ScriptGraph(NodeName::new(graph_name)),
+            rhs: match graph_name {
+                "sin" => CreateRhs::BuiltinNode(BuiltinNode::Sine),
+                "sineosc" => CreateRhs::BuiltinNode(BuiltinNode::SineOsc),
+                "sawosc" => CreateRhs::BuiltinNode(BuiltinNode::BlSawOsc),
+                "e2a" => CreateRhs::BuiltinNode(BuiltinNode::EventToAudio),
+                "m2f" => CreateRhs::BuiltinNode(BuiltinNode::MidiToFreq),
+                "clock" => CreateRhs::BuiltinNode(BuiltinNode::Clock),
+                "delay" => CreateRhs::BuiltinNode(BuiltinNode::Delay),
+                _ => CreateRhs::ScriptGraph(NodeName::new(graph_name)),
             },
         },
     )
