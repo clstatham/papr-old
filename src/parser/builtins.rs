@@ -23,6 +23,7 @@ pub fn global_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scala
 pub enum BuiltinNode {
     Sine,
     SineOsc,
+    SineOscLFO,
     BlSawOsc,
     EventToAudio,
     MidiToFreq,
@@ -45,6 +46,9 @@ impl BuiltinNode {
                 440.0,
                 0.0,
             ),
+            Self::SineOscLFO => {
+                crate::dsp::generators::SineOscLFO::create_nodes(name, audio_buffer_len, 1.0, 1.0)
+            }
             Self::BlSawOsc => crate::dsp::generators::BlSawOsc::create_nodes(
                 name,
                 audio_buffer_len,
@@ -95,6 +99,7 @@ pub fn create_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedCrea
             rhs: match graph_name {
                 "sin" => CreateRhs::BuiltinNode(BuiltinNode::Sine),
                 "sineosc" => CreateRhs::BuiltinNode(BuiltinNode::SineOsc),
+                "sinelfo" => CreateRhs::BuiltinNode(BuiltinNode::SineOscLFO),
                 "sawosc" => CreateRhs::BuiltinNode(BuiltinNode::BlSawOsc),
                 "e2a" => CreateRhs::BuiltinNode(BuiltinNode::EventToAudio),
                 "m2f" => CreateRhs::BuiltinNode(BuiltinNode::MidiToFreq),

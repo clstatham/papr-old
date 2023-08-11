@@ -86,9 +86,9 @@ impl Processor<AudioRate> for Delay {
         let cn = sibling_node.as_ref().unwrap();
         let delay_desired_secs = cn.cached_input(0).unwrap().value();
 
-        // self.delay_current =
-        //     self.delay_current + 0.00001 * (delay_desired_secs - self.delay_current);
-        self.delay_current = delay_desired_secs;
+        self.delay_current =
+            self.delay_current + 0.00005 * (delay_desired_secs - self.delay_current);
+        // self.delay_current = delay_desired_secs;
 
         let sample_offset = self.delay_current * sample_rate;
 

@@ -50,6 +50,43 @@ impl Processor<ControlRate> for SineOsc {
 }
 
 node_constructor! {
+    pub struct SineOscLFO;
+    @in {}
+    @out {}
+    #in { amp, freq }
+    #out { out }
+}
+
+impl Processor<AudioRate> for SineOscLFO {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        sibling_node: Option<&Arc<Node<ControlRate>>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
+    ) {
+    }
+}
+
+impl Processor<ControlRate> for SineOscLFO {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _control_node: Option<&Arc<Node<AudioRate>>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
+    ) {
+        let amp = inputs[0];
+        let freq = inputs[1];
+        let t = inputs[Self::control_input_idx("t").unwrap()].value();
+        *outputs.get_mut(0).unwrap() =
+            Signal::new_control(Scalar::sin(t * TAU * freq.value()) * amp.value());
+    }
+}
+
+node_constructor! {
     pub struct BlSawOsc {
         p: Arc<Mutex<Scalar>>,
         /// SET TO 1.0 INITIALLY
