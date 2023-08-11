@@ -92,8 +92,8 @@ impl Expr {
     pub fn name(&self) -> String {
         match self {
             Self::Binding(b) => match b {
-                Binding::AudioConstant(c) => "@constant".to_string(),
-                Binding::ControlConstant(c) => "#constant".to_string(),
+                Binding::AudioConstant(_) => "@constant".to_string(),
+                Binding::ControlConstant(_) => "#constant".to_string(),
                 Binding::AudioIo { node, port } => {
                     if let Some(node) = node {
                         format!("{node}.@{port}")
@@ -104,7 +104,7 @@ impl Expr {
                 Binding::ControlIo {
                     node,
                     port,
-                    default,
+                    default: _,
                 } => {
                     if let Some(node) = node {
                         format!("{node}.#{port}")
@@ -112,12 +112,7 @@ impl Expr {
                         format!("#{port}")
                     }
                 }
-                Binding::ControlIoBounded {
-                    port,
-                    min,
-                    max,
-                    default,
-                } => {
+                Binding::ControlIoBounded { port, .. } => {
                     format!("@{port}")
                 }
             },

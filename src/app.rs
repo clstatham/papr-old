@@ -41,8 +41,8 @@ impl AudioContext {
         let mut out = BTreeMap::new();
         // for c in 0..channels {
         let dac0 = graph.node_id_by_name("dac0").unwrap();
-        let mut binding = vec![Signal::new(0.0); output.len() / channels];
-        out.insert(dac0, &mut binding);
+        let mut dac0_vec = vec![Signal::new(0.0); output.len() / channels];
+        out.insert(dac0, &mut dac0_vec);
         // }
         let ts = (0usize..(output.len() / channels))
             .map(|frame_idx| Signal::new(t as Scalar + frame_idx as Scalar / sample_rate))
@@ -50,7 +50,7 @@ impl AudioContext {
         let ins = BTreeMap::from_iter([(graph.node_id_by_name("t").unwrap(), &ts)]);
         graph.process_graph(sample_rate, &ins, &mut out);
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
-            for (c, sample) in frame.iter_mut().enumerate() {
+            for (_c, sample) in frame.iter_mut().enumerate() {
                 *sample = T::from_sample(out[&dac0][frame_idx].value());
             }
         }

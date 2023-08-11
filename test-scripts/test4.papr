@@ -21,20 +21,39 @@ graph main {
     @in {}
     @out { @dac0 @dac1 }
     #in {
+        #fm_amt(0.0 : 1.0) = 1.0
         #freq0(20.0 : 2000.0) = 440.0
-        #fm_amt0(0.0 : 1.0) = 1.0
-
         #freq1(20.0 : 2000.0) = 440.0
+        #freq2(20.0 : 2000.0) = 440.0
+        #freq3(20.0 : 2000.0) = 440.0
+        #freq4(20.0 : 2000.0) = 440.0
     }
     #out {}
     ~ {
         let so0: sineosc_manual;
         let so1: sineosc_manual;
-        so0.#fm_amt <- #fm_amt0;
+        let so2: sineosc_manual;
+        let so3: sineosc_manual;
+        let so4: sineosc_manual;
+        so0.#fm_amt <- #fm_amt;
         so0.#freq <- #freq0;
 
         so1.#freq <- #freq1;
+        so1.#fm_amt <- #fm_amt;
         so0.@fm <- so1.@out;
+
+        so2.#freq <- #freq2;
+        so2.#fm_amt <- #fm_amt;
+        so1.@fm <- so2.@out;
+
+        so3.#freq <- #freq3;
+        so3.#fm_amt <- #fm_amt;
+        so2.@fm <- so3.@out;
+
+        so4.#freq <- #freq4;
+        so4.#fm_amt <- #fm_amt;
+        so3.@fm <- so4.@out;
+
         [@dac0 @dac1] <- so0.@out;
     }
 }

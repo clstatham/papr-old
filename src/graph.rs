@@ -466,8 +466,6 @@ where
             self.partitions.push(next_layer.clone());
             bfs_stack = next_layer.into();
         }
-
-        // dbg!(&self.name, &self.partitions);
     }
 
     pub fn node_id_by_name(&self, name: &str) -> Option<NodeIndex> {
@@ -484,11 +482,6 @@ where
         if self.digraph.node_count() == 0 {
             return;
         }
-
-        // let t = inputs[&self.node_id_by_name("t").unwrap()];
-        // if t.len() > 1 {
-        //     dbg!(t[0]);
-        // }
 
         // copy the provided input values into each input node's input cache
         for (inp_idx, value) in inputs.iter() {
@@ -543,14 +536,6 @@ where
                     &mut outs,
                 );
                 let mut out_cache = self.digraph[node_id].outputs_cache.write().unwrap();
-                // if !outs.is_empty() {
-                //     let o = &outs[0];
-                //     if o.iter().all(|o| o.value() == 0.0) {
-                //         dbg!(std::any::type_name::<T>());
-                //         dbg!(&self.digraph[node_id].name);
-                //         println!();
-                //     }
-                // }
                 for (i, out) in outs.into_iter().enumerate() {
                     out_cache[i].copy_from_slice(&out);
                 }
