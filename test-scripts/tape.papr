@@ -1,0 +1,17 @@
+graph main {
+    @in {}
+    @out { @dac0 }
+    #in { #speed(0.5 : 2.0) = 1.0 }
+    #out {}
+    ~ {
+        create s: sineosc;
+        s.#amp <- #1.0;
+        s.#freq <- #440.0;
+
+        create t: tape;
+        t.@input <- s.@out;
+        t.#speed <- #speed;
+
+        @dac0 <- t.@out;
+    }
+}

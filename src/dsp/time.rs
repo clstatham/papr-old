@@ -62,9 +62,62 @@ impl Processor<ControlRate> for Clock {
 }
 
 node_constructor! {
+    pub struct Tape {
+        buf: Arc<Mutex<VecDeque<Scalar>>>,
+        accum: Arc<Mutex<Scalar>>,
+    }
+    @in { input }
+    @out { out }
+    #in { speed }
+    #out {}
+}
+
+impl Processor<AudioRate> for Tape {
+    fn process_sample(
+        &self,
+        buffer_idx: usize,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
+    ) {
+        let mut buf = self.buf.lock().unwrap();
+        let mut accum = self.accum.lock().unwrap();
+        let cn = sibling_node.as_ref().unwrap();
+        let speed = cn.cached_input(0).unwrap();
+
+        buf.push_back(inputs[0].value());
+
+        *accum += speed.value();
+        // dbg!(&accum);
+        // let samples = (*accum).max(0.0) as usize;
+        while *accum > 1.0 {
+            // advance the tape
+            buf.pop_front();
+            *accum -= 1.0;
+        }
+
+        outputs[0] = Signal::new(*buf.get(0).unwrap_or(&0.0));
+    }
+}
+
+impl Processor<ControlRate> for Tape {
+    fn process_sample(
+        &self,
+        buffer_idx: usize,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
+    ) {
+    }
+}
+
+node_constructor! {
     pub struct Delay {
         // write_head: Arc<Mutex<usize>>,
         buf: Arc<Mutex<VecDeque<Scalar>>>,
+        accum: Arc<Mutex<Scalar>>,
     }
     @in { input }
     @out { out }
@@ -82,12 +135,15 @@ impl Processor<AudioRate> for Delay {
         outputs: &mut [Signal<AudioRate>],
     ) {
         let mut buf = self.buf.lock().unwrap();
+        // let mut accum = self.accum.lock().unwrap();
         // let mut write_head = self.write_head.lock().unwrap();
         let cn = sibling_node.as_ref().unwrap();
         let delay = cn.cached_input(0).unwrap();
         let delay_samps = (delay.value() * sample_rate) as usize;
         buf.push_back(0.0);
         buf[delay_samps] = inputs[0].value();
+        // let speed = 1.0;
+        // *accum += speed / sample_rate;
         outputs[0] = Signal::new_audio(buf.pop_front().unwrap()); // "read" head
     }
 }
