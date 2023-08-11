@@ -1,4 +1,11 @@
-use std::{collections::BTreeMap, fs::File, io::Read, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::Read,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -27,7 +34,7 @@ pub struct AudioContext {
 impl AudioContext {
     fn write_data<T>(
         sample_rate: Scalar,
-        graph: &Graph<AudioRate>,
+        graph: &mut Graph<AudioRate>,
         output: &mut [T],
         channels: usize,
         buffer_len: usize,
@@ -56,8 +63,12 @@ impl AudioContext {
         }
     }
 
-    pub fn run<T>(&mut self, graph: Graph<AudioRate>, config: cpal::StreamConfig, buffer_len: usize)
-    where
+    pub fn run<T>(
+        &mut self,
+        mut graph: Graph<AudioRate>,
+        config: cpal::StreamConfig,
+        buffer_len: usize,
+    ) where
         T: SizedSample + FromSample<Scalar>,
     {
         let mut sample_clock = 0 as Scalar;
@@ -73,7 +84,7 @@ impl AudioContext {
                     sample_clock += (data.len() as Scalar / channels as Scalar) / sample_rate;
                     Self::write_data(
                         sample_rate as Scalar,
-                        &graph,
+                        &mut graph,
                         data,
                         channels,
                         buffer_len,
@@ -235,7 +246,7 @@ impl PaprApp {
             .audio_graph
             .take()
             .expect("PaprApp::spawn(): audio graph not initialized");
-        let control_graph = self
+        let mut control_graph = self
             .control_graph
             .take()
             .expect("PaprApp::spawn(): control graph not initialized");
@@ -247,22 +258,24 @@ impl PaprApp {
         std::thread::Builder::new()
             .name("PAPR Control".into())
             .spawn(move || {
-                rt.block_on(async {
-                    #[allow(clippy::unnecessary_cast)]
-                    let mut clk = tokio::time::interval(Duration::from_secs_f64(
-                        (control_rate as f64).recip(),
-                    ));
-                    let mut t = 0 as Scalar;
-                    loop {
-                        control_graph.process_graph(
-                            control_rate,
-                            &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t)])]),
-                            &mut BTreeMap::default(),
-                        );
-                        clk.tick().await;
-                        t += control_rate.recip();
-                    }
-                });
+                #[allow(clippy::unnecessary_cast)]
+                let clk = std::time::Duration::from_secs_f64((control_rate as f64).recip());
+                let mut t = 0 as Scalar;
+                loop {
+                    let tik = Instant::now();
+                    control_graph.process_graph(
+                        control_rate,
+                        &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t)])]),
+                        &mut BTreeMap::default(),
+                    );
+                    let time = Instant::now() - tik;
+
+                    // if clk.as_secs_f64() > time.as_secs_f64() {
+                    //     dbg!(clk.as_secs_f64(), time.as_secs_f64());
+                    //     std::thread::sleep(clk - time);
+                    // }
+                    t += time.as_secs_f64() as Scalar;
+                }
             })
             .expect("PaprApp::spawn(): error spawning control rate thread");
     }

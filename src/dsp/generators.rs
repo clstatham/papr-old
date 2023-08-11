@@ -1,7 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-
-
 use crate::{
     dsp::{AudioRate, ControlRate},
     graph::Node,
@@ -20,7 +18,7 @@ node_constructor! {
 
 impl Processor<AudioRate> for SineOsc {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         sibling_node: Option<&Arc<Node<ControlRate>>>,
@@ -41,7 +39,7 @@ impl Processor<AudioRate> for SineOsc {
 
 impl Processor<ControlRate> for SineOsc {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<AudioRate>>>,
@@ -66,7 +64,7 @@ node_constructor! {
 
 impl Processor<AudioRate> for BlSawOsc {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
@@ -105,7 +103,7 @@ impl Processor<AudioRate> for BlSawOsc {
 
 impl Processor<ControlRate> for BlSawOsc {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,

@@ -28,7 +28,6 @@ pub enum BuiltinNode {
     MidiToFreq,
     Clock,
     Delay,
-    Tape,
 }
 
 impl BuiltinNode {
@@ -65,15 +64,10 @@ impl BuiltinNode {
             Self::Delay => crate::dsp::time::Delay::create_nodes(
                 name,
                 audio_buffer_len,
-                Arc::new(Mutex::new(vec![0.0; 480000].into())), // TODO: don't hardcode
-                Arc::new(Mutex::new(0.0)),
-                1.0,
-            ),
-            Self::Tape => crate::dsp::time::Tape::create_nodes(
-                name,
-                audio_buffer_len,
-                Arc::new(Mutex::new(vec![].into())),
-                Arc::new(Mutex::new(0.0)),
+                vec![0.0; 480000], // TODO: don't hardcode
+                0.0,
+                0.0,
+                0.0,
                 1.0,
             ),
         }
@@ -106,7 +100,6 @@ pub fn create_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedCrea
                 "m2f" => CreateRhs::BuiltinNode(BuiltinNode::MidiToFreq),
                 "clock" => CreateRhs::BuiltinNode(BuiltinNode::Clock),
                 "delay" => CreateRhs::BuiltinNode(BuiltinNode::Delay),
-                "tape" => CreateRhs::BuiltinNode(BuiltinNode::Tape),
                 _ => CreateRhs::ScriptGraph(NodeName::new(graph_name)),
             },
         },

@@ -105,7 +105,7 @@ where
     Self: Send + Sync,
 {
     fn process_sample(
-        &self,
+        &mut self,
         buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
@@ -114,7 +114,7 @@ where
     );
 
     fn process_buffer(
-        &self,
+        &mut self,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<T::SiblingNode>>,
         inputs: &[Vec<Signal<T>>],

@@ -19,7 +19,7 @@ node_constructor! {
 
 impl Processor<AudioRate> for Clock {
     fn process_sample(
-        &self,
+        &mut self,
         buffer_idx: usize,
         sample_rate: crate::Scalar,
         sibling_node: Option<&std::sync::Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
@@ -42,7 +42,7 @@ impl Processor<AudioRate> for Clock {
 
 impl Processor<ControlRate> for Clock {
     fn process_sample(
-        &self,
+        &mut self,
         buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&std::sync::Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
@@ -62,62 +62,11 @@ impl Processor<ControlRate> for Clock {
 }
 
 node_constructor! {
-    pub struct Tape {
-        buf: Arc<Mutex<VecDeque<Scalar>>>,
-        accum: Arc<Mutex<Scalar>>,
-    }
-    @in { input }
-    @out { out }
-    #in { speed }
-    #out {}
-}
-
-impl Processor<AudioRate> for Tape {
-    fn process_sample(
-        &self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
-    ) {
-        let mut buf = self.buf.lock().unwrap();
-        let mut accum = self.accum.lock().unwrap();
-        let cn = sibling_node.as_ref().unwrap();
-        let speed = cn.cached_input(0).unwrap();
-
-        buf.push_back(inputs[0].value());
-
-        *accum += speed.value();
-        // dbg!(&accum);
-        // let samples = (*accum).max(0.0) as usize;
-        while *accum > 1.0 {
-            // advance the tape
-            buf.pop_front();
-            *accum -= 1.0;
-        }
-
-        outputs[0] = Signal::new(*buf.get(0).unwrap_or(&0.0));
-    }
-}
-
-impl Processor<ControlRate> for Tape {
-    fn process_sample(
-        &self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
-    ) {
-    }
-}
-
-node_constructor! {
     pub struct Delay {
-        // write_head: Arc<Mutex<usize>>,
-        buf: Arc<Mutex<VecDeque<Scalar>>>,
-        accum: Arc<Mutex<Scalar>>,
+        buf: Vec<Scalar>,
+        read_head: Scalar,
+        write_head: Scalar,
+        delay_current: Scalar,
     }
     @in { input }
     @out { out }
@@ -127,30 +76,52 @@ node_constructor! {
 
 impl Processor<AudioRate> for Delay {
     fn process_sample(
-        &self,
+        &mut self,
         buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
         inputs: &[Signal<AudioRate>],
         outputs: &mut [Signal<AudioRate>],
     ) {
-        let mut buf = self.buf.lock().unwrap();
-        // let mut accum = self.accum.lock().unwrap();
-        // let mut write_head = self.write_head.lock().unwrap();
         let cn = sibling_node.as_ref().unwrap();
-        let delay = cn.cached_input(0).unwrap();
-        let delay_samps = (delay.value() * sample_rate) as usize;
-        buf.push_back(0.0);
-        buf[delay_samps] = inputs[0].value();
-        // let speed = 1.0;
-        // *accum += speed / sample_rate;
-        outputs[0] = Signal::new_audio(buf.pop_front().unwrap()); // "read" head
+        let delay_desired_secs = cn.cached_input(0).unwrap().value();
+
+        // self.delay_current =
+        //     self.delay_current + 0.00001 * (delay_desired_secs - self.delay_current);
+        self.delay_current = delay_desired_secs;
+
+        let sample_offset = self.delay_current * sample_rate;
+
+        self.buf[self.write_head as usize] = inputs[0].value();
+
+        // interpolate
+        outputs[0] = Signal::new({
+            let mut trunc_read = (self.read_head as usize).min(self.buf.len() - 1);
+            let sample0 = self.buf[trunc_read];
+            let weight_sample1 = self.read_head - (trunc_read as Scalar);
+
+            trunc_read += 1;
+            if trunc_read >= self.buf.len() {
+                trunc_read = 0;
+            }
+            let sample1 = self.buf[trunc_read];
+            sample0 + weight_sample1 * (sample1 - sample0)
+        });
+
+        self.write_head += 1.0;
+        if self.write_head >= self.buf.len() as Scalar {
+            self.write_head = 0.0;
+        }
+        self.read_head = self.write_head - sample_offset;
+        if self.read_head < 0.0 {
+            self.read_head += self.buf.len() as Scalar;
+        }
     }
 }
 
 impl Processor<ControlRate> for Delay {
     fn process_sample(
-        &self,
+        &mut self,
         buffer_idx: usize,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,

@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use papr_proc_macro::node_constructor;
 
-
 use crate::Scalar;
 
 use super::{AudioRate, ControlRate, Processor, Signal, SignalRate};
@@ -17,7 +16,7 @@ node_constructor! {
 
 impl Processor<AudioRate> for MidiToFreq {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<AudioRate as SignalRate>::SiblingNode>>,
@@ -29,7 +28,7 @@ impl Processor<AudioRate> for MidiToFreq {
 
 impl Processor<ControlRate> for MidiToFreq {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as SignalRate>::SiblingNode>>,

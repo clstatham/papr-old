@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::{
     dsp::{AudioRate, ControlRate},
@@ -23,7 +23,7 @@ impl GraphInput {
             vec![Output {
                 name: "out".to_owned(),
             }],
-            crate::graph::ProcessorType::Boxed(Box::new(Self)),
+            crate::graph::ProcessorType::Builtin(Arc::new(RwLock::new(Self))),
             None,
         ))
     }
@@ -39,7 +39,7 @@ impl GraphInput {
             vec![Output {
                 name: "out".to_owned(),
             }],
-            crate::graph::ProcessorType::Boxed(Box::new(Self)),
+            crate::graph::ProcessorType::Builtin(Arc::new(RwLock::new(Self))),
             None,
         ))
     }
@@ -47,7 +47,7 @@ impl GraphInput {
 
 impl Processor<AudioRate> for GraphInput {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
@@ -60,7 +60,7 @@ impl Processor<AudioRate> for GraphInput {
 
 impl Processor<ControlRate> for GraphInput {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
@@ -81,7 +81,7 @@ node_constructor! {
 
 impl Processor<AudioRate> for GraphOutput {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
@@ -94,7 +94,7 @@ impl Processor<AudioRate> for GraphOutput {
 
 impl Processor<ControlRate> for GraphOutput {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
@@ -115,7 +115,7 @@ node_constructor! {
 
 impl Processor<AudioRate> for LetBinding {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _control_node: Option<&Arc<Node<ControlRate>>>,
@@ -128,7 +128,7 @@ impl Processor<AudioRate> for LetBinding {
 
 impl Processor<ControlRate> for LetBinding {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,

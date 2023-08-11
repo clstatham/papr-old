@@ -102,34 +102,27 @@ pub enum ProcessorType<T: SignalRate + 'static>
 where
     Graph<T>: Processor<T>,
 {
-    Boxed(Box<dyn Processor<T>>),
-    Subgraph(Graph<T>),
+    Builtin(Arc<RwLock<dyn Processor<T>>>),
+    Subgraph(Arc<RwLock<Graph<T>>>),
 }
 
 impl<T: SignalRate + 'static> ProcessorType<T>
 where
     Graph<T>: Processor<T>,
 {
-    pub fn as_graph(&self) -> Option<&Graph<T>> {
+    pub fn as_graph(&self) -> Option<&Arc<RwLock<Graph<T>>>> {
         match self {
-            Self::Boxed(_) => None,
-            Self::Subgraph(g) => Some(g),
-        }
-    }
-
-    pub fn as_graph_mut(&mut self) -> Option<&mut Graph<T>> {
-        match self {
-            Self::Boxed(_) => None,
+            Self::Builtin(_) => None,
             Self::Subgraph(g) => Some(g),
         }
     }
 }
 
-impl<T: SignalRate + 'static> Processor<T> for ProcessorType<T>
+impl<T: SignalRate + 'static> ProcessorType<T>
 where
     Graph<T>: Processor<T>,
 {
-    fn process_sample(
+    pub fn process_sample(
         &self,
         buffer_idx: usize,
         sample_rate: Scalar,
@@ -138,16 +131,24 @@ where
         outputs: &mut [Signal<T>],
     ) {
         match self {
-            Self::Boxed(p) => {
-                p.process_sample(buffer_idx, sample_rate, sibling_node, inputs, outputs)
-            }
-            Self::Subgraph(p) => {
-                p.process_sample(buffer_idx, sample_rate, sibling_node, inputs, outputs)
-            }
+            Self::Builtin(p) => p.write().unwrap().process_sample(
+                buffer_idx,
+                sample_rate,
+                sibling_node,
+                inputs,
+                outputs,
+            ),
+            Self::Subgraph(p) => p.write().unwrap().process_sample(
+                buffer_idx,
+                sample_rate,
+                sibling_node,
+                inputs,
+                outputs,
+            ),
         }
     }
 
-    fn process_buffer(
+    pub fn process_buffer(
         &self,
         sample_rate: Scalar,
         sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
@@ -155,25 +156,33 @@ where
         outputs: &mut [Vec<Signal<T>>],
     ) {
         match self {
-            Self::Boxed(p) => p.process_buffer(sample_rate, sibling_node, inputs, outputs),
-            Self::Subgraph(p) => p.process_buffer(sample_rate, sibling_node, inputs, outputs),
+            Self::Builtin(p) => {
+                p.write()
+                    .unwrap()
+                    .process_buffer(sample_rate, sibling_node, inputs, outputs)
+            }
+            Self::Subgraph(p) => {
+                p.write()
+                    .unwrap()
+                    .process_buffer(sample_rate, sibling_node, inputs, outputs)
+            }
         }
     }
 
-    fn ui_update(&self, ui: &mut eframe::egui::Ui) {
+    pub fn ui_update(&self, ui: &mut eframe::egui::Ui) {
         match self {
-            Self::Boxed(p) => p.ui_update(ui),
-            Self::Subgraph(p) => p.ui_update(ui),
+            Self::Builtin(p) => p.read().unwrap().ui_update(ui),
+            Self::Subgraph(p) => p.read().unwrap().ui_update(ui),
         }
     }
 }
 
-impl<T: SignalRate + 'static, P: Processor<T> + 'static> From<Box<P>> for ProcessorType<T>
+impl<T: SignalRate + 'static, P: Processor<T> + 'static> From<Arc<RwLock<P>>> for ProcessorType<T>
 where
     Graph<T>: Processor<T>,
 {
-    fn from(value: Box<P>) -> Self {
-        Self::Boxed(value)
+    fn from(value: Arc<RwLock<P>>) -> Self {
+        Self::Builtin(value)
     }
 }
 
@@ -261,7 +270,7 @@ where
                     }
                 })
                 .collect(),
-            ProcessorType::Subgraph(graph),
+            ProcessorType::Subgraph(Arc::new(RwLock::new(graph))),
             None,
         )
     }
@@ -478,7 +487,7 @@ where
     }
 
     pub fn process_graph(
-        &self,
+        &mut self,
         sample_rate: Scalar,
         inputs: &BTreeMap<NodeIndex, &Vec<Signal<T>>>,
         outputs: &mut BTreeMap<NodeIndex, &mut Vec<Signal<T>>>,
@@ -564,7 +573,7 @@ where
     Signal<T>: std::fmt::Debug,
 {
     fn process_sample(
-        &self,
+        &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
         _sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
@@ -574,7 +583,7 @@ where
         unimplemented!()
     }
     fn process_buffer(
-        &self,
+        &mut self,
         sample_rate: Scalar,
         _sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
         inputs: &[Vec<Signal<T>>],

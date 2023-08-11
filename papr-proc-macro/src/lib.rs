@@ -243,14 +243,15 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
                 }
             }
 
+            #[allow(clippy::too_many_arguments)]
             pub fn create_nodes(name: &str, audio_buffer_len: usize, #args) -> (std::sync::Arc<crate::graph::Node<crate::dsp::AudioRate>>, std::sync::Arc<crate::graph::Node<crate::dsp::ControlRate>>) {
-                let this = Self { #fields };
+                let this = std::sync::Arc::new(std::sync::RwLock::new(Self { #fields }));
                 let cn = std::sync::Arc::new(crate::graph::Node::new(
                     crate::graph::NodeName::new(name),
                     1,
                     vec![#c_ins],
                     vec![#c_outs],
-                    crate::graph::ProcessorType::Boxed(Box::new(this.clone())),
+                    crate::graph::ProcessorType::Builtin(this.clone()),
                     None,
                 ));
                 let an = std::sync::Arc::new(crate::graph::Node::new(
@@ -258,7 +259,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
                     audio_buffer_len,
                     vec![#a_ins],
                     vec![#a_outs],
-                    crate::graph::ProcessorType::Boxed(Box::new(this)),
+                    crate::graph::ProcessorType::Builtin(this),
                     Some(cn.clone()),
                 ));
                 (an, cn)
