@@ -1,4 +1,4 @@
-graph chorus {
+graph flanger {
     @in { @input }
     @out { @out }
     #in {
@@ -10,16 +10,16 @@ graph chorus {
     ~ {
         create d: delay;
         create l: sinelfo;
-        create dry_wet_e2a: e2a;
+        create dry_wet_c2a: c2a;
         
-        dry_wet_e2a.#e <- #dry_wet;
+        dry_wet_c2a.#e <- #dry_wet;
 
         l.#freq <- #rate;
         l.#amp <- #1.0;
 
         d.@input <- @input;
         d.#delay <- (((l.#out + #1.0) / #2.0) * #amount);
-        @out <- ((d.@out * (@1.0 - dry_wet_e2a.@a)) + (@input * dry_wet_e2a.@a));
+        @out <- ((d.@out * (@1.0 - dry_wet_c2a.@a)) + (@input * dry_wet_c2a.@a));
     }
 }
 
@@ -37,7 +37,7 @@ graph main {
     #out { #val }
     ~ {
         create s: sawosc;
-        create ch: chorus;
+        create fl: flanger;
         create mf: m2f;
         create ni: notein;
 
@@ -45,9 +45,9 @@ graph main {
         s.#freq <- mf.#f;
         s.#amp <- ni.#vel0;
 
-        ch.#rate <- #rate;
-        ch.#amount <- #amount;
-        ch.#dry_wet <- #dry_wet;
+        fl.#rate <- #rate;
+        fl.#amount <- #amount;
+        fl.#dry_wet <- #dry_wet;
 
         create ck: clock;
         ck.#period <- #period;
@@ -55,7 +55,7 @@ graph main {
 
         let @final <- (s.@out * ck.@out);
 
-        ch.@input <- @final;
-        @dac0 <- ch.@out;
+        fl.@input <- @final;
+        @dac0 <- fl.@out;
     }
 }

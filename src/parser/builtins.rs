@@ -25,11 +25,14 @@ pub enum BuiltinNode {
     SineOsc,
     SineOscLFO,
     BlSawOsc,
-    EventToAudio,
+    ControlToAudio,
     MidiToFreq,
     Clock,
     Delay,
     NoteIn,
+    RisingEdge,
+    FallingEdge,
+    Var,
     // OscReceiver,
 }
 
@@ -60,7 +63,7 @@ impl BuiltinNode {
                 1.0,
                 440.0,
             ),
-            Self::EventToAudio => {
+            Self::ControlToAudio => {
                 crate::dsp::basic::EventToAudio::create_nodes(name, audio_buffer_len, 0.0)
             }
             Self::MidiToFreq => {
@@ -77,6 +80,15 @@ impl BuiltinNode {
                 1.0,
             ),
             Self::NoteIn => crate::io::midi::NoteIn::create_nodes(name, audio_buffer_len),
+            Self::RisingEdge => {
+                crate::dsp::basic::RisingEdge::create_nodes(name, audio_buffer_len, 0.0, 0.0)
+            }
+            Self::FallingEdge => {
+                crate::dsp::basic::FallingEdge::create_nodes(name, audio_buffer_len, 0.0, 0.0)
+            }
+            Self::Var => {
+                crate::dsp::graph_util::Var::create_nodes(name, audio_buffer_len, 0.0, 0.0, 0.0)
+            }
             // Self::OscReceiver => crate::io::osc::OscReceiver::create_nodes(
             //     name,
             //     audio_buffer_len,
@@ -110,11 +122,14 @@ pub fn create_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedCrea
                 "sineosc" => CreateRhs::BuiltinNode(BuiltinNode::SineOsc),
                 "sinelfo" => CreateRhs::BuiltinNode(BuiltinNode::SineOscLFO),
                 "sawosc" => CreateRhs::BuiltinNode(BuiltinNode::BlSawOsc),
-                "e2a" => CreateRhs::BuiltinNode(BuiltinNode::EventToAudio),
+                "c2a" => CreateRhs::BuiltinNode(BuiltinNode::ControlToAudio),
                 "m2f" => CreateRhs::BuiltinNode(BuiltinNode::MidiToFreq),
                 "clock" => CreateRhs::BuiltinNode(BuiltinNode::Clock),
                 "delay" => CreateRhs::BuiltinNode(BuiltinNode::Delay),
                 "notein" => CreateRhs::BuiltinNode(BuiltinNode::NoteIn),
+                "redge" => CreateRhs::BuiltinNode(BuiltinNode::RisingEdge),
+                "fedge" => CreateRhs::BuiltinNode(BuiltinNode::FallingEdge),
+                "var" => CreateRhs::BuiltinNode(BuiltinNode::Var),
                 // "oscrecv" => CreateRhs::BuiltinNode(BuiltinNode::OscReceiver),
                 _ => CreateRhs::ScriptGraph(NodeName::new(graph_name)),
             },

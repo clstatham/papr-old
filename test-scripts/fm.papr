@@ -2,8 +2,6 @@ graph main {
     @in {}
     @out { @dac0 @dac1 }
     #in {
-        #c_amp(0.0 : 1.0) = 0.5
-        #c_pitch(0 : 100) = 69
         #m_amp(0.0 : 1.0) = 0.5
         #m_mul(0 : 8) = 1
         #fm(0.0:1.0) = 1.0
@@ -13,13 +11,14 @@ graph main {
         create m: sineosc;
         create c: sineosc;
         create c_m2f: m2f;
+        create c_ni: notein;
 
         c.@fm <- m.@out;
         [@dac0 @dac1] <- c.@out;
 
-        c_m2f.#m <- #c_pitch;
+        c_m2f.#m <- c_ni.#note0;
 
-        c.#amp <- #c_amp;
+        c.#amp <- c_ni.#vel0;
         c.#freq <- c_m2f.#f;
         c.#fm_amt <- #fm;
         m.#amp <- #m_amp;

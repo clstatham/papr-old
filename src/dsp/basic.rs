@@ -399,3 +399,83 @@ impl Processor<ControlRate> for EventToAudio {
     ) {
     }
 }
+
+node_constructor! {
+    pub struct RisingEdge {
+        c_last: Scalar,
+    }
+    @in {}
+    @out {}
+    #in { trigger }
+    #out { out }
+}
+
+impl Processor<AudioRate> for RisingEdge {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
+        _inputs: &[Signal<AudioRate>],
+        _outputs: &mut [Signal<AudioRate>],
+    ) {
+    }
+}
+
+impl Processor<ControlRate> for RisingEdge {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
+    ) {
+        if inputs[0].value() > self.c_last {
+            outputs[0] = Signal::new(1.0);
+        } else {
+            outputs[0] = Signal::new(0.0);
+        }
+        self.c_last = inputs[0].value();
+    }
+}
+
+node_constructor! {
+    pub struct FallingEdge {
+        c_last: Scalar,
+    }
+    @in {}
+    @out {}
+    #in { trigger }
+    #out { out }
+}
+
+impl Processor<AudioRate> for FallingEdge {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
+        _inputs: &[Signal<AudioRate>],
+        _outputs: &mut [Signal<AudioRate>],
+    ) {
+    }
+}
+
+impl Processor<ControlRate> for FallingEdge {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
+    ) {
+        if inputs[0].value() < self.c_last {
+            outputs[0] = Signal::new(1.0);
+        } else {
+            outputs[0] = Signal::new(0.0);
+        }
+        self.c_last = inputs[0].value();
+    }
+}

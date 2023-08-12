@@ -138,3 +138,45 @@ impl Processor<ControlRate> for LetBinding {
         *outputs.get_mut(0).unwrap() = inputs[0];
     }
 }
+
+node_constructor! {
+    pub struct Var {
+        value: Scalar,
+    }
+    @in { input, set }
+    @out { out }
+    #in { input, set }
+    #out { out }
+}
+
+impl Processor<AudioRate> for Var {
+    fn process_sample(
+        &mut self,
+        buffer_idx: usize,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
+    ) {
+        if inputs[1].value() > 0.0 {
+            self.value = inputs[0].value();
+        }
+        outputs[0] = self.value.into();
+    }
+}
+
+impl Processor<ControlRate> for Var {
+    fn process_sample(
+        &mut self,
+        buffer_idx: usize,
+        sample_rate: Scalar,
+        sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
+    ) {
+        if inputs[1].value() > 0.0 {
+            self.value = inputs[0].value();
+        }
+        outputs[0] = self.value.into();
+    }
+}

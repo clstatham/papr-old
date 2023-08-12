@@ -31,4 +31,4 @@ midir = "0.9.1"
 crossbeam-channel = "0.5.8"
 
 [profile.release]
-debug = true
+# debug = true
