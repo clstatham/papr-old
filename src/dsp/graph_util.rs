@@ -152,9 +152,9 @@ node_constructor! {
 impl Processor<AudioRate> for Var {
     fn process_sample(
         &mut self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
         inputs: &[Signal<AudioRate>],
         outputs: &mut [Signal<AudioRate>],
     ) {
@@ -168,9 +168,9 @@ impl Processor<AudioRate> for Var {
 impl Processor<ControlRate> for Var {
     fn process_sample(
         &mut self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
         inputs: &[Signal<ControlRate>],
         outputs: &mut [Signal<ControlRate>],
     ) {

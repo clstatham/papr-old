@@ -33,6 +33,9 @@ pub enum BuiltinNode {
     RisingEdge,
     FallingEdge,
     Var,
+    Max,
+    Min,
+    Clip,
     // OscReceiver,
 }
 
@@ -89,6 +92,15 @@ impl BuiltinNode {
             Self::Var => {
                 crate::dsp::graph_util::Var::create_nodes(name, audio_buffer_len, 0.0, 0.0, 0.0)
             }
+            Self::Max => {
+                crate::dsp::basic::Max::create_nodes(name, audio_buffer_len, 0.0, 0.0)
+            }
+            Self::Min => {
+                crate::dsp::basic::Min::create_nodes(name, audio_buffer_len, 0.0, 0.0)
+            }
+            Self::Clip => {
+                crate::dsp::basic::Clip::create_nodes(name, audio_buffer_len, 0.0, 0.0, 0.0)
+            }
             // Self::OscReceiver => crate::io::osc::OscReceiver::create_nodes(
             //     name,
             //     audio_buffer_len,
@@ -130,6 +142,9 @@ pub fn create_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedCrea
                 "redge" => CreateRhs::BuiltinNode(BuiltinNode::RisingEdge),
                 "fedge" => CreateRhs::BuiltinNode(BuiltinNode::FallingEdge),
                 "var" => CreateRhs::BuiltinNode(BuiltinNode::Var),
+                "max" => CreateRhs::BuiltinNode(BuiltinNode::Max),
+                "min" => CreateRhs::BuiltinNode(BuiltinNode::Min),
+                "clip" => CreateRhs::BuiltinNode(BuiltinNode::Clip),
                 // "oscrecv" => CreateRhs::BuiltinNode(BuiltinNode::OscReceiver),
                 _ => CreateRhs::ScriptGraph(NodeName::new(graph_name)),
             },

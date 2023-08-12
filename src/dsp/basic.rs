@@ -332,6 +332,74 @@ node_constructor! {
 }
 
 node_constructor! {
+    pub struct Max;
+    @in { a, b }
+    @out { out }
+    #in { a, b}
+    #out { out }
+}
+
+impl Processor<AudioRate> for Max {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().max(inputs[1].value()));
+    }
+}
+
+impl Processor<ControlRate> for Max {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().max(inputs[1].value()));
+    }
+}
+
+node_constructor! {
+    pub struct Min;
+    @in { a, b }
+    @out { out }
+    #in { a, b}
+    #out { out }
+}
+
+impl Processor<AudioRate> for Min {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().min(inputs[1].value()));
+    }
+}
+
+impl Processor<ControlRate> for Min {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().min(inputs[1].value()));
+    }
+}
+
+node_constructor! {
     pub struct Sine;
     @in { input }
     @out { out }
@@ -477,5 +545,49 @@ impl Processor<ControlRate> for FallingEdge {
             outputs[0] = Signal::new(0.0);
         }
         self.c_last = inputs[0].value();
+    }
+}
+
+node_constructor! {
+    pub struct Clip;
+    @in { input, low, high }
+    @out { out }
+    #in { input, low, high }
+    #out { out }
+}
+
+impl Processor<AudioRate> for Clip {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<AudioRate>],
+        outputs: &mut [Signal<AudioRate>],
+    ) {
+        outputs[0] = Signal::new(
+            inputs[0]
+                .value()
+                .max(inputs[1].value())
+                .min(inputs[2].value()),
+        );
+    }
+}
+
+impl Processor<ControlRate> for Clip {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
+        inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
+    ) {
+        outputs[0] = Signal::new(
+            inputs[0]
+                .value()
+                .max(inputs[1].value())
+                .min(inputs[2].value()),
+        );
     }
 }
