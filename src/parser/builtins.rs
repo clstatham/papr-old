@@ -5,7 +5,7 @@ use nom::{
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    dsp::{AudioRate, ControlRate},
+    dsp::SignalRate,
     graph::{Node, NodeName},
     Scalar,
 };
@@ -25,7 +25,6 @@ pub enum BuiltinNode {
     SineOsc,
     SineOscLFO,
     BlSawOsc,
-    ControlToAudio,
     MidiToFreq,
     Clock,
     Delay,
@@ -40,68 +39,71 @@ pub enum BuiltinNode {
 }
 
 impl BuiltinNode {
-    pub fn create_nodes(
+    pub fn create_node(
         &self,
         name: &str,
+        signal_rate: SignalRate,
         audio_buffer_len: usize,
-    ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+    ) -> Arc<Node> {
         match self {
-            Self::Sine => crate::dsp::basic::Sine::create_nodes(name, audio_buffer_len, 0.0),
-            Self::SineOsc => crate::dsp::generators::SineOsc::create_nodes(
+            Self::Sine => crate::dsp::basic::Sine::create_node(name, signal_rate, audio_buffer_len, 0.0),
+            Self::SineOsc => crate::dsp::generators::SineOsc::create_node(
                 name,
+                signal_rate, 
                 audio_buffer_len,
                 1.0,
                 440.0,
                 0.0,
+                0.0,
             ),
             Self::SineOscLFO => {
-                crate::dsp::generators::SineOscLFO::create_nodes(name, audio_buffer_len, 1.0, 1.0)
+                crate::dsp::generators::SineOscLFO::create_node(name, signal_rate, audio_buffer_len, 1.0, 1.0)
             }
-            Self::BlSawOsc => crate::dsp::generators::BlSawOsc::create_nodes(
+            Self::BlSawOsc => crate::dsp::generators::BlSawOsc::create_node(
                 name,
+                signal_rate, 
                 audio_buffer_len,
-                Arc::new(Mutex::new(0.0)),
-                Arc::new(Mutex::new(1.0)),
-                Arc::new(Mutex::new(0.0)),
+                0.0,
+                1.0,
+                0.0,
                 1.0,
                 440.0,
             ),
-            Self::ControlToAudio => {
-                crate::dsp::basic::EventToAudio::create_nodes(name, audio_buffer_len, 0.0)
-            }
             Self::MidiToFreq => {
-                crate::dsp::midi::MidiToFreq::create_nodes(name, audio_buffer_len, 0.0)
+                crate::dsp::midi::MidiToFreq::create_node(name, signal_rate, audio_buffer_len, 0.0)
             }
-            Self::Clock => crate::dsp::time::Clock::create_nodes(name, audio_buffer_len, 1.0, 0.5),
-            Self::Delay => crate::dsp::time::Delay::create_nodes(
+            Self::Clock => crate::dsp::time::Clock::create_node(name, signal_rate, audio_buffer_len, 1.0, 0.5),
+            Self::Delay => crate::dsp::time::Delay::create_node(
                 name,
+                signal_rate, 
                 audio_buffer_len,
                 vec![0.0; 480000], // TODO: don't hardcode
                 0.0,
                 0.0,
                 0.0,
                 1.0,
+                0.0,
             ),
-            Self::NoteIn => crate::io::midi::NoteIn::create_nodes(name, audio_buffer_len),
+            Self::NoteIn => crate::io::midi::NoteIn::create_node(name, audio_buffer_len),
             Self::RisingEdge => {
-                crate::dsp::basic::RisingEdge::create_nodes(name, audio_buffer_len, 0.0, 0.0)
+                crate::dsp::basic::RisingEdge::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0)
             }
             Self::FallingEdge => {
-                crate::dsp::basic::FallingEdge::create_nodes(name, audio_buffer_len, 0.0, 0.0)
+                crate::dsp::basic::FallingEdge::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0)
             }
             Self::Var => {
-                crate::dsp::graph_util::Var::create_nodes(name, audio_buffer_len, 0.0, 0.0, 0.0)
+                crate::dsp::graph_util::Var::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0, 0.0)
             }
             Self::Max => {
-                crate::dsp::basic::Max::create_nodes(name, audio_buffer_len, 0.0, 0.0)
+                crate::dsp::basic::Max::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0)
             }
             Self::Min => {
-                crate::dsp::basic::Min::create_nodes(name, audio_buffer_len, 0.0, 0.0)
+                crate::dsp::basic::Min::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0)
             }
             Self::Clip => {
-                crate::dsp::basic::Clip::create_nodes(name, audio_buffer_len, 0.0, 0.0, 0.0)
+                crate::dsp::basic::Clip::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0, 0.0)
             }
-            // Self::OscReceiver => crate::io::osc::OscReceiver::create_nodes(
+            // Self::OscReceiver => crate::io::osc::OscReceiver::create_node(
             //     name,
             //     audio_buffer_len,
             //     57110,
@@ -116,6 +118,7 @@ pub fn create_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedCrea
         tuple((
             tag("create"),
             whitespace1(),
+            alt((value(SignalRate::Audio, tag("@")), value(SignalRate::Control, tag("#")))),
             ident(),
             ignore_garbage(tag(":")),
             ident(),
@@ -127,14 +130,15 @@ pub fn create_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedCrea
             ignore_garbage(tag(";")),
         )),
         // todo: defaults are broken
-        |(_, _, id, _, graph_name, _control_input_defaults, _)| ParsedCreate {
+        |(_, _, signal_rate, id, _, graph_name, _control_input_defaults, _)| ParsedCreate {
+            
             ident: id.to_owned(),
+            signal_rate,
             rhs: match graph_name {
                 "sin" => CreateRhs::BuiltinNode(BuiltinNode::Sine),
                 "sineosc" => CreateRhs::BuiltinNode(BuiltinNode::SineOsc),
                 "sinelfo" => CreateRhs::BuiltinNode(BuiltinNode::SineOscLFO),
                 "sawosc" => CreateRhs::BuiltinNode(BuiltinNode::BlSawOsc),
-                "c2a" => CreateRhs::BuiltinNode(BuiltinNode::ControlToAudio),
                 "m2f" => CreateRhs::BuiltinNode(BuiltinNode::MidiToFreq),
                 "clock" => CreateRhs::BuiltinNode(BuiltinNode::Clock),
                 "delay" => CreateRhs::BuiltinNode(BuiltinNode::Delay),

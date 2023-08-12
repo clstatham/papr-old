@@ -8,10 +8,10 @@ graph main {
     }
     #out {}
     ~ {
-        create m: sineosc;
-        create c: sineosc;
-        create c_m2f: m2f;
-        create c_ni: notein;
+        create @m: sineosc;
+        create @c: sineosc;
+        create #c_m2f: m2f;
+        create #c_ni: notein;
 
         c.@fm <- m.@out;
         [@dac0 @dac1] <- c.@out;

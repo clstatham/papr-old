@@ -10,7 +10,7 @@ use std::{
 use rosc::{decoder::decode_udp, OscMessage, OscPacket};
 
 use crate::{
-    dsp::{AudioRate, ControlRate, Processor, Signal},
+    dsp::{Processor, Signal},
     graph::{Node, NodeName, Output},
     Scalar,
 };
@@ -90,26 +90,26 @@ impl OscReceiver {
     }
 }
 
-impl Processor<AudioRate> for OscReceiver {
+impl Processor for OscReceiver {
     fn process_sample(
         &mut self,
         buffer_idx: usize,
         sample_rate: crate::Scalar,
         sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalRate>::SiblingNode>>,
-        inputs: &[crate::dsp::Signal<AudioRate>],
-        outputs: &mut [crate::dsp::Signal<AudioRate>],
+        inputs: &[crate::dsp::Signal],
+        outputs: &mut [crate::dsp::Signal],
     ) {
     }
 }
 
-impl Processor<ControlRate> for OscReceiver {
+impl Processor for OscReceiver {
     fn process_sample(
         &mut self,
         buffer_idx: usize,
         sample_rate: crate::Scalar,
         sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        inputs: &[crate::dsp::Signal<ControlRate>],
-        outputs: &mut [crate::dsp::Signal<ControlRate>],
+        inputs: &[crate::dsp::Signal],
+        outputs: &mut [crate::dsp::Signal],
     ) {
         let mut recent_packet = self.recent_packet.lock().unwrap();
         {
@@ -186,12 +186,12 @@ impl Processor<ControlRate> for OscReceiver {
 }
 
 impl OscReceiver {
-    pub fn create_nodes<A>(
+    pub fn create_node<A>(
         name: &str,
         audio_buffer_len: usize,
         bind_port: u16,
         addr: A,
-    ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>)
+    ) -> (Arc<Node>, Arc<Node>)
     where
         A: ToSocketAddrs,
     {

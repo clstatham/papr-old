@@ -1,0 +1,14 @@
+graph test {
+    |in0 in1| -> |out0 out1|
+    ~ {
+        out0 = (in0 * in1);
+        out1 = max(in0 in1);
+    }
+}
+
+graph main {
+    |in0 in1| -> |dac0|
+    ~ {
+        
+    }
+}

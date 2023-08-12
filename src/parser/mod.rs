@@ -9,9 +9,9 @@ use std::collections::BTreeMap;
 
 use crate::{
     dsp::{
-        basic::{Add, Constant, Divide, Multiply, Subtract},
+        basic::{Add, Constant, Divide, Multiply, Subtract, ControlToAudio},
         graph_util::LetBinding,
-        AudioRate, ControlRate, Signal,
+        Signal, SignalRate,
     },
     graph::{Connection, Graph, Input, Node, NodeName, Output},
     Scalar,
@@ -27,19 +27,19 @@ pub enum Binding {
         node: Option<String>,
         port: String,
     },
-    AudioConstant(Arc<Node<AudioRate>>),
+    AudioConstant(Arc<Node>),
     ControlIo {
         node: Option<String>,
         port: String,
-        default: Option<Signal<ControlRate>>,
+        default: Option<Signal>,
     },
     ControlIoBounded {
         port: String,
-        min: Signal<ControlRate>,
-        max: Signal<ControlRate>,
-        default: Option<Signal<ControlRate>>,
+        min: Signal,
+        max: Signal,
+        default: Option<Signal>,
     },
-    ControlConstant(Arc<Node<ControlRate>>),
+    ControlConstant(Arc<Node>),
 }
 
 impl Binding {
@@ -133,6 +133,7 @@ pub enum CreateRhs {
 }
 
 pub struct ParsedCreate {
+    signal_rate: SignalRate,
     ident: String,
     rhs: CreateRhs,
 }
@@ -187,7 +188,7 @@ pub fn audio_binding<'a>(
         map(
             preceded(tag("@"), global_const_or_const()),
             move |(name, num)| {
-                let (an, _cn) = Constant::create_nodes(&name, audio_buffer_len, num as Scalar);
+                let an = Constant::create_node(&name, SignalRate::Audio, audio_buffer_len, num as Scalar);
                 Binding::AudioConstant(an)
             },
         ),
@@ -226,15 +227,15 @@ pub fn control_input_binding<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Bi
             if let Some((min, _, max)) = bounds {
                 Binding::ControlIoBounded {
                     port: port.to_owned(),
-                    min: Signal::new_control(min as Scalar),
-                    max: Signal::new_control(max as Scalar),
-                    default: default.map(|d| Signal::new_control(d as Scalar)),
+                    min: Signal::new(min as Scalar),
+                    max: Signal::new(max as Scalar),
+                    default: default.map(|d| Signal::new(d as Scalar)),
                 }
             } else {
                 Binding::ControlIo {
                     node: node.map(ToOwned::to_owned),
                     port: port.to_owned(),
-                    default: default.map(|d| Signal::new_control(d as Scalar)),
+                    default: default.map(|d| Signal::new(d as Scalar)),
                 }
             }
         },
@@ -250,7 +251,7 @@ pub fn control_binding<'a>(
         map(
             preceded(tag("#"), global_const_or_const()),
             move |(name, num)| {
-                let (_an, cn) = Constant::create_nodes(&name, audio_buffer_len, num as Scalar);
+                let cn = Constant::create_node(&name, SignalRate::Control, audio_buffer_len, num as Scalar);
                 Binding::ControlConstant(cn)
             },
         ),
@@ -271,8 +272,8 @@ pub fn control_binding<'a>(
 }
 
 fn solve_expr(
-    super_audio: &mut Graph<AudioRate>,
-    super_control: &mut Graph<ControlRate>,
+    super_audio: &mut Graph,
+    super_control: &mut Graph,
     ctx: &ParserContext,
     a: &Expr,
     op: BinaryOp,
@@ -351,66 +352,45 @@ fn solve_expr(
         #in { "a" = 0.0 "b" = 0.0 }
         #out { "out" }
     };
-    let (op_an, op_cn) = match op {
-        BinaryOp::Add => Add::create_nodes("add", ctx.audio_buffer_len, 0.0, 0.0),
-        BinaryOp::Sub => Subtract::create_nodes("sub", ctx.audio_buffer_len, 0.0, 0.0),
-        BinaryOp::Mul => Multiply::create_nodes("mul", ctx.audio_buffer_len, 0.0, 0.0),
-        BinaryOp::Div => Divide::create_nodes("div", ctx.audio_buffer_len, 0.0, 0.0),
+    let signal_rate = if a_is_audio && b_is_audio {
+        SignalRate::Audio
+    } else if !a_is_audio && !b_is_audio {
+        SignalRate::Control
+    } else {
+        panic!("Parsing error: mixing audio/control signals in expr")
     };
-    let op_an = expr_ag.add_node(op_an);
-    let op_cn = expr_cg.add_node(op_cn);
-
-    expr_ag.add_edge(
-        expr_ag.node_id_by_name("a").unwrap(),
-        op_an,
-        Connection {
-            source_output: 0,
-            sink_input: 0,
-        },
-    );
-    expr_ag.add_edge(
-        expr_ag.node_id_by_name("b").unwrap(),
-        op_an,
-        Connection {
-            source_output: 0,
-            sink_input: 1,
-        },
-    );
-    expr_ag.add_edge(
-        op_an,
-        expr_ag.node_id_by_name("out").unwrap(),
-        Connection {
-            source_output: 0,
-            sink_input: 0,
-        },
-    );
-
-    expr_cg.add_edge(
-        expr_cg.node_id_by_name("a").unwrap(),
-        op_cn,
-        Connection {
-            source_output: 0,
-            sink_input: 0,
-        },
-    );
-    expr_cg.add_edge(
-        expr_cg.node_id_by_name("b").unwrap(),
-        op_cn,
-        Connection {
-            source_output: 0,
-            sink_input: 1,
-        },
-    );
-    expr_cg.add_edge(
-        op_cn,
-        expr_cg.node_id_by_name("out").unwrap(),
-        Connection {
-            source_output: 0,
-            sink_input: 0,
-        },
-    );
-
+    let op_node = match op {
+        BinaryOp::Add => Add::create_node("add", signal_rate, ctx.audio_buffer_len, 0.0, 0.0),
+        BinaryOp::Sub => Subtract::create_node("sub", signal_rate, ctx.audio_buffer_len, 0.0, 0.0),
+        BinaryOp::Mul => Multiply::create_node("mul", signal_rate, ctx.audio_buffer_len, 0.0, 0.0),
+        BinaryOp::Div => Divide::create_node("div", signal_rate, ctx.audio_buffer_len, 0.0, 0.0),
+    };
     if a_is_audio && b_is_audio {
+        let op_an = expr_ag.add_node(op_node);
+        expr_ag.add_edge(
+            expr_ag.node_id_by_name("a").unwrap(),
+            op_an,
+            Connection {
+                source_output: 0,
+                sink_input: 0,
+            },
+        );
+        expr_ag.add_edge(
+            expr_ag.node_id_by_name("b").unwrap(),
+            op_an,
+            Connection {
+                source_output: 0,
+                sink_input: 1,
+            },
+        );
+        expr_ag.add_edge(
+            op_an,
+            expr_ag.node_id_by_name("out").unwrap(),
+            Connection {
+                source_output: 0,
+                sink_input: 0,
+            },
+        );
         // package it up and insert into supergraph
         let expr_an = Arc::new(expr_ag.into_node());
         let expr_an_idx_supergraph = super_audio.add_node(expr_an.clone());
@@ -432,6 +412,33 @@ fn solve_expr(
         );
         (true, expr_an_idx_supergraph)
     } else if !a_is_audio && !b_is_audio {
+        let op_cn = expr_cg.add_node(op_node);
+
+        expr_cg.add_edge(
+            expr_cg.node_id_by_name("a").unwrap(),
+            op_cn,
+            Connection {
+                source_output: 0,
+                sink_input: 0,
+            },
+        );
+        expr_cg.add_edge(
+            expr_cg.node_id_by_name("b").unwrap(),
+            op_cn,
+            Connection {
+                source_output: 0,
+                sink_input: 1,
+            },
+        );
+        expr_cg.add_edge(
+            op_cn,
+            expr_cg.node_id_by_name("out").unwrap(),
+            Connection {
+                source_output: 0,
+                sink_input: 0,
+            },
+        );
+
         let expr_cn = Arc::new(expr_cg.into_node());
         let expr_cn_idx_supergraph = super_control.add_node(expr_cn);
         super_control.add_edge(
@@ -452,7 +459,7 @@ fn solve_expr(
         );
         (false, expr_cn_idx_supergraph)
     } else {
-        panic!("Parsing error: mixing audio/control signals in expr")
+        unreachable!()
     }
 }
 
@@ -561,8 +568,8 @@ pub fn statement(inp: &str, audio_buffer_len: usize) -> IResult<&str, Statement>
 
 pub struct DualGraphs {
     pub name: NodeName,
-    pub audio: Graph<AudioRate>,
-    pub control: Graph<ControlRate>,
+    pub audio: Graph,
+    pub control: Graph,
 }
 
 pub struct ParserContext {
@@ -627,7 +634,7 @@ pub fn graph_def_instantiation<'a>(
                 .map(|inp| {
                     Input::new(
                         &inp.into_input_name().unwrap().to_string(),
-                        Some(Signal::new_audio(0.0)),
+                        Some(Signal::new(0.0)),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -681,13 +688,16 @@ pub fn graph_def_instantiation<'a>(
                 })
                 .collect::<Vec<_>>();
 
-            let mut cg = Graph::<ControlRate>::new(
+            let mut cg = Graph::new(
                 Some(id.to_owned()),
+                SignalRate::Control,
+                ctx.audio_buffer_len,
                 control_inputs.clone(),
                 control_outputs.clone(),
             );
-            let mut ag = Graph::<AudioRate>::new(
+            let mut ag = Graph::new(
                 Some(id.to_owned()),
+                SignalRate::Audio,
                 ctx.audio_buffer_len,
                 audio_inputs.clone(),
                 audio_outputs.clone(),
@@ -696,7 +706,7 @@ pub fn graph_def_instantiation<'a>(
             for conn in connections {
                 match conn {
                     Statement::Connection(conn) => {
-                        let (from_is_audio, from, from_output) = match &conn.from {
+                        let (from_is_audio, from, source_output) = match &conn.from {
                             Expr::Binding(from) => match from {
                                 Binding::AudioIo { node, port } => {
                                     if let Some(node) = node {
@@ -743,7 +753,7 @@ pub fn graph_def_instantiation<'a>(
                                     let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
                                         // cross-graph connection, use the external names for things
                                         assert!(!conn.is_let, "Parsing error: Invalid `let` statement");
-                                        let node_id = ag.node_id_by_name(to_node).unwrap();
+                                        let node_id = ag.node_id_by_name(to_node).unwrap_or_else(|| panic!("no audio node named {to_node}"));
                                         (
                                             ag.digraph[node_id].input_named(to).unwrap(),
                                             node_id,
@@ -751,7 +761,8 @@ pub fn graph_def_instantiation<'a>(
                                     } else {
                                         // self-input is the sink, use our own names for things
                                         if conn.is_let {
-                                            let (an, _cn) = LetBinding::create_nodes(to, ctx.audio_buffer_len, 0.0);
+                                            let signal_rate = if from_is_audio { SignalRate::Audio } else { SignalRate::Control };
+                                            let an = LetBinding::create_node(to, signal_rate, ctx.audio_buffer_len, 0.0);
                                             (
                                                 0,
                                                 ag.add_node(an),
@@ -763,13 +774,13 @@ pub fn graph_def_instantiation<'a>(
                                             )
                                         }
                                     };
-                                    ag.add_edge(from, sink, Connection { source_output: from_output, sink_input });
+                                    ag.add_edge(from, sink, Connection { source_output, sink_input });
                                 }
                                 (false, Binding::ControlIo { port: to, .. }) => {
                                     let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
                                         // cross-graph connection, use the external names for things
                                         assert!(!conn.is_let, "Parsing error: Invalid `let` statement");
-                                        let node_id = cg.node_id_by_name(to_node).unwrap();
+                                        let node_id = cg.node_id_by_name(to_node).unwrap_or_else(|| panic!("no control node named {to_node}"));
                                         (
                                             cg.digraph[node_id].input_named(to).unwrap(),
                                             node_id,
@@ -777,7 +788,7 @@ pub fn graph_def_instantiation<'a>(
                                     } else {
                                         // self-input is the sink, use our own names for things
                                         if conn.is_let {
-                                            let (_an, cn) = LetBinding::create_nodes(to, ctx.audio_buffer_len, 0.0);
+                                            let cn = LetBinding::create_node(to, SignalRate::Control, ctx.audio_buffer_len, 0.0);
                                             (0,
                                                 cg.add_node(cn),
                                             )
@@ -790,9 +801,39 @@ pub fn graph_def_instantiation<'a>(
                                         
                                     };
                                     // let con_id = cg.add_node(con.to_owned(), Default::default());
-                                    cg.add_edge(from, sink, Connection { source_output: from_output, sink_input });
+                                    cg.add_edge(from, sink, Connection { source_output, sink_input });
                                 }
-                                (false, Binding::AudioIo { port: io, .. }) => panic!("Parsing error: cannot attach control constant to audio input `{io}`"),
+                                (false, Binding::AudioIo { port: to, .. }) => {
+                                    // control-to-audio connection
+                                    let (sink_input, sink) = if let Some(to_node) = conn_to.node() {
+                                        // cross-graph connection, use the external names for things
+                                        assert!(!conn.is_let, "Parsing error: Invalid `let` statement");
+                                        let node_id = ag.node_id_by_name(to_node).unwrap();
+                                        (
+                                            ag.digraph[node_id].input_named(to).unwrap(),
+                                            node_id,
+                                        )
+                                    } else {
+                                        // self-input is the sink, use our own names for things
+                                        if conn.is_let {
+                                            let an = LetBinding::create_node(to, SignalRate::Control, ctx.audio_buffer_len, 0.0);
+                                            (
+                                                0,
+                                                ag.add_node(an),
+                                            )
+                                        } else {
+                                            (
+                                                0,
+                                                ag.node_id_by_name(to).unwrap(),
+                                            )
+                                        }
+                                    };
+                                    let (c2a_an, c2a_cn) = ControlToAudio::create_nodes(&format!("{}_{}_c2a", conn.from.name(), to), ctx.audio_buffer_len);
+                                    let c2a_cn = cg.add_node(c2a_cn);
+                                    cg.add_edge(from, c2a_cn, Connection { source_output, sink_input: 0 });
+                                    let c2a_an = ag.add_node(c2a_an);
+                                    ag.add_edge(c2a_an, sink, Connection { source_output: 0, sink_input });
+                                },
                                 (true, Binding::ControlIo { port: io, .. }) => panic!("Parsing error: cannot attach audio constant to control input `{io}`"),
                                 (_, Binding::AudioConstant(_) | Binding::ControlConstant(_)) => panic!("Parsing error: constant cannot take inputs"),
                                 (_, Binding::ControlIoBounded { .. }) => unreachable!(),
@@ -802,7 +843,7 @@ pub fn graph_def_instantiation<'a>(
 
                     Statement::Create(pl) => {
                         let known_node_defs = ctx.known_node_defs.clone();
-                        let (an, cn) = match &pl.rhs {
+                        match &pl.rhs {
                             CreateRhs::ScriptGraph(graph_name) => {
                                 let (_, graphs) =
                                     graph_def_instantiation(&known_node_defs[graph_name], ctx)
@@ -814,18 +855,23 @@ pub fn graph_def_instantiation<'a>(
                                 } = graphs;
                                 audio.name = NodeName::new(&pl.ident.to_owned());
                                 control.name = NodeName::new(&pl.ident.to_owned());
-                                (
+                                let (an, cn) = (
                                     Arc::new(Node::from_graph(audio)),
                                     Arc::new(Node::from_graph(control)),
-                                )
+                                );
+                                ag.add_node(an);
+                                cg.add_node(cn);
                             }
                             CreateRhs::BuiltinNode(node) => {
-                                node.create_nodes(&pl.ident, ctx.audio_buffer_len)
+                                let node = node.create_node(&pl.ident, pl.signal_rate, ctx.audio_buffer_len);
+                                match pl.signal_rate {
+                                    SignalRate::Audio => ag.add_node(node),
+                                    SignalRate::Control => cg.add_node(node),
+                                };
                             }
                         };
 
-                        ag.add_node(an);
-                        cg.add_node(cn);
+                        
                     }
                 }
             }

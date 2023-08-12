@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{
     dsp::{
         graph_util::{GraphInput, GraphOutput},
-        AudioRate, ControlRate, Processor, Signal, SignalRate,
+        Processor, Signal, SignalRate,
     },
     Scalar,
 };
@@ -60,17 +60,17 @@ pub struct Connection {
 
 #[derive(Clone)]
 #[non_exhaustive]
-pub struct Input<T: SignalRate> {
+pub struct Input {
     pub name: String,
-    pub minimum: Option<Signal<T>>,
-    pub maximum: Option<Signal<T>>,
-    pub default: Option<Signal<T>>,
+    pub minimum: Option<Signal>,
+    pub maximum: Option<Signal>,
+    pub default: Option<Signal>,
     pub implicit: bool,
     pub is_ui: bool,
 }
 
-impl<T: SignalRate> Input<T> {
-    pub fn new(name: &str, default: Option<Signal<T>>) -> Self {
+impl Input {
+    pub fn new(name: &str, default: Option<Signal>) -> Self {
         Self {
             name: name.to_owned(),
             minimum: None,
@@ -81,7 +81,7 @@ impl<T: SignalRate> Input<T> {
         }
     }
 
-    pub fn new_ui(name: &str, minimum: Signal<T>, maximum: Signal<T>, default: Signal<T>) -> Self {
+    pub fn new_ui(name: &str, minimum: Signal, maximum: Signal, default: Signal) -> Self {
         Self {
             name: name.to_owned(),
             minimum: Some(minimum),
@@ -98,74 +98,82 @@ pub struct Output {
     pub name: String,
 }
 
-pub enum ProcessorType<T: SignalRate + 'static>
+pub enum ProcessorType
 where
-    Graph<T>: Processor<T>,
+    Graph: Processor,
 {
-    Builtin(Arc<RwLock<dyn Processor<T> + Send + Sync>>),
-    Subgraph(Arc<RwLock<Graph<T>>>),
+    Builtin(Box<RwLock<dyn Processor + Send + Sync>>),
+    Subgraph(RwLock<Graph>),
+    None,
 }
 
-impl<T: SignalRate + 'static> ProcessorType<T>
+impl ProcessorType
 where
-    Graph<T>: Processor<T>,
+    Graph: Processor,
 {
-    pub fn as_graph(&self) -> Option<&Arc<RwLock<Graph<T>>>> {
-        match self {
-            Self::Builtin(_) => None,
-            Self::Subgraph(g) => Some(g),
-        }
-    }
-}
-
-impl<T: SignalRate + 'static> ProcessorType<T>
-where
-    Graph<T>: Processor<T>,
-{
-    pub fn process_sample(
+    pub fn process_audio_sample(
         &self,
         buffer_idx: usize,
         sample_rate: Scalar,
-        sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
-        inputs: &[Signal<T>],
-        outputs: &mut [Signal<T>],
-    ) {
-        match self {
-            Self::Builtin(p) => p.write().unwrap().process_sample(
-                buffer_idx,
-                sample_rate,
-                sibling_node,
-                inputs,
-                outputs,
-            ),
-            Self::Subgraph(p) => p.write().unwrap().process_sample(
-                buffer_idx,
-                sample_rate,
-                sibling_node,
-                inputs,
-                outputs,
-            ),
-        }
-    }
-
-    pub fn process_buffer(
-        &self,
-        sample_rate: Scalar,
-        sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
-        inputs: &[Vec<Signal<T>>],
-        outputs: &mut [Vec<Signal<T>>],
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         match self {
             Self::Builtin(p) => {
                 p.write()
                     .unwrap()
-                    .process_buffer(sample_rate, sibling_node, inputs, outputs)
+                    .process_audio_sample(buffer_idx, sample_rate, inputs, outputs)
             }
             Self::Subgraph(p) => {
                 p.write()
                     .unwrap()
-                    .process_buffer(sample_rate, sibling_node, inputs, outputs)
+                    .process_audio_sample(buffer_idx, sample_rate, inputs, outputs)
             }
+            Self::None => {}
+        }
+    }
+
+    pub fn process_control_sample(
+        &self,
+        buffer_idx: usize,
+        sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        match self {
+            Self::Builtin(p) => {
+                p.write()
+                    .unwrap()
+                    .process_control_sample(buffer_idx, sample_rate, inputs, outputs)
+            }
+            Self::Subgraph(p) => {
+                p.write()
+                    .unwrap()
+                    .process_control_sample(buffer_idx, sample_rate, inputs, outputs)
+            }
+            Self::None => {}
+        }
+    }
+
+    pub fn process_buffer(
+        &self,
+        signal_rate: SignalRate,
+        sample_rate: Scalar,
+        inputs: &[Vec<Signal>],
+        outputs: &mut [Vec<Signal>],
+    ) {
+        match self {
+            Self::Builtin(p) => {
+                p.write()
+                    .unwrap()
+                    .process_buffer(signal_rate, sample_rate, inputs, outputs)
+            }
+            Self::Subgraph(p) => {
+                p.write()
+                    .unwrap()
+                    .process_buffer(signal_rate, sample_rate, inputs, outputs)
+            }
+            Self::None => {}
         }
     }
 
@@ -173,85 +181,80 @@ where
         match self {
             Self::Builtin(p) => p.read().unwrap().ui_update(ui),
             Self::Subgraph(p) => p.read().unwrap().ui_update(ui),
+            Self::None => {}
         }
     }
 }
 
-impl<T: SignalRate + 'static, P: Processor<T> + 'static + Send + Sync> From<Arc<RwLock<P>>>
-    for ProcessorType<T>
-where
-    Graph<T>: Processor<T>,
-{
-    fn from(value: Arc<RwLock<P>>) -> Self {
-        Self::Builtin(value)
-    }
-}
-
 #[non_exhaustive]
-pub struct Node<T: SignalRate + 'static>
+pub struct Node
 where
-    Graph<T>: Processor<T>,
+    Graph: Processor,
 {
     pub name: NodeName,
-    pub sibling_node: Option<Arc<T::SiblingNode>>,
-    pub inputs: Vec<Input<T>>,
+    pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
-    pub processor: ProcessorType<T>,
-    inputs_cache: RwLock<Vec<Vec<Signal<T>>>>,
-    outputs_cache: RwLock<Vec<Vec<Signal<T>>>>,
+    pub audio_processor: ProcessorType,
+    pub control_processor: ProcessorType,
+    inputs_cache: RwLock<Vec<Vec<Signal>>>,
+    outputs_cache: RwLock<Vec<Vec<Signal>>>,
 }
 
-impl<T: SignalRate> std::fmt::Debug for Node<T>
+impl std::fmt::Debug for Node
 where
-    Graph<T>: Processor<T>,
+    Graph: Processor,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name.0)
     }
 }
 
-impl<T: SignalRate + 'static> Node<T>
+impl Node
 where
-    Graph<T>: Processor<T>,
+    Graph: Processor,
 {
     pub fn new(
         name: NodeName,
-        signaltype_buffer_len: usize,
-        mut inputs: Vec<Input<T>>,
+        signal_rate: SignalRate,
+        buffer_len: usize,
+        mut inputs: Vec<Input>,
         outputs: Vec<Output>,
-        processor: ProcessorType<T>,
-        sibling_node: Option<Arc<T::SiblingNode>>,
+        processor: ProcessorType,
     ) -> Self {
         if !inputs.iter().any(|i| i.name == "t") {
             let mut t = Input::new("t", None);
             t.implicit = true;
             inputs.push(t);
         }
+        let (audio_processor, control_processor) = match signal_rate {
+            SignalRate::Audio => (processor, ProcessorType::None),
+            SignalRate::Control => (ProcessorType::None, processor),
+        };
         Self {
             name,
             inputs_cache: RwLock::new(
                 inputs
                     .iter()
-                    .map(|v| vec![v.default.unwrap_or(Signal::new(0.0)); signaltype_buffer_len])
+                    .map(|v| vec![v.default.unwrap_or(Signal::new(0.0)); buffer_len])
                     .collect(),
             ),
             outputs_cache: RwLock::new(
                 outputs
                     .iter()
-                    .map(|_| vec![Signal::new(0.0); signaltype_buffer_len])
+                    .map(|_| vec![Signal::new(0.0); buffer_len])
                     .collect(),
             ),
-
             inputs,
             outputs,
-            processor,
-            sibling_node,
+            audio_processor,
+            control_processor,
         }
     }
 
-    pub fn from_graph(graph: Graph<T>) -> Self {
+    pub fn from_graph(graph: Graph) -> Self {
         Self::new(
             graph.name.clone(),
+            graph.signal_rate,
             graph.signaltype_buffer_len,
             graph
                 .input_node_indices
@@ -271,8 +274,7 @@ where
                     }
                 })
                 .collect(),
-            ProcessorType::Subgraph(Arc::new(RwLock::new(graph))),
-            None,
+            ProcessorType::Subgraph(RwLock::new(graph)),
         )
     }
 
@@ -291,32 +293,34 @@ where
     }
 }
 
-impl Node<ControlRate> {
-    pub fn cached_input(&self, idx: usize) -> Option<Signal<ControlRate>> {
+impl Node {
+    pub fn cached_input(&self, idx: usize) -> Option<Signal> {
         self.inputs_cache.read().unwrap().get(idx).map(|inp| inp[0])
     }
 }
 
-pub struct Graph<T: SignalRate + 'static>
+pub struct Graph
 where
-    Self: Processor<T>,
+    Self: Processor,
 {
     pub name: NodeName,
+    pub signal_rate: SignalRate,
     signaltype_buffer_len: usize,
-    pub digraph: DiGraph<Arc<Node<T>>, Connection>,
+    pub digraph: DiGraph<Arc<Node>, Connection>,
     node_indices_by_name: BTreeMap<String, NodeIndex>,
     pub input_node_indices: Vec<NodeIndex>,
     pub output_node_indices: Vec<NodeIndex>,
     partitions: Vec<Vec<NodeIndex>>,
 }
 
-impl Graph<AudioRate> {
+impl Graph {
     pub fn new(
         name: Option<NodeName>,
-        audio_buffer_len: usize,
-        mut inputs: Vec<Input<AudioRate>>,
+        signal_rate: SignalRate,
+        buffer_len: usize,
+        mut inputs: Vec<Input>,
         outputs: Vec<Output>,
-    ) -> Graph<AudioRate> {
+    ) -> Graph {
         let t = Input {
             name: "t".to_owned(),
             minimum: None,
@@ -328,7 +332,8 @@ impl Graph<AudioRate> {
         inputs.push(t);
         let mut this = Self {
             name: name.unwrap_or(NodeName::new("graph")),
-            signaltype_buffer_len: audio_buffer_len,
+            signal_rate,
+            signaltype_buffer_len: buffer_len,
             digraph: DiGraph::new(),
             node_indices_by_name: BTreeMap::default(),
             input_node_indices: Vec::default(),
@@ -337,14 +342,14 @@ impl Graph<AudioRate> {
         };
 
         for inp in inputs {
-            let an = GraphInput::create_audio_node(&inp.name, audio_buffer_len, inp.clone());
+            let an = GraphInput::create_node(&inp.name, signal_rate, buffer_len, inp.clone());
             let idx = this.add_node(an);
             this.node_indices_by_name.insert(inp.name.to_owned(), idx);
             this.input_node_indices.push(idx);
         }
         for out in outputs {
-            let (an, _cn) = GraphOutput::create_nodes(&out.name, audio_buffer_len, 0.0);
-            let idx = this.add_node(an);
+            let node = GraphOutput::create_node(&out.name, signal_rate, buffer_len, 0.0);
+            let idx = this.add_node(node);
             this.node_indices_by_name.insert(out.name.to_owned(), idx);
             this.output_node_indices.push(idx);
         }
@@ -353,52 +358,10 @@ impl Graph<AudioRate> {
     }
 }
 
-impl Graph<ControlRate> {
-    pub fn new(
-        name: Option<NodeName>,
-        mut inputs: Vec<Input<ControlRate>>,
-        outputs: Vec<Output>,
-    ) -> Graph<ControlRate> {
-        let t = Input {
-            name: "t".to_owned(),
-            minimum: None,
-            maximum: None,
-            default: None,
-            implicit: true,
-            is_ui: false,
-        };
-        inputs.push(t);
-        let mut this = Self {
-            name: name.unwrap_or(NodeName::new("graph")),
-            signaltype_buffer_len: 1, // control rate graph doesn't use buffers
-            digraph: DiGraph::new(),
-            node_indices_by_name: BTreeMap::default(),
-            input_node_indices: Vec::default(),
-            output_node_indices: Vec::default(),
-            partitions: Vec::default(),
-        };
-
-        for inp in inputs {
-            let cn = GraphInput::create_control_node(&inp.name, inp.clone());
-            let idx = this.add_node(cn);
-            this.node_indices_by_name.insert(inp.name.to_owned(), idx);
-            this.input_node_indices.push(idx);
-        }
-        for out in outputs {
-            let (_an, cn) = GraphOutput::create_nodes(&out.name, 1, 0.0);
-            let idx = this.add_node(cn);
-            this.node_indices_by_name.insert(out.name.to_owned(), idx);
-            this.output_node_indices.push(idx);
-        }
-
-        this
-    }
-}
-
-impl<T: SignalRate + 'static> Graph<T>
+impl Graph
 where
-    Self: Processor<T>,
-    Signal<T>: std::fmt::Debug,
+    Self: Processor,
+    Signal: std::fmt::Debug,
 {
     pub fn write_dot(&self, name: &str) {
         use std::io::Write;
@@ -416,7 +379,7 @@ where
         .unwrap();
     }
 
-    pub fn add_node(&mut self, node: Arc<Node<T>>) -> NodeIndex {
+    pub fn add_node(&mut self, node: Arc<Node>) -> NodeIndex {
         let name = node.name.to_owned();
         let idx = self.digraph.add_node(node);
         self.node_indices_by_name.insert(name.to_string(), idx);
@@ -489,10 +452,17 @@ where
 
     pub fn process_graph(
         &mut self,
+        signal_rate: SignalRate,
         sample_rate: Scalar,
-        inputs: &BTreeMap<NodeIndex, &Vec<Signal<T>>>,
-        outputs: &mut BTreeMap<NodeIndex, &mut Vec<Signal<T>>>,
+        inputs: &BTreeMap<NodeIndex, &Vec<Signal>>,
+        outputs: &mut BTreeMap<NodeIndex, &mut Vec<Signal>>,
     ) {
+        macro_rules! assign {
+            ($a:expr, $b:expr) => {
+                $a[..$b.len()].copy_from_slice($b)
+            };
+        }
+
         // early check for empty graph (nothing to do)
         if self.digraph.node_count() == 0 {
             return;
@@ -500,17 +470,19 @@ where
 
         // copy the provided input values into each input node's input cache
         for (inp_idx, value) in inputs.iter() {
-            self.digraph[*inp_idx]
-                .inputs_cache
-                .write()
-                .unwrap()
-                .get_mut(0)
-                .unwrap()
-                .copy_from_slice(value);
+            assign!(
+                self.digraph[*inp_idx]
+                    .inputs_cache
+                    .write()
+                    .unwrap()
+                    .get_mut(0)
+                    .unwrap(),
+                value
+            );
         }
 
         // walk the BFS...
-        for layer in self.partitions.iter() {
+        for layer in self.partitions.clone().iter() {
             layer.iter().copied().for_each(|node_id| {
                 // for each incoming connection into the visited node:
                 // - grab the cached outputs from earlier in the graph
@@ -520,13 +492,15 @@ where
                         &self.digraph[edge.source()].outputs_cache.read().unwrap()
                             [edge.weight().source_output]
                     };
-                    self.digraph[node_id]
-                        .inputs_cache
-                        .write()
-                        .unwrap()
-                        .get_mut(edge.weight().sink_input)
-                        .unwrap()
-                        .copy_from_slice(out);
+                    assign!(
+                        self.digraph[node_id]
+                            .inputs_cache
+                            .write()
+                            .unwrap()
+                            .get_mut(edge.weight().sink_input)
+                            .unwrap(),
+                        out
+                    );
                 }
 
                 // create a copy of the inputs from the cache (necessary because we mutably borrow `self` in the next step)
@@ -534,8 +508,10 @@ where
                 let mut inps = in_cache.iter().cloned().collect::<Vec<_>>();
 
                 // manually copy over `t` since it's implicit
-                inps[self.digraph[node_id].input_named("t").unwrap()]
-                    .copy_from_slice(inputs[&self.node_id_by_name("t").unwrap()]);
+                assign!(
+                    inps[self.digraph[node_id].input_named("t").unwrap()],
+                    inputs[&self.node_id_by_name("t").unwrap()]
+                );
 
                 let out_cache = { self.digraph[node_id].outputs_cache.read().unwrap().clone() };
                 let mut outs = out_cache
@@ -544,12 +520,21 @@ where
                     .collect::<Vec<_>>();
 
                 // run the processing logic for this node, which will store its results directly in our output cache
-                self.digraph[node_id].processor.process_buffer(
-                    sample_rate,
-                    self.digraph[node_id].sibling_node.as_ref(),
-                    &inps,
-                    &mut outs,
-                );
+                match signal_rate {
+                    SignalRate::Audio => self.digraph[node_id].audio_processor.process_buffer(
+                        signal_rate,
+                        sample_rate,
+                        &inps,
+                        &mut outs,
+                    ),
+                    SignalRate::Control => self.digraph[node_id].control_processor.process_buffer(
+                        signal_rate,
+                        sample_rate,
+                        &inps,
+                        &mut outs,
+                    ),
+                };
+
                 let mut out_cache = self.digraph[node_id].outputs_cache.write().unwrap();
                 for (i, out) in outs.into_iter().enumerate() {
                     out_cache[i].copy_from_slice(&out);
@@ -563,33 +548,36 @@ where
         }
     }
 
-    pub fn into_node(self) -> Node<T> {
+    pub fn into_node(self) -> Node {
         Node::from_graph(self)
     }
 }
 
-impl<T: SignalRate> Processor<T> for Graph<T>
-where
-    T: Send + Sync,
-    <T as SignalRate>::SiblingNode: Send + Sync,
-    Signal<T>: std::fmt::Debug,
-{
-    fn process_sample(
+impl Processor for Graph {
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<T>],
-        _outputs: &mut [Signal<T>],
+        _inputs: &[Signal],
+        _outputs: &mut [Signal],
+    ) {
+        unimplemented!()
+    }
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _inputs: &[Signal],
+        _outputs: &mut [Signal],
     ) {
         unimplemented!()
     }
     fn process_buffer(
         &mut self,
+        signal_rate: SignalRate,
         sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<T as SignalRate>::SiblingNode>>,
-        inputs: &[Vec<Signal<T>>],
-        outputs: &mut [Vec<Signal<T>>],
+        inputs: &[Vec<Signal>],
+        outputs: &mut [Vec<Signal>],
     ) {
         let inputs = BTreeMap::from_iter(
             inputs
@@ -603,7 +591,7 @@ where
                 .enumerate()
                 .map(|(i, out)| (self.output_node_indices[i], out)),
         );
-        self.process_graph(sample_rate, &inputs, &mut outputs);
+        self.process_graph(signal_rate, sample_rate, &inputs, &mut outputs);
     }
 }
 
@@ -620,15 +608,15 @@ macro_rules! dual_graphs {
         {
             let a_outs = vec![$(($crate::graph::Output { name: $audio_outputs.to_owned() })),*];
             let c_outs = vec![$(($crate::graph::Output { name: $control_outputs.to_owned() })),*];
-            let a_ins = vec![$(($crate::graph::Input::new($audio_inputs, Some($crate::dsp::Signal::new_audio($ai_default_values))))),*];
-            let c_ins = vec![$(($crate::graph::Input::new($control_inputs, Some($crate::dsp::Signal::new_control($ci_default_values))))),*];
-            let ag = $crate::graph::Graph::<AudioRate>::new(Some($crate::graph::NodeName::new($name)), $audio_buffer_len, a_ins, a_outs);
-            let cg = $crate::graph::Graph::<ControlRate>::new(Some($crate::graph::NodeName::new($name)), c_ins, c_outs);
+            let a_ins = vec![$(($crate::graph::Input::new($audio_inputs, Some($crate::dsp::Signal::new($ai_default_values))))),*];
+            let c_ins = vec![$(($crate::graph::Input::new($control_inputs, Some($crate::dsp::Signal::new($ci_default_values))))),*];
+            let ag = $crate::graph::Graph::new(Some($crate::graph::NodeName::new($name)), $crate::dsp::SignalRate::Audio, $audio_buffer_len, a_ins, a_outs);
+            let cg = $crate::graph::Graph::new(Some($crate::graph::NodeName::new($name)), $crate::dsp::SignalRate::Control, $audio_buffer_len, c_ins, c_outs);
             (ag, cg)
         }
     };
 }
 
 pub trait CreateNodes {
-    fn create_nodes() -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>);
+    fn create_node() -> (Arc<Node>, Arc<Node>);
 }

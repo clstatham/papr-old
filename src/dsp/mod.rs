@@ -11,111 +11,90 @@ pub mod graph_util;
 pub mod midi;
 pub mod time;
 
-pub trait SignalRate
-where
-    Self: Copy,
-{
-    type SiblingNode;
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct AudioRate;
-#[derive(Clone, Copy, Debug)]
-pub struct ControlRate;
-impl SignalRate for AudioRate {
-    type SiblingNode = Node<ControlRate>;
-}
-impl SignalRate for ControlRate {
-    type SiblingNode = Node<AudioRate>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SignalRate {
+    Audio,
+    Control,
 }
 
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
-pub struct Signal<T: SignalRate>(Scalar, PhantomData<T>);
+pub struct Signal {
+    val: Scalar,
+}
 
-impl std::fmt::Debug for Signal<AudioRate> {
+impl std::fmt::Debug for Signal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "@{}", self.0)
+        write!(f, "{}", self.val)
     }
 }
 
-impl std::fmt::Debug for Signal<ControlRate> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "#{}", self.0)
-    }
-}
-
-impl<T: SignalRate> Signal<T> {
+impl Signal {
     pub const fn new(val: Scalar) -> Self {
-        Self(val, PhantomData)
+        Self { val }
     }
 
     pub const fn value(&self) -> Scalar {
-        self.0
+        self.val
     }
 }
 
-impl Signal<ControlRate> {
-    pub const fn new_control(val: Scalar) -> Signal<ControlRate> {
-        Self(val, PhantomData)
-    }
-}
-
-impl Signal<AudioRate> {
-    pub const fn new_audio(val: Scalar) -> Signal<AudioRate> {
-        Self(val, PhantomData)
-    }
-}
-
-impl<T: SignalRate> From<Scalar> for Signal<T> {
-    fn from(value: Scalar) -> Self {
-        Self::new(value)
-    }
-}
-
-impl<T: SignalRate> std::ops::Add<Self> for Signal<T> {
+impl std::ops::Add<Self> for Signal {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Self::new(self.value() + rhs.value())
     }
 }
 
-impl<T: SignalRate> std::ops::Sub<Self> for Signal<T> {
+impl std::ops::Sub<Self> for Signal {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Self::new(self.value() - rhs.value())
     }
 }
 
-impl<T: SignalRate> std::ops::Mul<Self> for Signal<T> {
+impl std::ops::Mul<Self> for Signal {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
         Self::new(self.value() * rhs.value())
     }
 }
 
-impl<T: SignalRate> std::ops::Div<Self> for Signal<T> {
+impl std::ops::Div<Self> for Signal {
     type Output = Self;
     fn div(self, rhs: Self) -> Self::Output {
         Self::new(self.value() / rhs.value())
     }
 }
 
-pub trait Processor<T: SignalRate> {
-    fn process_sample(
+pub trait Processor {
+    #[inline]
+    #[allow(unused_variables)]
+    fn process_audio_sample(
         &mut self,
         buffer_idx: usize,
         sample_rate: Scalar,
-        sibling_node: Option<&Arc<T::SiblingNode>>,
-        inputs: &[Signal<T>],
-        outputs: &mut [Signal<T>],
-    );
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+    }
+
+    #[inline]
+    #[allow(unused_variables)]
+    fn process_control_sample(
+        &mut self,
+        buffer_idx: usize,
+        sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+    }
 
     fn process_buffer(
         &mut self,
+        signal_rate: SignalRate,
         sample_rate: Scalar,
-        sibling_node: Option<&Arc<T::SiblingNode>>,
-        inputs: &[Vec<Signal<T>>],
-        outputs: &mut [Vec<Signal<T>>],
+        inputs: &[Vec<Signal>],
+        outputs: &mut [Vec<Signal>],
     ) {
         let mut audio_buffer_len = inputs
             .iter()
@@ -132,15 +111,17 @@ pub trait Processor<T: SignalRate> {
             audio_buffer_len = out.len();
             check
         }));
-        // let mut inp = Vec::from_iter(inputs.iter().map(|(name, _inp)| (*name, Signal::new(0.0))));
-        // let mut out = Vec::from_iter(outputs.iter().map(|(name, _out)| (*name, Signal::new(0.0))));
         let mut inp = vec![Signal::new(0.0); inputs.len()];
         let mut out = vec![Signal::new(0.0); outputs.len()];
         for i in 0..audio_buffer_len {
             for (val, buf) in inp.iter_mut().zip(inputs) {
                 *val = buf[i];
             }
-            self.process_sample(i, sample_rate, sibling_node, &inp, &mut out);
+            match signal_rate {
+                SignalRate::Audio => self.process_audio_sample(i, sample_rate, &inp, &mut out),
+                SignalRate::Control => self.process_control_sample(i, sample_rate, &inp, &mut out),
+            };
+
             for (j, out_val) in out.iter().enumerate() {
                 outputs.get_mut(j).unwrap()[i] = *out_val;
             }
@@ -161,7 +142,7 @@ pub struct SmoothControlSignal {
 }
 
 impl SmoothControlSignal {
-    pub fn new(initial_value: Signal<ControlRate>, filter_time_samples: usize) -> Self {
+    pub fn new(initial_value: Signal, filter_time_samples: usize) -> Self {
         let cosf = 2.0 - Scalar::cos(TAU * (2.0 / filter_time_samples as Scalar));
         let cb1 = cosf - Scalar::sqrt(cosf * cosf - 1.0);
         let mut this = Self {
@@ -175,21 +156,21 @@ impl SmoothControlSignal {
         this
     }
 
-    pub fn set_target(&mut self, new_value: Signal<ControlRate>) {
+    pub fn set_target(&mut self, new_value: Signal) {
         self.target = new_value.value();
         self.xv = self.a0 * new_value.value();
     }
 
-    pub fn next_value(&mut self) -> Signal<AudioRate> {
+    pub fn next_value(&mut self) -> Signal {
         self.current = self.xv + (self.b1 * self.current);
-        Signal::new_audio(self.current)
+        Signal::new(self.current)
     }
 
-    pub fn current_value(&self) -> Signal<ControlRate> {
-        Signal::new_control(self.current)
+    pub fn current_value(&self) -> Signal {
+        Signal::new(self.current)
     }
 
-    pub fn target_value(&self) -> Signal<ControlRate> {
-        Signal::new_control(self.target)
+    pub fn target_value(&self) -> Signal {
+        Signal::new(self.target)
     }
 }

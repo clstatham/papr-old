@@ -2,31 +2,46 @@ use std::sync::Arc;
 
 use papr_proc_macro::node_constructor;
 
-use crate::Scalar;
+use crate::{graph::Node, Scalar};
 
-use super::{AudioRate, ControlRate, Processor, Signal};
+use super::{Processor, Signal, SignalRate};
 
 node_constructor! {
     pub struct Clock;
-    @in {}
-    @out { out }
-    #in { period, width }
-    #out { out }
+    in { period, width }
+    out { out }
 }
 
-impl Processor<AudioRate> for Clock {
-    fn process_sample(
+impl Processor for Clock {
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: crate::Scalar,
-        sibling_node: Option<&std::sync::Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[super::Signal<AudioRate>],
-        outputs: &mut [super::Signal<AudioRate>],
+        inputs: &[super::Signal],
+        outputs: &mut [super::Signal],
     ) {
-        let cn = sibling_node.as_ref().unwrap();
-        let t = inputs[Self::audio_input_idx("t").unwrap()];
-        let period = cn.cached_input(0).unwrap();
-        let width = cn.cached_input(1).unwrap();
+        let t = inputs[Self::input_idx("t").unwrap()];
+        let period = inputs[0];
+        let width = inputs[1];
+        if period.value() == 0.0 {
+            outputs[0] = Signal::new(0.0);
+        } else if t.value() % period.value() < period.value() * width.value() {
+            outputs[0] = Signal::new(1.0);
+        } else {
+            outputs[0] = Signal::new(0.0);
+        }
+    }
+
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: crate::Scalar,
+        inputs: &[super::Signal],
+        outputs: &mut [super::Signal],
+    ) {
+        let t = inputs[Self::input_idx("t").unwrap()];
+        let period = inputs[0];
+        let width = inputs[1];
         if period.value() == 0.0 {
             outputs[0] = Signal::new(0.0);
         } else if t.value() % period.value() < period.value() * width.value() {
@@ -37,27 +52,6 @@ impl Processor<AudioRate> for Clock {
     }
 }
 
-impl Processor<ControlRate> for Clock {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&std::sync::Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[super::Signal<ControlRate>],
-        outputs: &mut [super::Signal<ControlRate>],
-    ) {
-        let t = inputs[Self::control_input_idx("t").unwrap()];
-        let period = inputs[0];
-        let width = inputs[1];
-        if t.value() % period.value() < period.value() * width.value() {
-            outputs[0] = Signal::new(1.0);
-        } else {
-            outputs[0] = Signal::new(0.0);
-        }
-        // dbg!(outputs[0]);
-    }
-}
-
 node_constructor! {
     pub struct Delay {
         buf: Vec<Scalar>,
@@ -65,26 +59,22 @@ node_constructor! {
         write_head: Scalar,
         delay_current: Scalar,
     }
-    @in { input }
-    @out { out }
-    #in { delay }
-    #out {}
+    in { input, delay }
+    out { out }
 }
 
-impl Processor<AudioRate> for Delay {
-    fn process_sample(
+impl Processor for Delay {
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         // kinda a port of:
         // https://github.com/qbroquetas/IV-XDelay/blob/master/IvxDelay/Source/DelayProcessor.cpp
 
-        let cn = sibling_node.as_ref().unwrap();
-        let delay_desired_secs = cn.cached_input(0).unwrap().value();
+        let delay_desired_secs = inputs[1].value();
 
         self.delay_current =
             self.delay_current + 0.00005 * (delay_desired_secs - self.delay_current);
@@ -116,17 +106,5 @@ impl Processor<AudioRate> for Delay {
         if self.read_head < 0.0 {
             self.read_head += self.buf.len() as Scalar;
         }
-    }
-}
-
-impl Processor<ControlRate> for Delay {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<ControlRate>],
-        _outputs: &mut [Signal<ControlRate>],
-    ) {
     }
 }

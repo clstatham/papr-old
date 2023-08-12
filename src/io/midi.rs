@@ -1,25 +1,26 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use midir::{MidiInput, MidiInputConnection};
 use midly::live::LiveEvent;
+use spin::Once;
 
 use crate::{
-    dsp::{basic::Dummy, AudioRate, ControlRate, Processor, Signal, SignalRate},
+    dsp::{Processor, Signal, SignalRate},
     graph::{Node, NodeName, Output},
     Scalar,
 };
 
+pub static MIDI_CHAN: Once<crossbeam_channel::Receiver<Vec<u8>>> = Once::INIT;
+
 const POLYPHONY: usize = 1;
 
-pub struct NoteIn {
+pub struct MidiContext {
     _conn_in: MidiInputConnection<()>,
-    chan: crossbeam_channel::Receiver<Vec<u8>>,
-    notes: [Option<(u8, u8)>; POLYPHONY],
 }
 
-impl NoteIn {
+impl MidiContext {
     pub fn new(name: &str) -> Self {
-        let mut midi_in = MidiInput::new(&format!("PAPR MidiIn {name}")).unwrap();
+        let mut midi_in = MidiInput::new(name).unwrap();
         midi_in.ignore(midir::Ignore::None);
         let in_ports = midi_in.ports();
         let port = &in_ports[0];
@@ -34,29 +35,24 @@ impl NoteIn {
                 (),
             )
             .unwrap();
-        Self {
-            _conn_in,
-            chan: rx,
-            notes: [None; POLYPHONY],
-        }
+        MIDI_CHAN.call_once(|| rx);
+        Self { _conn_in }
     }
 }
 
-// FIXME: this might break stuff, it should be fine for now though
-// since we only have one control thread and the audio thread doesn't
-// access anything for this node
-unsafe impl Sync for NoteIn {}
+pub struct NoteIn {
+    notes: [Option<(u8, u8)>; POLYPHONY],
+}
 
-impl Processor<ControlRate> for NoteIn {
-    fn process_sample(
+impl Processor for NoteIn {
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+        _inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
-        if let Ok(msg) = self.chan.try_recv() {
+        if let Ok(msg) = MIDI_CHAN.get().unwrap().try_recv() {
             let msg = LiveEvent::parse(&msg).unwrap();
             if let LiveEvent::Midi {
                 channel: _,
@@ -99,14 +95,15 @@ impl Processor<ControlRate> for NoteIn {
 }
 
 impl NoteIn {
-    pub fn create_nodes(
-        name: &str,
-        audio_buffer_len: usize,
-    ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let this = Arc::new(RwLock::new(Self::new(name)));
-        let cn = Arc::new(Node::new(
+    pub fn create_node(name: &str, audio_buffer_len: usize) -> Arc<Node> {
+        let this = Box::new(RwLock::new(Self {
+            notes: [None; POLYPHONY],
+        }));
+
+        Arc::new(Node::new(
             NodeName::new(name),
-            1,
+            SignalRate::Control,
+            audio_buffer_len,
             vec![],
             (0..POLYPHONY)
                 .map(|i| Output {
@@ -117,16 +114,6 @@ impl NoteIn {
                 }))
                 .collect(),
             crate::graph::ProcessorType::Builtin(this),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            NodeName::new(name),
-            audio_buffer_len,
-            vec![],
-            vec![],
-            crate::graph::ProcessorType::Builtin(Arc::new(RwLock::new(Dummy))),
-            None,
-        ));
-        (an, cn)
+        ))
     }
 }

@@ -29,6 +29,8 @@ rosc = "0.10.1"
 midly = "0.5.3"
 midir = "0.9.1"
 crossbeam-channel = "0.5.8"
+lazy_static = "1.4.0"
+spin = { version = "0.9.8", features = ["std"] }
 
 [profile.release]
 # debug = true

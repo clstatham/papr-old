@@ -4,12 +4,12 @@ graph main {
     #in {}
     #out {}
     ~ {
-        create m: notein;
-        create s: sawosc;
-        create s_m2f: m2f;
+        create #m: notein;
+        create @s: sawosc;
+        create #s_m2f: m2f;
         s_m2f.#m <- m.#note0;
-        s.#freq <- s_m2f.#f;
-        s.#amp <- m.#vel0;
+        s.@freq <- s_m2f.#f;
+        s.@amp <- m.#vel0;
         @dac0 <- s.@out;
     }
 }

@@ -1,151 +1,95 @@
-use std::sync::{Arc, Mutex};
-
-use crate::{
-    dsp::{AudioRate, ControlRate},
-    graph::Node,
-    node_constructor, Scalar, PI, TAU,
-};
+use crate::{node_constructor, Scalar, PI, TAU};
 
 use super::{Processor, Signal};
 
 node_constructor! {
     pub struct SineOsc;
-    @in { fm }
-    @out { out }
-    #in { amp, freq, fm_amt }
-    #out {}
+    in { amp, freq, fm_amt, fm }
+    out { out }
 }
 
-impl Processor<AudioRate> for SineOsc {
-    fn process_sample(
+impl Processor for SineOsc {
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        sibling_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
-        let sibling_node = sibling_node.as_ref().unwrap();
-        let amp = sibling_node.cached_input(0).unwrap();
-        let freq = sibling_node.cached_input(1).unwrap();
-        let fm_amt = sibling_node.cached_input(2).unwrap();
-        let t = inputs[Self::audio_input_idx("t").unwrap()].value();
-        let fm = inputs[0];
-        *outputs.get_mut(0).unwrap() = Signal::new_audio(
+        let amp = inputs[0];
+        let freq = inputs[1];
+        let fm_amt = inputs[2];
+        let t = inputs[Self::input_idx("t").unwrap()].value();
+        let fm = inputs[3];
+        *outputs.get_mut(0).unwrap() = Signal::new(
             Scalar::sin(t * TAU * freq.value() + fm.value() * TAU * fm_amt.value()) * amp.value(),
         );
     }
 }
 
-impl Processor<ControlRate> for SineOsc {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _control_node: Option<&Arc<Node<AudioRate>>>,
-        _inputs: &[Signal<ControlRate>],
-        _outputs: &mut [Signal<ControlRate>],
-    ) {
-    }
-}
-
 node_constructor! {
     pub struct SineOscLFO;
-    @in {}
-    @out {}
-    #in { amp, freq }
-    #out { out }
+    in { amp, freq }
+    out { out }
 }
 
-impl Processor<AudioRate> for SineOscLFO {
-    fn process_sample(
+impl Processor for SineOscLFO {
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<Node<ControlRate>>>,
-        _inputs: &[Signal<AudioRate>],
-        _outputs: &mut [Signal<AudioRate>],
-    ) {
-    }
-}
-
-impl Processor<ControlRate> for SineOscLFO {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _control_node: Option<&Arc<Node<AudioRate>>>,
-        inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         let amp = inputs[0];
         let freq = inputs[1];
-        let t = inputs[Self::control_input_idx("t").unwrap()].value();
+        let t = inputs[Self::input_idx("t").unwrap()].value();
         *outputs.get_mut(0).unwrap() =
-            Signal::new_control(Scalar::sin(t * TAU * freq.value()) * amp.value());
+            Signal::new(Scalar::sin(t * TAU * freq.value()) * amp.value());
     }
 }
 
 node_constructor! {
     pub struct BlSawOsc {
-        p: Arc<Mutex<Scalar>>,
+        p: Scalar,
         /// SET TO 1.0 INITIALLY
-        dp: Arc<Mutex<Scalar>>,
-        saw: Arc<Mutex<Scalar>>,
+        dp: Scalar,
+        saw: Scalar,
     }
-    @in {}
-    @out { out }
-    #in { amp, freq }
-    #out {}
+    in { amp, freq }
+    out { out }
 }
 
-impl Processor<AudioRate> for BlSawOsc {
-    fn process_sample(
+impl Processor for BlSawOsc {
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
-        let sibling_node = sibling_node.as_ref().unwrap();
-        let amp = sibling_node.cached_input(0).unwrap();
-        let freq = sibling_node.cached_input(1).unwrap();
-        let mut saw = self.saw.lock().unwrap();
-        let mut p = self.p.lock().unwrap();
-        let mut dp = self.dp.lock().unwrap();
+        let amp = inputs[0];
+        let freq = inputs[1];
 
         // algorithm courtesy of https://www.musicdsp.org/en/latest/Synthesis/12-bandlimited-waveforms.html
 
         let pmax = 0.5 * sample_rate / freq.value();
         let dc = -0.498 / pmax;
 
-        *p += *dp;
-        if *p < 0.0 {
-            *p = -*p;
-            *dp = -*dp;
-        } else if *p > pmax {
-            *p = pmax + pmax - *p;
-            *dp = -*dp;
+        self.p += self.dp;
+        if self.p < 0.0 {
+            self.p = -self.p;
+            self.dp = -self.dp;
+        } else if self.p > pmax {
+            self.p = pmax + pmax - self.p;
+            self.dp = -self.dp;
         }
-        let mut x = PI * *p;
+        let mut x = PI * self.p;
         if x < 0.00001 {
             x = 0.00001;
         }
-        *saw = 0.995 * *saw + dc + x.sin() / x;
+        self.saw = 0.995 * self.saw + dc + x.sin() / x;
 
-        *outputs.get_mut(0).unwrap() = Signal::new_audio(*saw * amp.value());
-    }
-}
-
-impl Processor<ControlRate> for BlSawOsc {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<ControlRate>],
-        _outputs: &mut [Signal<ControlRate>],
-    ) {
+        outputs[0] = Signal::new(self.saw * amp.value());
     }
 }

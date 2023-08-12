@@ -11,52 +11,31 @@ use syn::{
 
 struct NodeConstructorParser {
     struc: ItemStruct,
-    audio_inputs: Punctuated<Ident, Comma>,
-    audio_outputs: Punctuated<Ident, Comma>,
-    control_inputs: Punctuated<Ident, Comma>,
-    control_outputs: Punctuated<Ident, Comma>,
+    inputs: Punctuated<Ident, Comma>,
+    outputs: Punctuated<Ident, Comma>,
 }
 
 impl Parse for NodeConstructorParser {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let struc: ItemStruct = input.parse()?;
 
-        input.parse::<Token![@]>()?;
         input.parse::<Token![in]>()?;
-        let audio_inputs;
-        braced!(audio_inputs in input);
-        let audio_inputs = audio_inputs.parse_terminated(Ident::parse, Token![,])?;
+        let inputs;
+        braced!(inputs in input);
+        let inputs = inputs.parse_terminated(Ident::parse, Token![,])?;
 
-        input.parse::<Token![@]>()?;
         match input.parse::<Ident>()?.to_string().as_str() {
             "out" => {}
             _ => return Err(input.error("expected `out`")),
         };
-        let audio_outputs;
-        braced!(audio_outputs in input);
-        let audio_outputs = audio_outputs.parse_terminated(Ident::parse, Token![,])?;
-
-        input.parse::<Token![#]>()?;
-        input.parse::<Token![in]>()?;
-        let control_inputs;
-        braced!(control_inputs in input);
-        let control_inputs = control_inputs.parse_terminated(Ident::parse, Token![,])?;
-
-        input.parse::<Token![#]>()?;
-        match input.parse::<Ident>()?.to_string().as_str() {
-            "out" => {}
-            _ => return Err(input.error("expected `out`")),
-        };
-        let control_outputs;
-        braced!(control_outputs in input);
-        let control_outputs = control_outputs.parse_terminated(Ident::parse, Token![,])?;
+        let outputs;
+        braced!(outputs in input);
+        let outputs = outputs.parse_terminated(Ident::parse, Token![,])?;
 
         Ok(Self {
             struc,
-            audio_inputs,
-            audio_outputs,
-            control_inputs,
-            control_outputs,
+            inputs,
+            outputs,
         })
     }
 }
@@ -67,15 +46,13 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
 
     let NodeConstructorParser {
         struc,
-        mut audio_inputs,
-        audio_outputs,
-        mut control_inputs,
-        control_outputs,
+        mut inputs,
+        outputs,
     } = parsed;
 
     let struc_name = &struc.ident;
 
-    let control_inputs_args = control_inputs
+    let inputs_args = inputs
         .iter()
         .map(|inp| quote! { #inp: crate::Scalar })
         .collect::<Punctuated<_, Comma>>();
@@ -99,10 +76,9 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         })
         .collect::<Punctuated<_, Comma>>();
 
-    audio_inputs.push(syn::parse2::<Ident>(quote! { t }).unwrap());
-    control_inputs.push(syn::parse2::<Ident>(quote! { t }).unwrap());
+    inputs.push(syn::parse2::<Ident>(quote! { t }).unwrap());
 
-    let a_outs = audio_outputs
+    let outs = outputs
         .iter()
         .map(|out| {
             quote! {
@@ -111,25 +87,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         })
         .collect::<Punctuated<_, Comma>>();
 
-    let c_outs = control_outputs
-        .iter()
-        .map(|out| {
-            quote! {
-                crate::graph::Output { name: stringify!(#out).to_owned() }
-            }
-        })
-        .collect::<Punctuated<_, Comma>>();
-
-    let a_ins = audio_inputs
-        .iter()
-        .map(|inp| {
-            quote! {
-                crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new(0.0)))
-            }
-        })
-        .collect::<Punctuated<_, Comma>>();
-
-    let c_ins = control_inputs
+    let ins = inputs
         .iter()
         .map(|inp| {
             quote! {
@@ -139,40 +97,26 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .collect::<Punctuated<_, Comma>>();
 
     let args = if fields_args.is_empty() {
-        quote! { #control_inputs_args }
+        quote! { #inputs_args }
     } else {
-        quote! { #fields_args, #control_inputs_args }
+        quote! { #fields_args, #inputs_args }
     };
 
-    let audio_input_names_list = audio_inputs
+    let input_names_list = inputs
         .iter()
         .map(|inp| {
             quote! { stringify!(#inp) }
         })
         .collect::<Punctuated<_, Comma>>();
 
-    let control_input_names_list = control_inputs
+    let output_names_list = outputs
         .iter()
         .map(|inp| {
             quote! { stringify!(#inp) }
         })
         .collect::<Punctuated<_, Comma>>();
 
-    let audio_output_names_list = audio_outputs
-        .iter()
-        .map(|inp| {
-            quote! { stringify!(#inp) }
-        })
-        .collect::<Punctuated<_, Comma>>();
-
-    let control_output_names_list = control_outputs
-        .iter()
-        .map(|inp| {
-            quote! { stringify!(#inp) }
-        })
-        .collect::<Punctuated<_, Comma>>();
-
-    let audio_input_mappings = audio_inputs
+    let input_mappings = inputs
         .iter()
         .enumerate()
         .map(|(i, inp)| {
@@ -180,23 +124,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         })
         .collect::<Punctuated<_, Comma>>();
 
-    let control_input_mappings = control_inputs
-        .iter()
-        .enumerate()
-        .map(|(i, inp)| {
-            quote! { stringify!(#inp) => {Some(#i)} }
-        })
-        .collect::<Punctuated<_, Comma>>();
-
-    let audio_output_mappings = audio_outputs
-        .iter()
-        .enumerate()
-        .map(|(i, inp)| {
-            quote! { stringify!(#inp) => {Some(#i)} }
-        })
-        .collect::<Punctuated<_, Comma>>();
-
-    let control_output_mappings = control_outputs
+    let output_mappings = outputs
         .iter()
         .enumerate()
         .map(|(i, inp)| {
@@ -210,59 +138,36 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
 
         #[allow(unused_variables)]
         impl #struc_name {
-            pub const AUDIO_INPUTS: &[&'static str] = &[#audio_input_names_list];
-            pub const AUDIO_OUTPUTS: &[&'static str] = &[#audio_output_names_list];
-            pub const CONTROL_INPUTS: &[&'static str] = &[#control_input_names_list];
-            pub const CONTROL_OUTPUTS: &[&'static str] = &[#control_output_names_list];
+            pub const INPUTS: &[&'static str] = &[#input_names_list];
+            pub const OUTPUTS: &[&'static str] = &[#output_names_list];
 
-            pub fn audio_input_idx(name: &str) -> Option<usize> {
+            pub fn input_idx(name: &str) -> Option<usize> {
                 match name {
-                    #audio_input_mappings
+                    #input_mappings
                     _ => None,
                 }
             }
 
-            pub fn audio_output_idx(name: &str) -> Option<usize> {
+            pub fn output_idx(name: &str) -> Option<usize> {
                 match name {
-                    #audio_output_mappings
+                    #output_mappings
                     _ => None,
                 }
             }
 
-            pub fn control_input_idx(name: &str) -> Option<usize> {
-                match name {
-                    #control_input_mappings
-                    _ => None,
-                }
-            }
-
-            pub fn control_output_idx(name: &str) -> Option<usize> {
-                match name {
-                    #control_output_mappings
-                    _ => None,
-                }
-            }
 
             #[allow(clippy::too_many_arguments)]
-            pub fn create_nodes(name: &str, audio_buffer_len: usize, #args) -> (std::sync::Arc<crate::graph::Node<crate::dsp::AudioRate>>, std::sync::Arc<crate::graph::Node<crate::dsp::ControlRate>>) {
-                let this = std::sync::Arc::new(std::sync::RwLock::new(Self { #fields }));
-                let cn = std::sync::Arc::new(crate::graph::Node::new(
-                    crate::graph::NodeName::new(name),
-                    1,
-                    vec![#c_ins],
-                    vec![#c_outs],
-                    crate::graph::ProcessorType::Builtin(this.clone()),
-                    None,
-                ));
+            pub fn create_node(name: &str, signal_rate: crate::dsp::SignalRate, buffer_len: usize, #args) -> std::sync::Arc<crate::graph::Node> {
+                let this = Box::new(std::sync::RwLock::new(Self { #fields }));
                 let an = std::sync::Arc::new(crate::graph::Node::new(
                     crate::graph::NodeName::new(name),
-                    audio_buffer_len,
-                    vec![#a_ins],
-                    vec![#a_outs],
+                    signal_rate,
+                    buffer_len,
+                    vec![#ins],
+                    vec![#outs],
                     crate::graph::ProcessorType::Builtin(this),
-                    Some(cn.clone()),
                 ));
-                (an, cn)
+                an
             }
         }
     }.into()

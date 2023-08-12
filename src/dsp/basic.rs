@@ -4,154 +4,66 @@ use eframe::egui::{Slider, Ui};
 use papr_proc_macro::node_constructor;
 
 use crate::{
-    dsp::{AudioRate, ControlRate, Signal},
-    graph::{Input, Node, NodeName, Output},
+    dsp::Signal,
+    graph::{Input, Node, NodeName, Output, ProcessorType},
     Scalar,
 };
 
-use super::Processor;
+use super::{Processor, SignalRate};
 
 pub struct Dummy;
 
-impl Processor<AudioRate> for Dummy {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _control_node: Option<&Arc<Node<ControlRate>>>,
-        _inputs: &[Signal<AudioRate>],
-        _outputs: &mut [Signal<AudioRate>],
-    ) {
-    }
-}
-
-impl Processor<ControlRate> for Dummy {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<Node<AudioRate>>>,
-        _inputs: &[Signal<ControlRate>],
-        _outputs: &mut [Signal<ControlRate>],
-    ) {
-    }
-}
+impl Processor for Dummy {}
 
 pub struct DebugNode {
     name: String,
 }
 
 impl DebugNode {
-    pub fn create_nodes(name: String) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let this = Arc::new(RwLock::new(Self { name: name.clone() }));
-        let cn = Arc::new(Node::new(
+    pub fn create_node(name: String, signal_rate: SignalRate, buffer_len: usize) -> Arc<Node> {
+        let this = Box::new(RwLock::new(Self { name: name.clone() }));
+
+        Arc::new(Node::new(
             NodeName::new(&name.clone()),
-            1,
+            signal_rate,
+            buffer_len,
             vec![Input::new(
                 "input".to_owned().as_ref(),
                 Some(Signal::new(0.0)),
             )],
             vec![],
-            crate::graph::ProcessorType::Builtin(this.clone()),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            NodeName::new(&name.clone()),
-            0,
-            vec![],
-            vec![],
             crate::graph::ProcessorType::Builtin(this),
-            Some(cn.clone()),
-        ));
-        (an, cn)
+        ))
     }
 }
 
-impl Processor<AudioRate> for DebugNode {
-    fn process_sample(
+impl Processor for DebugNode {
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<AudioRate>],
-        _outputs: &mut [Signal<AudioRate>],
-    ) {
-    }
-}
-
-impl Processor<ControlRate> for DebugNode {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _control_node: Option<&Arc<Node<AudioRate>>>,
-        inputs: &[Signal<ControlRate>],
-        _outputs: &mut [Signal<ControlRate>],
+        inputs: &[Signal],
+        _outputs: &mut [Signal],
     ) {
         let t = inputs[1].value();
         log::debug!("{} = {} (t={t})", self.name, inputs[0].value());
     }
 }
 
-node_constructor! {
-    pub struct Dac;
-    @in { input }
-    @out { out }
-    #in {}
-    #out {}
-}
-
-impl Processor<AudioRate> for Dac {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _control_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
-    ) {
-        *outputs.get_mut(0).unwrap() = inputs[0];
-    }
-}
-
-impl Processor<ControlRate> for Dac {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<ControlRate>],
-        _outputs: &mut [Signal<ControlRate>],
-    ) {
-    }
-}
 pub struct UiInput {
     pub name: String,
-    pub minimum: Signal<ControlRate>,
-    pub maximum: Signal<ControlRate>,
-    pub value: Arc<RwLock<Signal<ControlRate>>>,
+    pub minimum: Signal,
+    pub maximum: Signal,
+    pub value: Arc<RwLock<Signal>>,
 }
 
-impl Processor<AudioRate> for UiInput {
-    fn process_sample(
+impl Processor for UiInput {
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _control_node: Option<&Arc<Node<ControlRate>>>,
-        _inputs: &[Signal<AudioRate>],
-        _outputs: &mut [Signal<AudioRate>],
-    ) {
-    }
-}
-
-impl Processor<ControlRate> for UiInput {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _control_node: Option<&Arc<Node<AudioRate>>>,
-        _inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+        _inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         outputs[0] = *self.value.read().unwrap();
     }
@@ -159,45 +71,34 @@ impl Processor<ControlRate> for UiInput {
     fn ui_update(&self, ui: &mut Ui) {
         let mut val = { self.value.read().unwrap().value() };
         ui.add(
-            Slider::new(&mut val, self.minimum.0..=self.maximum.0)
+            Slider::new(&mut val, self.minimum.value()..=self.maximum.value())
                 .text(&self.name)
                 .step_by(0.0001),
         );
-        *self.value.write().unwrap() = Signal::new_control(val);
+        *self.value.write().unwrap() = Signal::new(val);
     }
 }
 
 impl UiInput {
-    pub fn create_nodes(
-        for_input: Input<ControlRate>,
-        audio_buffer_len: usize,
-    ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
+    pub fn create_node(for_input: Input, audio_buffer_len: usize) -> Arc<Node> {
         let value = Arc::new(RwLock::new(for_input.default.unwrap()));
-        let this = Arc::new(RwLock::new(UiInput {
+        let this = Box::new(RwLock::new(UiInput {
             maximum: for_input.maximum.unwrap(),
             minimum: for_input.minimum.unwrap(),
             name: for_input.name.clone(),
             value: value.clone(),
         }));
-        let cn = Arc::new(Node::new(
+
+        Arc::new(Node::new(
             for_input.name.clone().into(),
-            1,
+            SignalRate::Control,
+            audio_buffer_len,
             vec![],
             vec![Output {
                 name: for_input.name.clone(),
             }],
-            this.clone().into(),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            for_input.name.clone().into(),
-            audio_buffer_len,
-            vec![],
-            vec![],
-            this.into(),
-            Some(cn.clone()),
-        ));
-        (an, cn)
+            ProcessorType::Builtin(this),
+        ))
     }
 }
 
@@ -206,86 +107,69 @@ pub struct Constant {
 }
 
 impl Constant {
-    pub fn create_nodes(
+    pub fn create_node(
         name: &str,
+        signal_rate: SignalRate,
         audio_buffer_len: usize,
         value: Scalar,
-    ) -> (Arc<Node<AudioRate>>, Arc<Node<ControlRate>>) {
-        let this = Arc::new(RwLock::new(Self { value }));
-        let cn = Arc::new(Node::new(
+    ) -> Arc<Node> {
+        let this = Box::new(RwLock::new(Self { value }));
+
+        Arc::new(Node::new(
             NodeName::new(name),
-            1,
-            vec![],
-            vec![Output {
-                name: "out".to_owned(),
-            }],
-            crate::graph::ProcessorType::Builtin(this.clone()),
-            None,
-        ));
-        let an = Arc::new(Node::new(
-            NodeName::new(name),
+            signal_rate,
             audio_buffer_len,
             vec![],
             vec![Output {
                 name: "out".to_owned(),
             }],
-            crate::graph::ProcessorType::Builtin(this.clone()),
-            Some(cn.clone()),
-        ));
-        (an, cn)
+            crate::graph::ProcessorType::Builtin(this),
+        ))
     }
 }
 
-impl Processor<AudioRate> for Constant {
-    fn process_sample(
+impl Processor for Constant {
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
+        _inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = self.value.into();
+        *outputs.get_mut(0).unwrap() = Signal::new(self.value);
     }
-}
 
-impl Processor<ControlRate> for Constant {
-    fn process_sample(
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+        _inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = self.value.into();
+        *outputs.get_mut(0).unwrap() = Signal::new(self.value);
     }
 }
 
 macro_rules! impl_arith {
     ($typ:ident, $op:ident, $use:ident) => {
-        impl Processor<AudioRate> for $typ {
-            fn process_sample(
+        impl Processor for $typ {
+            fn process_audio_sample(
                 &mut self,
                 _buffer_idx: usize,
                 _sample_rate: Scalar,
-                _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-                inputs: &[Signal<AudioRate>],
-                outputs: &mut [Signal<AudioRate>],
+                inputs: &[Signal],
+                outputs: &mut [Signal],
             ) {
                 use std::ops::$use;
                 *outputs.get_mut(0).unwrap() = inputs[0].$op(inputs[1]);
             }
-        }
 
-        impl Processor<ControlRate> for $typ {
-            fn process_sample(
+            fn process_control_sample(
                 &mut self,
                 _buffer_idx: usize,
                 _sample_rate: Scalar,
-                _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-                inputs: &[Signal<ControlRate>],
-                outputs: &mut [Signal<ControlRate>],
+                inputs: &[Signal],
+                outputs: &mut [Signal],
             ) {
                 use std::ops::$use;
                 *outputs.get_mut(0).unwrap() = inputs[0].$op(inputs[1]);
@@ -301,65 +185,53 @@ impl_arith!(Subtract, sub, Sub);
 
 node_constructor! {
     pub struct Multiply;
-    @in { a, b }
-    @out { out }
-    #in { a, b }
-    #out { out }
+    in { a, b }
+    out { out }
 }
 
 node_constructor! {
     pub struct Divide;
-    @in { a, b }
-    @out { out }
-    #in { a, b }
-    #out { out }
+    in { a, b }
+    out { out }
 }
 
 node_constructor! {
     pub struct Add;
-    @in { a, b }
-    @out { out }
-    #in { a, b }
-    #out { out }
+    in { a, b }
+    out { out }
 }
 
 node_constructor! {
     pub struct Subtract;
-    @in { a, b }
-    @out { out }
-    #in { a, b }
-    #out { out }
+    in { a, b }
+    out { out }
 }
 
 node_constructor! {
     pub struct Max;
-    @in { a, b }
-    @out { out }
-    #in { a, b}
-    #out { out }
+    in { a, b }
+    out { out }
 }
 
-impl Processor<AudioRate> for Max {
-    fn process_sample(
+impl Processor for Max {
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
+
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         outputs[0] = Signal::new(inputs[0].value().max(inputs[1].value()));
     }
-}
 
-impl Processor<ControlRate> for Max {
-    fn process_sample(
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         outputs[0] = Signal::new(inputs[0].value().max(inputs[1].value()));
     }
@@ -367,33 +239,29 @@ impl Processor<ControlRate> for Max {
 
 node_constructor! {
     pub struct Min;
-    @in { a, b }
-    @out { out }
-    #in { a, b}
-    #out { out }
+    in { a, b }
+    out { out }
 }
 
-impl Processor<AudioRate> for Min {
-    fn process_sample(
+impl Processor for Min {
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
+
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         outputs[0] = Signal::new(inputs[0].value().min(inputs[1].value()));
     }
-}
 
-impl Processor<ControlRate> for Min {
-    fn process_sample(
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         outputs[0] = Signal::new(inputs[0].value().min(inputs[1].value()));
     }
@@ -401,70 +269,93 @@ impl Processor<ControlRate> for Min {
 
 node_constructor! {
     pub struct Sine;
-    @in { input }
-    @out { out }
-    #in { input }
-    #out { out }
+    in { input }
+    out { out }
 }
 
-impl Processor<AudioRate> for Sine {
-    fn process_sample(
+impl Processor for Sine {
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
+
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = Signal::new_audio(Scalar::sin(inputs[0].value()));
+        *outputs.get_mut(0).unwrap() = Signal::new(Scalar::sin(inputs[0].value()));
+    }
+
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        *outputs.get_mut(0).unwrap() = Signal::new(Scalar::sin(inputs[0].value()));
     }
 }
 
-impl Processor<ControlRate> for Sine {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
-    ) {
-        *outputs.get_mut(0).unwrap() = Signal::new_control(Scalar::sin(inputs[0].value()));
+pub struct ControlToAudio {
+    tx: Option<tokio::sync::watch::Sender<Scalar>>,
+    rx: Option<tokio::sync::watch::Receiver<Scalar>>,
+    value: Scalar,
+}
+
+impl ControlToAudio {
+    pub fn create_nodes(name: &str, buffer_len: usize) -> (Arc<Node>, Arc<Node>) {
+        let (tx, rx) = tokio::sync::watch::channel(0.0);
+        let cn = Arc::new(Node::new(
+            name.into(),
+            SignalRate::Control,
+            buffer_len,
+            vec![Input::new("c", Some(Signal::new(0.0)))],
+            vec![],
+            ProcessorType::Builtin(Box::new(RwLock::new(Self {
+                tx: Some(tx),
+                rx: None,
+                value: 0.0,
+            }))),
+        ));
+        let an = Arc::new(Node::new(
+            name.into(),
+            SignalRate::Audio,
+            buffer_len,
+            vec![],
+            vec![Output {
+                name: "a".to_owned(),
+            }],
+            ProcessorType::Builtin(Box::new(RwLock::new(Self {
+                tx: None,
+                rx: Some(rx),
+                value: 0.0,
+            }))),
+        ));
+        (an, cn)
     }
 }
 
-node_constructor! {
-    pub struct EventToAudio;
-    @in {}
-    @out { a }
-    #in { e }
-    #out {}
-}
-
-impl Processor<AudioRate> for EventToAudio {
-    fn process_sample(
+impl Processor for ControlToAudio {
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
+        inputs: &[Signal],
+        _outputs: &mut [Signal],
     ) {
-        let sibling_node = sibling_node.as_ref().unwrap();
-        let input = sibling_node.cached_input(0).unwrap();
-        *outputs.get_mut(0).unwrap() = Signal::new_audio(input.value());
+        self.tx.as_ref().unwrap().send_replace(inputs[0].value());
     }
-}
 
-impl Processor<ControlRate> for EventToAudio {
-    fn process_sample(
+    fn process_audio_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<ControlRate>],
-        _outputs: &mut [Signal<ControlRate>],
+        _inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
+        self.value = *self.rx.as_ref().unwrap().borrow();
+        outputs[0] = Signal::new(self.value);
     }
 }
 
@@ -472,32 +363,18 @@ node_constructor! {
     pub struct RisingEdge {
         c_last: Scalar,
     }
-    @in {}
-    @out {}
-    #in { trigger }
-    #out { out }
+    in { trigger }
+    out { out }
 }
 
-impl Processor<AudioRate> for RisingEdge {
-    fn process_sample(
+impl Processor for RisingEdge {
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<AudioRate>],
-        _outputs: &mut [Signal<AudioRate>],
-    ) {
-    }
-}
 
-impl Processor<ControlRate> for RisingEdge {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         if inputs[0].value() > self.c_last {
             outputs[0] = Signal::new(1.0);
@@ -512,32 +389,18 @@ node_constructor! {
     pub struct FallingEdge {
         c_last: Scalar,
     }
-    @in {}
-    @out {}
-    #in { trigger }
-    #out { out }
+    in { trigger }
+    out { out }
 }
 
-impl Processor<AudioRate> for FallingEdge {
-    fn process_sample(
+impl Processor for FallingEdge {
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        _inputs: &[Signal<AudioRate>],
-        _outputs: &mut [Signal<AudioRate>],
-    ) {
-    }
-}
 
-impl Processor<ControlRate> for FallingEdge {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         if inputs[0].value() < self.c_last {
             outputs[0] = Signal::new(1.0);
@@ -550,38 +413,18 @@ impl Processor<ControlRate> for FallingEdge {
 
 node_constructor! {
     pub struct Clip;
-    @in { input, low, high }
-    @out { out }
-    #in { input, low, high }
-    #out { out }
+    in { input, low, high }
+    out { out }
 }
 
-impl Processor<AudioRate> for Clip {
-    fn process_sample(
+impl Processor for Clip {
+    fn process_control_sample(
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<AudioRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
-    ) {
-        outputs[0] = Signal::new(
-            inputs[0]
-                .value()
-                .max(inputs[1].value())
-                .min(inputs[2].value()),
-        );
-    }
-}
 
-impl Processor<ControlRate> for Clip {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _sibling_node: Option<&Arc<<ControlRate as super::SignalRate>::SiblingNode>>,
-        inputs: &[Signal<ControlRate>],
-        outputs: &mut [Signal<ControlRate>],
+        inputs: &[Signal],
+        outputs: &mut [Signal],
     ) {
         outputs[0] = Signal::new(
             inputs[0]

@@ -3,15 +3,12 @@ graph main {
     @out { @dac0 @dac1 }
     #in {
         #c_amp(0.0 : 1.0) = 0.5
-        #c_pitch(0 : 100) = 69
     }
     #out {}
     ~ {
-        create sw: sawosc;
-        create sw_mf: m2f;
+        create @sw: sineosc;
         [@dac0 @dac1] <- sw.@out;
-        sw.#amp <- #c_amp;
-        sw_mf.#m <- #c_pitch;
-        sw.#freq <- sw_mf.#f;
+        sw.@amp <- #c_amp;
+        sw.@freq <- @440.0;
     }
 }

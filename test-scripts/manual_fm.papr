@@ -7,12 +7,10 @@ graph sineosc_manual {
     }
     #out {}
     ~ {
-        create s: sin;
-        create freq_c2a: c2a;
-        create fm_amt_c2a: c2a;
-        freq_c2a.#e <- #freq;
-        fm_amt_c2a.#e <- #fm_amt;
-        s.@input <- (((@TAU * @t) * freq_c2a.@a) + (@TAU * (@fm * fm_amt_c2a.@a)));
+        create @s: sin;
+        let @freq <- #freq;
+        let @fm_amt <- #fm_amt;
+        s.@input <- (((@TAU * @t) * @freq) + (@TAU * (@fm * @fm_amt)));
         @out <- s.@out;
     }
 }
@@ -30,11 +28,11 @@ graph main {
     }
     #out {}
     ~ {
-        create so0: sineosc_manual;
-        create so1: sineosc_manual;
-        create so2: sineosc_manual;
-        create so3: sineosc_manual;
-        create so4: sineosc_manual;
+        create @so0: sineosc_manual;
+        create @so1: sineosc_manual;
+        create @so2: sineosc_manual;
+        create @so3: sineosc_manual;
+        create @so4: sineosc_manual;
         so0.#fm_amt <- #fm_amt;
         so0.#freq <- #freq0;
 
