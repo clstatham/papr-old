@@ -567,9 +567,7 @@ pub struct DualGraphs {
 
 pub struct ParserContext {
     known_node_defs: BTreeMap<NodeName, String>,
-    sample_rate: Scalar,
     audio_buffer_len: usize,
-    control_rate: Scalar,
 }
 
 pub fn graph_def<'a>(
@@ -847,8 +845,6 @@ pub fn graph_def_instantiation<'a>(
 pub fn parse_script(
     inp: &str,
     audio_buffer_len: usize,
-    sample_rate: Scalar,
-    control_rate: Scalar,
 ) -> BTreeMap<NodeName, DualGraphs> {
     let (garbage, defs) =
         many1(ignore_garbage(recognize(graph_def(audio_buffer_len))))(inp).unwrap();
@@ -859,8 +855,6 @@ pub fn parse_script(
     let mut ctx = ParserContext {
         known_node_defs: BTreeMap::default(),
         audio_buffer_len,
-        sample_rate,
-        control_rate,
     };
 
     for def in defs {

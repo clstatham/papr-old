@@ -125,16 +125,11 @@ impl PaprApp {
         }
     }
 
-    pub fn create_graphs(
-        &mut self,
-        audio_buffer_len: usize,
-        sample_rate: Scalar,
-        control_rate: Scalar,
-    ) {
+    pub fn create_graphs(&mut self, audio_buffer_len: usize) {
         let mut file = File::open(&self.script_path).unwrap();
         let mut script = String::new();
         file.read_to_string(&mut script).unwrap();
-        let main_graphs = parse_script(&script, audio_buffer_len, sample_rate, control_rate)
+        let main_graphs = parse_script(&script, audio_buffer_len)
             .remove(&NodeName::new("main"))
             .unwrap();
         let DualGraphs {
@@ -229,11 +224,7 @@ impl PaprApp {
         println!("Output config: {:?}", config);
         println!("Control rate: {} Hz", self.control_rate);
 
-        self.create_graphs(
-            self.audio_buffer_len,
-            self.sample_rate as Scalar,
-            self.control_rate as Scalar,
-        );
+        self.create_graphs(self.audio_buffer_len);
 
         let audio_graph = self
             .audio_graph
@@ -266,7 +257,7 @@ impl PaprApp {
                     if clk.as_secs_f64() > time.as_secs_f64() {
                         std::thread::sleep(clk - time);
                     }
-                    t += clk.as_secs_f64().recip() as Scalar;
+                    t += clk.as_secs_f64() as Scalar;
                 }
             })
             .expect("PaprApp::spawn(): error spawning control rate thread");

@@ -4,7 +4,7 @@ use midir::{MidiInput, MidiInputConnection};
 use midly::live::LiveEvent;
 
 use crate::{
-    dsp::{basic::Dummy, AudioRate, ControlRate, Processor, Signal},
+    dsp::{basic::Dummy, AudioRate, ControlRate, Processor, Signal, SignalRate},
     graph::{Node, NodeName, Output},
     Scalar,
 };
@@ -12,7 +12,7 @@ use crate::{
 const POLYPHONY: usize = 1;
 
 pub struct NoteIn {
-    conn_in: MidiInputConnection<()>,
+    _conn_in: MidiInputConnection<()>,
     chan: crossbeam_channel::Receiver<Vec<u8>>,
     notes: [Option<(u8, u8)>; POLYPHONY],
 }
@@ -24,7 +24,7 @@ impl NoteIn {
         let in_ports = midi_in.ports();
         let port = &in_ports[0];
         let (tx, rx) = crossbeam_channel::unbounded();
-        let conn_in = midi_in
+        let _conn_in = midi_in
             .connect(
                 port,
                 name,
@@ -35,7 +35,7 @@ impl NoteIn {
             )
             .unwrap();
         Self {
-            conn_in,
+            _conn_in,
             chan: rx,
             notes: [None; POLYPHONY],
         }
@@ -50,11 +50,11 @@ unsafe impl Sync for NoteIn {}
 impl Processor<ControlRate> for NoteIn {
     fn process_sample(
         &mut self,
-        buffer_idx: usize,
-        sample_rate: crate::Scalar,
-        sibling_node: Option<&std::sync::Arc<<ControlRate as crate::dsp::SignalRate>::SiblingNode>>,
-        inputs: &[crate::dsp::Signal<ControlRate>],
-        outputs: &mut [crate::dsp::Signal<ControlRate>],
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _sibling_node: Option<&Arc<<ControlRate as SignalRate>::SiblingNode>>,
+        _inputs: &[Signal<ControlRate>],
+        outputs: &mut [Signal<ControlRate>],
     ) {
         if let Ok(msg) = self.chan.try_recv() {
             let msg = LiveEvent::parse(&msg).unwrap();
@@ -75,7 +75,7 @@ impl Processor<ControlRate> for NoteIn {
                             *idx = Some((key.as_int(), vel.as_int()));
                         }
                     }
-                    midly::MidiMessage::NoteOff { key, vel } => {
+                    midly::MidiMessage::NoteOff { key, vel: _ } => {
                         if let Some(idx) = self.notes.iter_mut().find(|idx| {
                             if let Some((k, _)) = idx {
                                 *k == key.as_int()

@@ -62,9 +62,9 @@ impl Processor<AudioRate> for SineOscLFO {
         &mut self,
         _buffer_idx: usize,
         _sample_rate: Scalar,
-        sibling_node: Option<&Arc<Node<ControlRate>>>,
-        inputs: &[Signal<AudioRate>],
-        outputs: &mut [Signal<AudioRate>],
+        _sibling_node: Option<&Arc<Node<ControlRate>>>,
+        _inputs: &[Signal<AudioRate>],
+        _outputs: &mut [Signal<AudioRate>],
     ) {
     }
 }
