@@ -102,7 +102,7 @@ pub enum ProcessorType<T: SignalRate + 'static>
 where
     Graph<T>: Processor<T>,
 {
-    Builtin(Arc<RwLock<dyn Processor<T>>>),
+    Builtin(Arc<RwLock<dyn Processor<T> + Send + Sync>>),
     Subgraph(Arc<RwLock<Graph<T>>>),
 }
 
@@ -177,7 +177,8 @@ where
     }
 }
 
-impl<T: SignalRate + 'static, P: Processor<T> + 'static> From<Arc<RwLock<P>>> for ProcessorType<T>
+impl<T: SignalRate + 'static, P: Processor<T> + 'static + Send + Sync> From<Arc<RwLock<P>>>
+    for ProcessorType<T>
 where
     Graph<T>: Processor<T>,
 {
@@ -394,7 +395,7 @@ impl Graph<ControlRate> {
     }
 }
 
-impl<T: SignalRate + 'static + Send + Sync> Graph<T>
+impl<T: SignalRate + 'static> Graph<T>
 where
     Self: Processor<T>,
     Signal<T>: std::fmt::Debug,
@@ -567,9 +568,10 @@ where
     }
 }
 
-impl<T: SignalRate + Send + Sync> Processor<T> for Graph<T>
+impl<T: SignalRate> Processor<T> for Graph<T>
 where
-    Self: Send + Sync,
+    T: Send + Sync,
+    <T as SignalRate>::SiblingNode: Send + Sync,
     Signal<T>: std::fmt::Debug,
 {
     fn process_sample(

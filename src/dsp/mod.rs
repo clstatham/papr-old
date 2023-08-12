@@ -100,10 +100,7 @@ impl<T: SignalRate> std::ops::Div<Self> for Signal<T> {
     }
 }
 
-pub trait Processor<T: SignalRate>
-where
-    Self: Send + Sync,
-{
+pub trait Processor<T: SignalRate> {
     fn process_sample(
         &mut self,
         buffer_idx: usize,

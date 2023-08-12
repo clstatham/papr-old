@@ -252,7 +252,7 @@ impl PaprApp {
             .name("PAPR Control".into())
             .spawn(move || {
                 #[allow(clippy::unnecessary_cast)]
-                let _clk = std::time::Duration::from_secs_f64((control_rate as f64).recip());
+                let clk = std::time::Duration::from_secs_f64((control_rate as f64).recip());
                 let mut t = 0 as Scalar;
                 loop {
                     let tik = Instant::now();
@@ -263,11 +263,10 @@ impl PaprApp {
                     );
                     let time = Instant::now() - tik;
 
-                    // if clk.as_secs_f64() > time.as_secs_f64() {
-                    //     dbg!(clk.as_secs_f64(), time.as_secs_f64());
-                    //     std::thread::sleep(clk - time);
-                    // }
-                    t += time.as_secs_f64() as Scalar;
+                    if clk.as_secs_f64() > time.as_secs_f64() {
+                        std::thread::sleep(clk - time);
+                    }
+                    t += clk.as_secs_f64().recip() as Scalar;
                 }
             })
             .expect("PaprApp::spawn(): error spawning control rate thread");

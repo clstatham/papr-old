@@ -10,6 +10,7 @@ pub mod app;
 pub mod dsp;
 #[macro_use]
 pub mod graph;
+pub mod io;
 pub mod parser;
 
 cfg_if::cfg_if! {

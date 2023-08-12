@@ -29,6 +29,8 @@ pub enum BuiltinNode {
     MidiToFreq,
     Clock,
     Delay,
+    NoteIn,
+    // OscReceiver,
 }
 
 impl BuiltinNode {
@@ -74,6 +76,13 @@ impl BuiltinNode {
                 0.0,
                 1.0,
             ),
+            Self::NoteIn => crate::io::midi::NoteIn::create_nodes(name, audio_buffer_len),
+            // Self::OscReceiver => crate::io::osc::OscReceiver::create_nodes(
+            //     name,
+            //     audio_buffer_len,
+            //     57110,
+            //     "127.0.0.1:9001",
+            // ),
         }
     }
 }
@@ -105,6 +114,8 @@ pub fn create_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedCrea
                 "m2f" => CreateRhs::BuiltinNode(BuiltinNode::MidiToFreq),
                 "clock" => CreateRhs::BuiltinNode(BuiltinNode::Clock),
                 "delay" => CreateRhs::BuiltinNode(BuiltinNode::Delay),
+                "notein" => CreateRhs::BuiltinNode(BuiltinNode::NoteIn),
+                // "oscrecv" => CreateRhs::BuiltinNode(BuiltinNode::OscReceiver),
                 _ => CreateRhs::ScriptGraph(NodeName::new(graph_name)),
             },
         },
