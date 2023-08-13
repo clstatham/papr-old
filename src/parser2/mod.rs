@@ -1,5 +1,9 @@
 use std::{
+    collections::HashMap,
+    fs::File,
+    io::Read,
     ops::{Range, RangeFrom, RangeFull, RangeTo},
+    path::Path,
     sync::Arc,
 };
 
@@ -25,10 +29,12 @@ pub enum Token {
     Whitespace,
     Number(Scalar),
     Ident(String),
+    String(String),
     Graph,
     Var,
     Let,
     Do,
+    Import,
     Bar,
     Colon,
     LeftArrow,
@@ -60,12 +66,14 @@ impl Token {
             alt((
                 map(comment(), |i| Token::Comment(i.to_owned())),
                 value(Token::Whitespace, whitespace1()),
+                map(string_str(), |s| Token::String(s.to_owned())),
                 map(float, |f| Token::Number(f as Scalar)),
                 alt((
                     value(Token::Graph, tag("graph")),
                     value(Token::Var, tag("var")),
                     value(Token::Let, tag("let")),
                     value(Token::Do, tag("do")),
+                    value(Token::Import, tag("import")),
                     //
                 )),
                 map(ident_str(), |i| Token::Ident(i.to_owned())),
@@ -118,7 +126,7 @@ impl Token {
                 ParsedIdent(id, None)
             }
         } else {
-            panic!("expected token to be an ident")
+            panic!("expected token to be an ident, got {self:?}")
         }
     }
 
@@ -126,7 +134,15 @@ impl Token {
         if let Token::Number(n) = self {
             n as Scalar
         } else {
-            panic!("expected token to be a number")
+            panic!("expected token to be a number, got {self:?}")
+        }
+    }
+
+    pub fn unwrap_string(self) -> String {
+        if let Token::String(n) = self {
+            n
+        } else {
+            panic!("expected token to be a string, got {self:?}")
         }
     }
 }
@@ -246,6 +262,10 @@ pub fn comment<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
     )))
 }
 
+pub fn string_str<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
+    delimited(tag("\""), take_until("\""), tag("\""))
+}
+
 pub fn whitespace0<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
     recognize(many0(alt((space1, tag("\n"), tag("\r")))))
 }
@@ -290,6 +310,7 @@ tag_token!(graph_kw, Token::Graph);
 tag_token!(var_kw, Token::Var);
 tag_token!(let_kw, Token::Let);
 tag_token!(do_kw, Token::Do);
+tag_token!(import_kw, Token::Import);
 
 /*
  ===================================================================================
@@ -304,6 +325,15 @@ pub fn scalar(inp: Tokens) -> IResult<Tokens, Scalar> {
     )(inp)
 }
 
+pub fn string(inp: Tokens) -> IResult<Tokens, String> {
+    map(
+        verify(take(1usize), |t: &Tokens| {
+            matches!(t.tokens[0], Token::String(_))
+        }),
+        |t: Tokens| t.tokens[0].clone().unwrap_string(),
+    )(inp)
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ParsedIdent(String, Option<SignalRate>);
 
@@ -314,6 +344,12 @@ pub fn ident(tokens: Tokens) -> IResult<Tokens, ParsedIdent> {
         }),
         |t: Tokens| t.tokens[0].clone().unwrap_ident(),
     )(tokens)
+}
+
+pub struct ParsedImport(String);
+
+pub fn import_stmt(inp: Tokens) -> IResult<Tokens, ParsedImport> {
+    map(preceded(import_kw, string), ParsedImport)(inp)
 }
 
 #[derive(Debug, Clone)]
@@ -544,7 +580,7 @@ fn solve_expr(
     expr: &ParsedExpr,
     super_ag: &mut Graph,
     super_cg: &mut Graph,
-    known_graphs: &[ParsedGraph],
+    known_graphs: &mut HashMap<String, ParsedGraph>,
     buffer_len: usize,
 ) -> Result<SolvedExpr, String> {
     match expr {
@@ -768,7 +804,7 @@ fn solve_expr(
             let (called_an, called_cn) = match ident {
                 ParsedCallee::ScriptDefined(ident) => {
                     known_rate = ident.1;
-                    let mut graph = known_graphs.iter().find(|g| g.id.0 == ident.0).ok_or(format!(
+                    let mut graph = known_graphs.get(&ident.0).ok_or(format!(
                         "Parsing error (graph `{}`): while parsing expr: undefined reference to graph `{}`",
                         &graph_id.0, &ident.0
                     ))?.clone();
@@ -950,7 +986,7 @@ fn solve_expr(
 fn solve_graph(
     graph: &ParsedGraph,
     buffer_len: usize,
-    known_graphs: &[ParsedGraph],
+    known_graphs: &mut HashMap<String, ParsedGraph>,
 ) -> Result<(Graph, Graph), String> {
     let ParsedGraph {
         signature: ParsedSignature { inputs, outputs },
@@ -1133,13 +1169,30 @@ fn solve_graph(
     Ok((ag, cg))
 }
 
-/// Main parsing fn
-pub fn parse_script(inp: &str, buffer_len: usize) -> Result<(Graph, Graph), String> {
-    let (garbage, tokens) = Token::many1(inp).unwrap();
+pub fn parse_imported_script(
+    script: ParsedImport,
+    cwd: &impl AsRef<Path>,
+    known_graphs: &mut HashMap<String, ParsedGraph>,
+) -> Result<(), String> {
+    let ParsedImport(path) = script;
+    let mut path_buf = cwd.as_ref().to_path_buf();
+    path_buf.push(path);
+    let mut file = File::open(path_buf).unwrap();
+    let mut script = String::new();
+    file.read_to_string(&mut script).unwrap();
+    drop(file);
+
+    let (garbage, tokens) = Token::many1(&script).unwrap();
     if !garbage.is_empty() {
         return Err(format!("Parsing error: unexpected garbage:\n{garbage}"));
     }
     let tokens = Tokens { tokens: &tokens };
+
+    let (tokens, imports) = many0(import_stmt)(tokens).unwrap();
+    for imp in imports {
+        parse_imported_script(imp, cwd, known_graphs)?;
+    }
+
     let (garbage, graphs) = many1(graph)(tokens).unwrap();
     if !garbage.tokens.is_empty() {
         return Err(format!(
@@ -1148,11 +1201,53 @@ pub fn parse_script(inp: &str, buffer_len: usize) -> Result<(Graph, Graph), Stri
         ));
     }
 
+    for graph in graphs {
+        if !known_graphs.contains_key(&graph.id.0) {
+            known_graphs.insert(graph.id.0.to_owned(), graph);
+        }
+    }
+
+    Ok(())
+}
+
+/// Main parsing fn
+pub fn parse_main_script(
+    inp: &str,
+    cwd: &impl AsRef<Path>,
+    buffer_len: usize,
+) -> Result<(Graph, Graph), String> {
+    let (garbage, tokens) = Token::many1(inp).unwrap();
+    if !garbage.is_empty() {
+        return Err(format!("Parsing error: unexpected garbage:\n{garbage}"));
+    }
+    let tokens = Tokens { tokens: &tokens };
+
+    let (tokens, imports) = many0(import_stmt)(tokens).unwrap();
+
+    let mut known_graphs = HashMap::default();
+    for script in imports {
+        parse_imported_script(script, cwd, &mut known_graphs)?;
+    }
+
+    let (garbage, graphs) = many1(graph)(tokens).unwrap();
+    if !garbage.tokens.is_empty() {
+        return Err(format!(
+            "Parsing error: unexpected garbage:\n{:?}",
+            garbage.tokens
+        ));
+    }
+
+    for graph in graphs {
+        if !known_graphs.contains_key(&graph.id.0) {
+            known_graphs.insert(graph.id.0.to_owned(), graph);
+        }
+    }
+
     // dbg!(&graphs);
 
-    let main_graph = graphs
-        .iter()
-        .find(|g| g.id.0 == "main")
-        .ok_or("Parsing error: `main` graph not found".to_owned())?;
-    solve_graph(main_graph, buffer_len, &graphs)
+    let main_graph = known_graphs
+        .get("main")
+        .ok_or("Parsing error: `main` graph not found".to_owned())?
+        .clone();
+    solve_graph(&main_graph, buffer_len, &mut known_graphs)
 }

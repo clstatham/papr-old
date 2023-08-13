@@ -3,10 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use petgraph::{
-    dot::{Config, Dot},
-    prelude::*,
-};
+use petgraph::{dot::Dot, prelude::*};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{

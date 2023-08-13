@@ -11,7 +11,6 @@ pub mod dsp;
 #[macro_use]
 pub mod graph;
 pub mod io;
-pub mod parser;
 pub mod parser2;
 
 cfg_if::cfg_if! {

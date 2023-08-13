@@ -124,7 +124,12 @@ impl PaprApp {
         let mut file = File::open(&self.script_path).unwrap();
         let mut script = String::new();
         file.read_to_string(&mut script).unwrap();
-        let (audio, mut control) = crate::parser2::parse_script(&script, audio_buffer_len).unwrap();
+        let (audio, mut control) = crate::parser2::parse_main_script(
+            &script,
+            &self.script_path.parent().unwrap(),
+            audio_buffer_len,
+        )
+        .unwrap();
 
         for c_in_idx in control.input_node_indices.clone().iter().copied() {
             let c_in = &control.digraph[c_in_idx];
