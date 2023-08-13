@@ -304,6 +304,90 @@ impl Processor for Abs {
 }
 
 node_constructor! {
+    pub struct Exp;
+    in { input }
+    out { out }
+}
+
+impl Processor for Exp {
+    fn process_audio_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().exp());
+    }
+
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().exp());
+    }
+}
+
+node_constructor! {
+    pub struct Cosine;
+    in { input }
+    out { out }
+}
+
+impl Processor for Cosine {
+    fn process_audio_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().cos());
+    }
+
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().cos());
+    }
+}
+
+node_constructor! {
+    pub struct Tanh;
+    in { input }
+    out { out }
+}
+
+impl Processor for Tanh {
+    fn process_audio_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().tanh());
+    }
+
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().tanh());
+    }
+}
+
+node_constructor! {
     pub struct Sine;
     in { input }
     out { out }

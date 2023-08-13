@@ -16,6 +16,6 @@ graph main {
         let @s1 = @sineosc_manual(#fm_amt (#fm_mul * #freq) 0.0 0.0);
         let @s0 = @sineosc_manual(#denv0 #freq #denv1 @s1);
         let @res = (@s0 ^ @s1);
-        @dac0 = @if((@abs(@res) > 0.5) @s0 @s1);
+        @dac0 = (@res * @s0);
     }
 }

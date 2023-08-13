@@ -22,6 +22,9 @@ pub fn global_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scala
 #[derive(Debug, Clone)]
 pub enum BuiltinNode {
     Sine,
+    Cosine,
+    Tanh,
+    Exp,
     Abs,
     SineOsc,
     SineOscLFO,
@@ -45,6 +48,9 @@ impl BuiltinNode {
     pub fn try_from_ident(id: &ParsedIdent) -> Option<BuiltinNode> {
         match id.0.as_str().strip_prefix('@').unwrap_or(id.0.as_str()) {
             "sin" => Some(BuiltinNode::Sine),
+            "cos" => Some(BuiltinNode::Cosine),
+            "exp" => Some(BuiltinNode::Exp),
+            "tanh" => Some(BuiltinNode::Tanh),
             "abs" => Some(BuiltinNode::Abs),
             "sineosc" => Some(BuiltinNode::SineOsc),
             "sinelfo" => Some(BuiltinNode::SineOscLFO),
@@ -75,6 +81,9 @@ impl BuiltinNode {
         match self {
             Self::Debug => crate::dsp::basic::DebugNode::create_node(name, signal_rate, audio_buffer_len),
             Self::Sine => crate::dsp::basic::Sine::create_node(name, signal_rate, audio_buffer_len, 0.0),
+            Self::Cosine => crate::dsp::basic::Cosine::create_node(name, signal_rate, audio_buffer_len, 0.0),
+            Self::Exp => crate::dsp::basic::Exp::create_node(name, signal_rate, audio_buffer_len, 0.0),
+            Self::Tanh => crate::dsp::basic::Tanh::create_node(name, signal_rate, audio_buffer_len, 0.0),
             Self::Abs => crate::dsp::basic::Abs::create_node(name, signal_rate, audio_buffer_len, 0.0),
             Self::SineOsc => crate::dsp::generators::SineOsc::create_node(
                 name,
