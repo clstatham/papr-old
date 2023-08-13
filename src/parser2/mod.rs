@@ -70,7 +70,7 @@ impl Token {
                 map(float, |f| Token::Number(f as Scalar)),
                 alt((
                     value(Token::Graph, tag("graph")),
-                    value(Token::Var, tag("var")),
+                    // value(Token::Var, tag("var")),
                     value(Token::Let, tag("let")),
                     value(Token::Do, tag("do")),
                     value(Token::Import, tag("import")),

@@ -1,14 +1,17 @@
 import "oscs.papr"
+import "envs.papr"
 
 graph main {
     |
         #fm_amt(0:1) = 1.0
         #fm_mul(0.25:8.0) = 1.0
+        #decay(0.1:2.0) = 1.0
     | -> |@dac0|
     ~ {
         let [#pitch0 #vel0] = #notein();
         let #freq = #m2f(#pitch0);
         let @fm = @sineosc_manual(#fm_amt (#fm_mul * #freq) 0.0 0.0);
-        @dac0 = @sineosc_manual(#vel0 #freq 1.0 @fm);
+        let #amp = #denv(#vel0 #decay);
+        @dac0 = @sineosc_manual(#amp #freq 1.0 @fm);
     }
 }
