@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use papr_proc_macro::node_constructor;
 
-use crate::{graph::Node, Scalar};
+use crate::Scalar;
 
-use super::{Processor, Signal, SignalRate};
+use super::{Processor, Signal};
 
 node_constructor! {
     pub struct Clock;

@@ -22,7 +22,9 @@
             "env": {
                 "RUST_LOG": "papr=trace"
             },
-            "args": [],
+            "args": [
+                "test-scripts/syntax2.papr"
+            ],
             "cwd": "${workspaceFolder}"
         },
         {

@@ -1,16 +1,15 @@
 use nom::{
-    branch::alt, bytes::complete::*, combinator::*, multi::*, number::complete::float, sequence::*,
-    IResult,
+    branch::alt, bytes::complete::*, combinator::*, IResult,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::{
     dsp::SignalRate,
-    graph::{Node, NodeName},
+    graph::Node,
     Scalar,
 };
 
-use super::{ident, ignore_garbage, whitespace1, CreateRhs, ParsedCreate};
+use super::ParsedIdent;
 
 pub fn global_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scalar)> {
     alt((
@@ -20,6 +19,7 @@ pub fn global_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scala
     ))
 }
 
+#[derive(Debug)]
 pub enum BuiltinNode {
     Sine,
     SineOsc,
@@ -35,10 +35,33 @@ pub enum BuiltinNode {
     Max,
     Min,
     Clip,
+    Debug,
     // OscReceiver,
 }
 
 impl BuiltinNode {
+    pub fn try_from_ident(id: &ParsedIdent) -> Option<BuiltinNode> {
+        match id.0.as_str().strip_prefix('@').unwrap_or(id.0.as_str()) {
+            "sin" => Some(BuiltinNode::Sine),
+            "sineosc" => Some(BuiltinNode::SineOsc),
+            "sinelfo" => Some(BuiltinNode::SineOscLFO),
+            "sawosc" => Some(BuiltinNode::BlSawOsc),
+            "m2f" => Some(BuiltinNode::MidiToFreq),
+            "clock" => Some(BuiltinNode::Clock),
+            "delay" => Some(BuiltinNode::Delay),
+            "notein" => Some(BuiltinNode::NoteIn),
+            "redge" => Some(BuiltinNode::RisingEdge),
+            "fedge" => Some(BuiltinNode::FallingEdge),
+            "var" => Some(BuiltinNode::Var),
+            "max" => Some(BuiltinNode::Max),
+            "min" => Some(BuiltinNode::Min),
+            "clip" => Some(BuiltinNode::Clip),
+            "debug" => Some(BuiltinNode::Debug),
+            // "oscrecv" => BuiltinNode::OscReceiver),
+            _ => None,
+        }
+    }
+
     pub fn create_node(
         &self,
         name: &str,
@@ -46,6 +69,7 @@ impl BuiltinNode {
         audio_buffer_len: usize,
     ) -> Arc<Node> {
         match self {
+            Self::Debug => crate::dsp::basic::DebugNode::create_node(name, signal_rate, audio_buffer_len),
             Self::Sine => crate::dsp::basic::Sine::create_node(name, signal_rate, audio_buffer_len, 0.0),
             Self::SineOsc => crate::dsp::generators::SineOsc::create_node(
                 name,
@@ -103,7 +127,6 @@ impl BuiltinNode {
             Self::Clip => {
                 crate::dsp::basic::Clip::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0, 0.0)
             }
-
             // Self::OscReceiver => crate::io::osc::OscReceiver::create_node(
             //     name,
             //     audio_buffer_len,
@@ -112,46 +135,4 @@ impl BuiltinNode {
             // ),
         }
     }
-}
-
-pub fn create_statement<'a>() -> impl FnMut(&'a str) -> IResult<&str, ParsedCreate> {
-    map(
-        tuple((
-            tag("create"),
-            whitespace1(),
-            alt((value(SignalRate::Audio, tag("@")), value(SignalRate::Control, tag("#")))),
-            ident(),
-            ignore_garbage(tag(":")),
-            ident(),
-            opt(delimited(
-                ignore_garbage(tag("<")),
-                many1(ignore_garbage(float)),
-                ignore_garbage(tag(">")),
-            )),
-            ignore_garbage(tag(";")),
-        )),
-        // todo: defaults are broken
-        |(_, _, signal_rate, id, _, graph_name, _control_input_defaults, _)| ParsedCreate {
-            ident: id.to_owned(),
-            signal_rate,
-            rhs: match graph_name {
-                "sin" => CreateRhs::BuiltinNode(BuiltinNode::Sine),
-                "sineosc" => CreateRhs::BuiltinNode(BuiltinNode::SineOsc),
-                "sinelfo" => CreateRhs::BuiltinNode(BuiltinNode::SineOscLFO),
-                "sawosc" => CreateRhs::BuiltinNode(BuiltinNode::BlSawOsc),
-                "m2f" => CreateRhs::BuiltinNode(BuiltinNode::MidiToFreq),
-                "clock" => CreateRhs::BuiltinNode(BuiltinNode::Clock),
-                "delay" => CreateRhs::BuiltinNode(BuiltinNode::Delay),
-                "notein" => CreateRhs::BuiltinNode(BuiltinNode::NoteIn),
-                "redge" => CreateRhs::BuiltinNode(BuiltinNode::RisingEdge),
-                "fedge" => CreateRhs::BuiltinNode(BuiltinNode::FallingEdge),
-                "var" => CreateRhs::BuiltinNode(BuiltinNode::Var),
-                "max" => CreateRhs::BuiltinNode(BuiltinNode::Max),
-                "min" => CreateRhs::BuiltinNode(BuiltinNode::Min),
-                "clip" => CreateRhs::BuiltinNode(BuiltinNode::Clip),
-                // "oscrecv" => CreateRhs::BuiltinNode(BuiltinNode::OscReceiver),
-                _ => CreateRhs::ScriptGraph(NodeName::new(graph_name)),
-            },
-        },
-    )
 }

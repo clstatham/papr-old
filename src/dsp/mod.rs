@@ -1,8 +1,6 @@
-use std::{marker::PhantomData, sync::Arc};
-
 use eframe::egui::Ui;
 
-use crate::{graph::Node, Scalar, TAU};
+use crate::{Scalar, TAU};
 
 pub mod basic;
 pub mod filters;

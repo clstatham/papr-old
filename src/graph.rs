@@ -368,15 +368,7 @@ where
         let mut f = std::fs::File::create(name).unwrap();
         // dbg!(&self.name, &self.partitions);
         // println!();
-        write!(
-            f,
-            "{:?}",
-            Dot::with_config(
-                &self.digraph,
-                &[Config::EdgeNoLabel, Config::NodeIndexLabel]
-            )
-        )
-        .unwrap();
+        write!(f, "{:?}", Dot::with_config(&self.digraph, &[])).unwrap();
     }
 
     pub fn add_node(&mut self, node: Arc<Node>) -> NodeIndex {

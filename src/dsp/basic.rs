@@ -20,18 +20,22 @@ pub struct DebugNode {
 }
 
 impl DebugNode {
-    pub fn create_node(name: String, signal_rate: SignalRate, buffer_len: usize) -> Arc<Node> {
-        let this = Box::new(RwLock::new(Self { name: name.clone() }));
+    pub fn create_node(name: &str, signal_rate: SignalRate, buffer_len: usize) -> Arc<Node> {
+        let this = Box::new(RwLock::new(Self {
+            name: name.to_string(),
+        }));
 
         Arc::new(Node::new(
-            NodeName::new(&name.clone()),
+            NodeName::new(name),
             signal_rate,
             buffer_len,
             vec![Input::new(
                 "input".to_owned().as_ref(),
                 Some(Signal::new(0.0)),
             )],
-            vec![],
+            vec![Output {
+                name: "out".to_owned(),
+            }],
             crate::graph::ProcessorType::Builtin(this),
         ))
     }
@@ -43,10 +47,11 @@ impl Processor for DebugNode {
         _buffer_idx: usize,
         _sample_rate: Scalar,
         inputs: &[Signal],
-        _outputs: &mut [Signal],
+        outputs: &mut [Signal],
     ) {
         let t = inputs[1].value();
-        log::debug!("{} = {} (t={t})", self.name, inputs[0].value());
+        println!("{} = {} (t={t})", self.name, inputs[0].value());
+        outputs[0] = inputs[0];
     }
 }
 
