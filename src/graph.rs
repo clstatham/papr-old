@@ -52,10 +52,16 @@ impl AsRef<str> for NodeName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Connection {
     pub source_output: usize,
     pub sink_input: usize,
+}
+
+impl std::fmt::Debug for Connection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} -> {}", self.source_output, self.sink_input)
+    }
 }
 
 #[derive(Clone)]

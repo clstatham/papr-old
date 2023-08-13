@@ -19,7 +19,7 @@ pub fn global_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scala
     ))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BuiltinNode {
     Sine,
     SineOsc,

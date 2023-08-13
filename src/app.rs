@@ -37,7 +37,7 @@ impl AudioContext {
         }
         let mut out = BTreeMap::new();
         // for c in 0..channels {
-        let dac0 = graph.node_id_by_name("@dac0").unwrap();
+        let dac0 = graph.node_id_by_name("dac0").unwrap();
         let mut dac0_vec = vec![Signal::new(0.0); output.len() / channels];
         out.insert(dac0, &mut dac0_vec);
         // }

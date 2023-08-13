@@ -1,12 +1,21 @@
+graph sineosc_manual {
+    |amp freq fm_amt fm| -> |out|
+    ~ {
+        let TAU = (3.14159265 * 2);
+        let s = sin((((t * TAU) * freq) + ((fm * TAU) * fm_amt)));
+        out = (s * amp);
+    }
+}
+
 graph main {
     |
-        amp(0:1)=0.5 
-        freq(20:2000)=440
-        fm_amt(0:1) = 0.0
-        fm_freq(0:2000)=440
+        #amp(0:1)=0.5 
+        #freq(20:2000)=440
+        #fm_amt(0:1) = 1.0
+        #fm_freq(20:2000)=440
     | -> |@dac0|
     ~ {
-        let @fm = @sineosc(fm_amt fm_freq 0.0 0.0);
-        @dac0 = (@fm + @sineosc(amp freq 1.0 @fm));
+        let @fm = @sineosc_manual(#fm_amt #fm_freq 0.0 0.0);
+        @dac0 = @sineosc_manual(#amp #freq 1.0 @fm);
     }
 }

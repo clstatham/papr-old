@@ -9,7 +9,11 @@ use nom::{
 };
 
 use crate::{
-    dsp::{basic::ControlToAudio, graph_util::LetBinding, Signal, SignalRate},
+    dsp::{
+        basic::{AudioToControl, ControlToAudio},
+        graph_util::LetBinding,
+        Signal, SignalRate,
+    },
     graph::{Connection, Graph, Input, NodeName, Output},
     Scalar,
 };
@@ -105,7 +109,13 @@ impl Token {
 
     pub fn unwrap_ident(self) -> ParsedIdent {
         if let Token::Ident(id) = self {
-            ParsedIdent(id)
+            if let Some(id) = id.strip_prefix('@') {
+                ParsedIdent(id.to_owned(), Some(SignalRate::Audio))
+            } else if let Some(id) = id.strip_prefix('#') {
+                ParsedIdent(id.to_owned(), Some(SignalRate::Control))
+            } else {
+                ParsedIdent(id, None)
+            }
         } else {
             panic!("expected token to be an ident")
         }
@@ -325,8 +335,8 @@ pub fn scalar(inp: Tokens) -> IResult<Tokens, Scalar> {
     )(inp)
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParsedIdent(pub String);
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ParsedIdent(String, Option<SignalRate>);
 
 pub fn ident(tokens: Tokens) -> IResult<Tokens, ParsedIdent> {
     map(
@@ -337,13 +347,13 @@ pub fn ident(tokens: Tokens) -> IResult<Tokens, ParsedIdent> {
     )(tokens)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ParsedCallee {
     ScriptDefined(ParsedIdent),
-    Builtin(BuiltinNode, SignalRate),
+    Builtin(BuiltinNode, Option<SignalRate>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParsedCall {
     ident: ParsedCallee,
     args: Vec<ParsedExpr>,
@@ -354,16 +364,9 @@ pub fn call(inp: Tokens) -> IResult<Tokens, ParsedCall> {
         tuple((ident, delimited(openparen, many0(expr), closeparen))),
         |(ident, args)| {
             if let Some(builtin) = BuiltinNode::try_from_ident(&ident) {
-                if ident.0.starts_with('@') {
-                    ParsedCall {
-                        ident: ParsedCallee::Builtin(builtin, SignalRate::Audio),
-                        args,
-                    }
-                } else {
-                    ParsedCall {
-                        ident: ParsedCallee::Builtin(builtin, SignalRate::Control),
-                        args,
-                    }
+                ParsedCall {
+                    ident: ParsedCallee::Builtin(builtin, ident.1),
+                    args,
                 }
             } else {
                 ParsedCall {
@@ -383,7 +386,7 @@ pub enum ParsedInfixOp {
     Div,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ParsedExpr {
     Constant(Scalar),
     Ident(ParsedIdent),
@@ -391,7 +394,7 @@ pub enum ParsedExpr {
     Call(ParsedCall),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InfixExpr {
     pub lhs: Box<ParsedExpr>,
     pub infix_op: ParsedInfixOp,
@@ -435,7 +438,7 @@ pub fn connection_lhs(inp: Tokens) -> IResult<Tokens, Vec<ParsedIdent>> {
     alt((list, map(ident, |i| vec![i])))(inp)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParsedConnection {
     lhs: Vec<ParsedIdent>,
     rhs: ParsedExpr,
@@ -448,7 +451,7 @@ pub fn connection(inp: Tokens) -> IResult<Tokens, ParsedConnection> {
     )(inp)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParsedLetStatement {
     lhs: Vec<ParsedIdent>,
     rhs: ParsedExpr,
@@ -463,7 +466,7 @@ pub fn let_statement(inp: Tokens) -> IResult<Tokens, ParsedLetStatement> {
 
 // pub struct ParsedDoBlock; // todo
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ParsedStatement {
     Connection(ParsedConnection),
     Let(ParsedLetStatement),
@@ -478,7 +481,7 @@ pub fn statement(inp: Tokens) -> IResult<Tokens, ParsedStatement> {
     ))(inp)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParsedInput {
     id: ParsedIdent,
     default: Option<Scalar>,
@@ -514,7 +517,7 @@ pub fn outputs(inp: Tokens) -> IResult<Tokens, Vec<ParsedIdent>> {
     delimited(bar, many0(ident), bar)(inp)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParsedSignature {
     inputs: Vec<ParsedInput>,
     outputs: Vec<ParsedIdent>,
@@ -531,7 +534,7 @@ pub fn statements(inp: Tokens) -> IResult<Tokens, Vec<ParsedStatement>> {
     preceded(tilde, delimited(openbrace, many0(statement), closebrace))(inp)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParsedGraph {
     id: ParsedIdent,
     signature: ParsedSignature,
@@ -577,7 +580,7 @@ fn solve_expr(
 ) -> Result<SolvedExpr, String> {
     match expr {
         ParsedExpr::Constant(value) => {
-            let rate = SignalRate::Control; // todo: audio constants
+            let rate = graph_id.1.unwrap_or(SignalRate::Control);
             let node = crate::dsp::basic::Constant::create_node(
                 &format!("{value}"),
                 rate,
@@ -605,19 +608,7 @@ fn solve_expr(
         }
         ParsedExpr::Ident(id) => {
             #[allow(clippy::if_same_then_else)]
-            let rate = if id.0.starts_with('#') {
-                // explicitly a control-rate ident
-                SignalRate::Control
-            } else if id.0.starts_with('@') {
-                // explicitly audio-rate
-                SignalRate::Audio
-            } else if id.0.starts_with("dac") || id.0.starts_with("adc") {
-                // probably audio-rate
-                SignalRate::Audio
-            } else {
-                // default to control-rate (for performance reasons)
-                SignalRate::Control
-            };
+            let rate = id.1.or(graph_id.1).unwrap();
             match rate {
                 SignalRate::Audio => {
                     let ag_idx = super_ag.node_id_by_name(&id.0).ok_or(format!("Parsing error (graph `{}`): while parsing expr: audio graph has no node named `{}`", &graph_id.0, &id.0))?;
@@ -655,8 +646,8 @@ fn solve_expr(
                     crate::dsp::basic::Divide::create_node("/", lhs.rate, buffer_len, 0.0, 0.0)
                 }
             };
-            match lhs.rate {
-                SignalRate::Audio => {
+            match (lhs.rate, rhs.rate) {
+                (SignalRate::Audio, SignalRate::Audio) => {
                     let a_idx = lhs.ag_idx.unwrap().0;
                     let b_idx = rhs.ag_idx.unwrap().0;
                     let op_idx = super_ag.add_node(op);
@@ -684,7 +675,7 @@ fn solve_expr(
                         cg_idx: None,
                     })
                 }
-                SignalRate::Control => {
+                (SignalRate::Control, SignalRate::Control) => {
                     let a_idx = lhs.cg_idx.unwrap().0;
                     let b_idx = rhs.cg_idx.unwrap().0;
                     let op_idx = super_cg.add_node(op);
@@ -712,22 +703,112 @@ fn solve_expr(
                         cg_idx: Some((op_idx, vec![0])),
                     })
                 }
+                (SignalRate::Audio, SignalRate::Control) => {
+                    let a_idx_ag = lhs.ag_idx.unwrap().0;
+                    let b_idx_cg = rhs.cg_idx.unwrap().0;
+                    let op_idx = super_ag.add_node(op);
+                    let (c2a_an, c2a_cn) = ControlToAudio::create_nodes(
+                        &format!("auto_c2a_{:?}_{:?}", a_idx_ag, b_idx_cg),
+                        buffer_len,
+                    );
+                    let c2a_idx_ag = super_ag.add_node(c2a_an);
+                    let c2a_idx_cg = super_cg.add_node(c2a_cn);
+
+                    super_ag.add_edge(
+                        a_idx_ag,
+                        op_idx,
+                        Connection {
+                            source_output: 0,
+                            sink_input: 0,
+                        },
+                    );
+
+                    super_cg.add_edge(
+                        b_idx_cg,
+                        c2a_idx_cg,
+                        Connection {
+                            source_output: 0,
+                            sink_input: 0,
+                        },
+                    );
+
+                    super_ag.add_edge(
+                        c2a_idx_ag,
+                        op_idx,
+                        Connection {
+                            source_output: 0,
+                            sink_input: 1,
+                        },
+                    );
+
+                    Ok(SolvedExpr {
+                        rate: SignalRate::Audio,
+                        ag_idx: Some((op_idx, vec![0])),
+                        cg_idx: None,
+                    })
+                }
+                (SignalRate::Control, SignalRate::Audio) => {
+                    let a_idx_cg = lhs.cg_idx.unwrap().0;
+                    let b_idx_ag = rhs.ag_idx.unwrap().0;
+                    let op_idx = super_cg.add_node(op);
+                    let (a2c_an, a2c_cn) = AudioToControl::create_nodes(
+                        &format!("auto_a2c_{:?}_{:?}", a_idx_cg, b_idx_ag),
+                        buffer_len,
+                    );
+                    let a2c_idx_ag = super_ag.add_node(a2c_an);
+                    let a2c_idx_cg = super_cg.add_node(a2c_cn);
+
+                    super_cg.add_edge(
+                        a_idx_cg,
+                        op_idx,
+                        Connection {
+                            source_output: 0,
+                            sink_input: 0,
+                        },
+                    );
+
+                    super_ag.add_edge(
+                        b_idx_ag,
+                        a2c_idx_ag,
+                        Connection {
+                            source_output: 0,
+                            sink_input: 0,
+                        },
+                    );
+
+                    super_cg.add_edge(
+                        a2c_idx_cg,
+                        op_idx,
+                        Connection {
+                            source_output: 0,
+                            sink_input: 1,
+                        },
+                    );
+
+                    Ok(SolvedExpr {
+                        rate: SignalRate::Control,
+                        ag_idx: None,
+                        cg_idx: Some((op_idx, vec![0])),
+                    })
+                }
             }
         }
         ParsedExpr::Call(ParsedCall { ident, args }) => {
-            let mut known_rate = None;
+            let mut known_rate;
             let (called_an, called_cn) = match ident {
                 ParsedCallee::ScriptDefined(ident) => {
-                    let graph = known_graphs.iter().find(|g| &g.id == ident).ok_or(format!(
+                    known_rate = ident.1;
+                    let mut graph = known_graphs.iter().find(|g| g.id.0 == ident.0).ok_or(format!(
                         "Parsing error (graph `{}`): while parsing expr: undefined reference to graph `{}`",
                         &graph_id.0, &ident.0
-                    ))?;
-                    let (ag, cg) = solve_graph(graph, buffer_len, known_graphs)?;
+                    ))?.clone();
+                    graph.id.1 = known_rate;
+                    let (ag, cg) = solve_graph(&graph, buffer_len, known_graphs)?;
                     (Arc::new(ag.into_node()), Arc::new(cg.into_node()))
                 }
                 ParsedCallee::Builtin(builtin, rate) => {
                     // todo: don't abuse Debug/format here
-                    known_rate = Some(*rate);
+                    known_rate = rate.or(graph_id.1);
                     let an = builtin.create_node(
                         &format!("{:?}", builtin),
                         SignalRate::Audio,
@@ -747,7 +828,6 @@ fn solve_expr(
                 solved_args.push(solve_expr(
                     graph_id,
                     arg,
-                    // todo: called or super???
                     super_ag,
                     super_cg,
                     known_graphs,
@@ -758,6 +838,8 @@ fn solve_expr(
             let called_ag_idx = super_ag.add_node(called_an);
             let called_cg_idx = super_cg.add_node(called_cn);
 
+            let mut audio_arg_count = 0;
+            let mut control_arg_count = 0;
             'arg_iter: for (arg_id, arg) in solved_args.into_iter().enumerate() {
                 if let Some(known_rate) = known_rate {
                     match (arg.rate, known_rate) {
@@ -786,14 +868,45 @@ fn solve_expr(
                                 called_ag_idx,
                                 Connection {
                                     source_output: 0,
-                                    sink_input: arg_id,
+                                    sink_input: audio_arg_count,
                                 },
                             );
+                            audio_arg_count += 1;
 
                             continue 'arg_iter;
                         }
                         (SignalRate::Audio, SignalRate::Control) => {
-                            todo!("insert auto-a2c here");
+                            // insert auto-a2c
+                            let (a2c_an, a2c_cn) = AudioToControl::create_nodes(
+                                &format!("auto_a2c_{:?}_{}", ident, arg_id),
+                                buffer_len,
+                            );
+                            let a2c_an = super_ag.add_node(a2c_an);
+                            let a2c_cn = super_cg.add_node(a2c_cn);
+                            let (arg_ag_idx, ag_from_outs) = arg.ag_idx.unwrap();
+                            if ag_from_outs.len() != 1 {
+                                return Err(format!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, ag_from_outs.len()));
+                            }
+                            super_ag.add_edge(
+                                arg_ag_idx,
+                                a2c_an,
+                                Connection {
+                                    source_output: ag_from_outs[0],
+                                    sink_input: 0,
+                                },
+                            );
+                            super_cg.add_edge(
+                                a2c_cn,
+                                called_cg_idx,
+                                Connection {
+                                    source_output: 0,
+                                    sink_input: control_arg_count,
+                                },
+                            );
+
+                            control_arg_count += 1;
+
+                            continue 'arg_iter;
                         }
                         _ => {}
                     }
@@ -809,29 +922,30 @@ fn solve_expr(
                     if ag_from_outs.len() != 1 {
                         return Err(format!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, ag_from_outs.len()));
                     }
-                    // todo: don't assume it's the first input, probably
                     super_ag.add_edge(
                         ag_from_idx,
                         called_ag_idx,
                         Connection {
                             source_output: 0,
-                            sink_input: arg_id,
+                            sink_input: audio_arg_count,
                         },
                     );
+                    audio_arg_count += 1;
                 }
                 if let Some((cg_from_idx, cg_from_outs)) = arg.cg_idx {
                     if cg_from_outs.len() != 1 {
                         return Err(format!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, cg_from_outs.len()));
                     }
-                    // todo: don't assume it's the first input, probably
                     super_cg.add_edge(
                         cg_from_idx,
                         called_cg_idx,
                         Connection {
                             source_output: 0,
-                            sink_input: arg_id,
+                            sink_input: control_arg_count,
                         },
                     );
+
+                    control_arg_count += 1;
                 }
             }
 
@@ -868,38 +982,73 @@ fn solve_graph(
         id,
     } = graph;
 
-    let inputs = inputs
-        .iter()
-        .map(|inp| Input {
+    let mut audio_inputs = vec![];
+    let mut audio_outputs = vec![];
+    let mut control_inputs = vec![];
+    let mut control_outputs = vec![];
+
+    for inp in inputs.iter() {
+        let input = Input {
             name: inp.id.0.clone(),
             minimum: inp.minimum.map(Signal::new),
             maximum: inp.maximum.map(Signal::new),
             default: inp.default.map(Signal::new),
-            is_ui: graph.id.0 == "main", // FIXME: hacky
+            is_ui: graph.id.0 == "main" && inp.id.1 == Some(SignalRate::Control), // FIXME: hacky
             implicit: false,
-        })
-        .collect::<Vec<_>>();
-    let outputs = outputs
-        .iter()
-        .map(|out| Output {
+        };
+        match inp.id.1 {
+            Some(SignalRate::Audio) => audio_inputs.push(input),
+            Some(SignalRate::Control) => control_inputs.push(input),
+            None => {
+                // audio_inputs.push(input.clone());
+                // control_inputs.push(input);
+                match graph.id.1 {
+                    Some(SignalRate::Audio) => audio_inputs.push(input),
+                    Some(SignalRate::Control) => control_inputs.push(input),
+                    None => {
+                        return Err(format!(
+                            "Parsing error (graph `{}`): couldn't determine signal rate of input `{}`",
+                            &id.0, &inp.id.0
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    for out in outputs.iter() {
+        let output = Output {
             name: out.0.to_owned(),
-        })
-        .collect::<Vec<_>>();
+        };
+        match out.1 {
+            Some(SignalRate::Audio) => audio_outputs.push(output),
+            Some(SignalRate::Control) => control_outputs.push(output),
+            None => match graph.id.1 {
+                Some(SignalRate::Audio) => audio_outputs.push(output),
+                Some(SignalRate::Control) => control_outputs.push(output),
+                None => {
+                    return Err(format!(
+                        "Parsing error (graph `{}`): couldn't determine signal rate of output `{}`",
+                        &id.0, &out.0
+                    ));
+                }
+            },
+        }
+    }
 
     let mut ag = Graph::new(
         Some(NodeName::new(&id.0)),
         SignalRate::Audio,
         buffer_len,
-        // todo: somehow auto-distinguish audio/control inputs/outputs
-        inputs.clone(),
-        outputs.clone(),
+        audio_inputs,
+        audio_outputs,
     );
     let mut cg = Graph::new(
         Some(NodeName::new(&id.0)),
         SignalRate::Control,
         buffer_len,
-        inputs,
-        outputs,
+        control_inputs,
+        control_outputs,
     );
 
     for stmt in statements {
@@ -933,7 +1082,7 @@ fn solve_graph(
                 }
                 if let Some((cg_from_idx, cg_from_outs)) = rhs.cg_idx {
                     if cg_from_outs.len() != stmt.lhs.len() {
-                        return Err(format!("Parsing error (graph `{}`): expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), cg_from_outs.len()));
+                        return Err(format!("Parsing error (graph `{}`): in `let` statement, expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), cg_from_outs.len()));
                     }
                     for (to, cg_from_out) in stmt.lhs.iter().zip(cg_from_outs.iter()) {
                         // this is where `let` statements differ from normal connections

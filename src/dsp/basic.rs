@@ -364,6 +364,68 @@ impl Processor for ControlToAudio {
     }
 }
 
+pub struct AudioToControl {
+    tx: Option<tokio::sync::watch::Sender<Scalar>>,
+    rx: Option<tokio::sync::watch::Receiver<Scalar>>,
+    value: Scalar,
+}
+
+impl AudioToControl {
+    pub fn create_nodes(name: &str, buffer_len: usize) -> (Arc<Node>, Arc<Node>) {
+        let (tx, rx) = tokio::sync::watch::channel(0.0);
+        let cn = Arc::new(Node::new(
+            name.into(),
+            SignalRate::Control,
+            buffer_len,
+            vec![],
+            vec![Output {
+                name: "c".to_owned(),
+            }],
+            ProcessorType::Builtin(Box::new(RwLock::new(Self {
+                tx: None,
+                rx: Some(rx),
+                value: 0.0,
+            }))),
+        ));
+        let an = Arc::new(Node::new(
+            name.into(),
+            SignalRate::Audio,
+            buffer_len,
+            vec![Input::new("a", Some(Signal::new(0.0)))],
+            vec![],
+            ProcessorType::Builtin(Box::new(RwLock::new(Self {
+                tx: Some(tx),
+                rx: None,
+                value: 0.0,
+            }))),
+        ));
+        (an, cn)
+    }
+}
+
+impl Processor for AudioToControl {
+    fn process_audio_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        _outputs: &mut [Signal],
+    ) {
+        self.tx.as_ref().unwrap().send_replace(inputs[0].value());
+    }
+
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        _inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        self.value = *self.rx.as_ref().unwrap().borrow();
+        outputs[0] = Signal::new(self.value);
+    }
+}
+
 node_constructor! {
     pub struct RisingEdge {
         c_last: Scalar,
