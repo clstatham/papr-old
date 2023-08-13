@@ -27,7 +27,7 @@ cfg_if::cfg_if! {
 
 #[derive(clap::Parser)]
 struct Args {
-    script_path: PathBuf,
+    script_path: Option<PathBuf>,
 
     #[arg(short, long, default_value_t = 1000)]
     control_rate: u64,
@@ -48,13 +48,15 @@ fn main() {
             cc.egui_ctx.set_visuals(Visuals::dark());
 
             let mut app = PaprApp::new(
-                args.script_path,
+                args.script_path.clone(),
                 args.sample_rate as Scalar,
                 args.control_rate as Scalar,
                 args.buffer_len as usize,
             );
-            app.init();
-            app.spawn();
+            if args.script_path.is_some() {
+                app.init();
+                app.spawn();
+            }
 
             Box::new(app)
         }),

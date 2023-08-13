@@ -1,11 +1,20 @@
-use std::{collections::BTreeMap, fs::File, io::Read, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    collections::BTreeMap,
+    env::current_dir,
+    fs::File,
+    io::Read,
+    path::PathBuf,
+    sync::Arc,
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     FromSample, SizedSample,
 };
 
-use eframe::egui::CentralPanel;
+use eframe::egui::{CentralPanel, TopBottomPanel};
 
 use tokio::runtime::Runtime;
 
@@ -95,13 +104,14 @@ pub struct PaprApp {
     sample_rate: Scalar,
     control_rate: Scalar,
     audio_buffer_len: usize,
-    script_path: PathBuf,
+    script_path: Option<PathBuf>,
     midi_ctx: Option<MidiContext>,
+    control_thread_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 impl PaprApp {
     pub fn new(
-        script_path: PathBuf,
+        script_path: Option<PathBuf>,
         sample_rate: Scalar,
         control_rate: Scalar,
         audio_buffer_len: usize,
@@ -117,19 +127,18 @@ impl PaprApp {
             audio_buffer_len,
             script_path,
             midi_ctx: None,
+            control_thread_shutdown: None,
         }
     }
 
     pub fn create_graphs(&mut self, audio_buffer_len: usize) {
-        let mut file = File::open(&self.script_path).unwrap();
+        let path = self.script_path.as_ref().unwrap();
+        let mut file = File::open(path).unwrap();
         let mut script = String::new();
         file.read_to_string(&mut script).unwrap();
-        let (audio, mut control) = crate::parser2::parse_main_script(
-            &script,
-            &self.script_path.parent().unwrap(),
-            audio_buffer_len,
-        )
-        .unwrap();
+        let (audio, mut control) =
+            crate::parser2::parse_main_script(&script, &path.parent().unwrap(), audio_buffer_len)
+                .unwrap();
 
         for c_in_idx in control.input_node_indices.clone().iter().copied() {
             let c_in = &control.digraph[c_in_idx];
@@ -187,10 +196,6 @@ impl PaprApp {
     }
 
     pub fn spawn(&mut self) {
-        let _rt = self
-            .rt
-            .take()
-            .expect("PaprApp::spawn(): runtime not initialized");
         let mut audio_cx = self
             .audio_cx
             .take()
@@ -221,6 +226,8 @@ impl PaprApp {
         let t_idx = control_graph.node_id_by_name("t").unwrap();
         let control_rate = self.control_rate;
         let buffer_len = self.audio_buffer_len;
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        self.control_thread_shutdown = Some(tx);
         std::thread::Builder::new()
             .name("PAPR Control".into())
             .spawn(move || {
@@ -228,6 +235,10 @@ impl PaprApp {
                 let clk = std::time::Duration::from_secs_f64((control_rate as f64).recip());
                 let mut t = 0 as Scalar;
                 loop {
+                    if rx.try_recv().is_ok() {
+                        println!("Shutting down control rate thread.");
+                        break;
+                    }
                     let tik = Instant::now();
                     control_graph.process_graph(
                         SignalRate::Control,
@@ -250,6 +261,29 @@ impl PaprApp {
 impl eframe::App for PaprApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         // ctx.request_repaint();
+        TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            if ui.button("Open...").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PAPR Scripts", &["papr"])
+                    .set_directory(
+                        self.script_path
+                            .as_ref()
+                            .map(|p| p.parent().unwrap())
+                            .unwrap_or(current_dir().unwrap().as_path()),
+                    )
+                    .pick_file()
+                {
+                    self.script_path = Some(path);
+                    if let Some(tx) = self.control_thread_shutdown.take() {
+                        tx.send(()).unwrap();
+                        std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
+                    }
+                    self.ui_control_inputs.clear();
+                    self.init();
+                    self.spawn();
+                }
+            }
+        });
 
         CentralPanel::default().show(ctx, |ui| {
             for inp in self.ui_control_inputs.iter() {

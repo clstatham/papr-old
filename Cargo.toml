@@ -31,6 +31,7 @@ midir = "0.9.1"
 crossbeam-channel = "0.5.8"
 lazy_static = "1.4.0"
 spin = { version = "0.9.8", features = ["std"] }
+rfd = { version = "0.11.4", default-features = false, features = ["xdg-portal"] }
 
 [profile.release]
 # debug = true
