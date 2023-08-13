@@ -9,7 +9,7 @@ use nom::{
 };
 
 use crate::{
-    dsp::{basic::ControlToAudio, Signal, SignalRate},
+    dsp::{basic::ControlToAudio, graph_util::LetBinding, Signal, SignalRate},
     graph::{Connection, Graph, Input, NodeName, Output},
     Scalar,
 };
@@ -448,16 +448,31 @@ pub fn connection(inp: Tokens) -> IResult<Tokens, ParsedConnection> {
     )(inp)
 }
 
+#[derive(Debug)]
+pub struct ParsedLetStatement {
+    lhs: Vec<ParsedIdent>,
+    rhs: ParsedExpr,
+}
+
+pub fn let_statement(inp: Tokens) -> IResult<Tokens, ParsedLetStatement> {
+    map(
+        preceded(let_kw, tuple((connection_lhs, equals, expr, semicolon))),
+        |(lhs, _, rhs, _)| ParsedLetStatement { lhs, rhs },
+    )(inp)
+}
+
 // pub struct ParsedDoBlock; // todo
 
 #[derive(Debug)]
 pub enum ParsedStatement {
     Connection(ParsedConnection),
+    Let(ParsedLetStatement),
     // DoBlock(ParsedDoBlock), // todo
 }
 
 pub fn statement(inp: Tokens) -> IResult<Tokens, ParsedStatement> {
     alt((
+        map(let_statement, ParsedStatement::Let),
         map(connection, ParsedStatement::Connection),
         // todo: ParsedDoBlock
     ))(inp)
@@ -889,6 +904,54 @@ fn solve_graph(
 
     for stmt in statements {
         match stmt {
+            ParsedStatement::Let(stmt) => {
+                let rhs = solve_expr(id, &stmt.rhs, &mut ag, &mut cg, known_graphs, buffer_len)?;
+                assert!(
+                    !(rhs.ag_idx.is_some() && rhs.cg_idx.is_some()),
+                    "todo: exprs using both graphs"
+                );
+
+                if let Some((ag_from_idx, ag_from_outs)) = rhs.ag_idx {
+                    if ag_from_outs.len() != stmt.lhs.len() {
+                        return Err(format!("Parsing error (graph `{}`): in `let` statement, expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), ag_from_outs.len()));
+                    }
+                    for (to, ag_from_out) in stmt.lhs.iter().zip(ag_from_outs.iter()) {
+                        // this is where `let` statements differ from normal connections
+                        let node =
+                            LetBinding::create_node(&to.0, SignalRate::Audio, buffer_len, 0.0);
+                        let to_idx = ag.add_node(node);
+                        // todo: don't assume it's the first input, probably
+                        ag.add_edge(
+                            ag_from_idx,
+                            to_idx,
+                            Connection {
+                                source_output: *ag_from_out,
+                                sink_input: 0,
+                            },
+                        );
+                    }
+                }
+                if let Some((cg_from_idx, cg_from_outs)) = rhs.cg_idx {
+                    if cg_from_outs.len() != stmt.lhs.len() {
+                        return Err(format!("Parsing error (graph `{}`): expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), cg_from_outs.len()));
+                    }
+                    for (to, cg_from_out) in stmt.lhs.iter().zip(cg_from_outs.iter()) {
+                        // this is where `let` statements differ from normal connections
+                        let node =
+                            LetBinding::create_node(&to.0, SignalRate::Control, buffer_len, 0.0);
+                        let to_idx = cg.add_node(node);
+                        // todo: don't assume it's the first input, probably
+                        cg.add_edge(
+                            cg_from_idx,
+                            to_idx,
+                            Connection {
+                                source_output: *cg_from_out,
+                                sink_input: 0,
+                            },
+                        );
+                    }
+                }
+            }
             ParsedStatement::Connection(conn) => {
                 let rhs = solve_expr(id, &conn.rhs, &mut ag, &mut cg, known_graphs, buffer_len)?;
                 assert!(

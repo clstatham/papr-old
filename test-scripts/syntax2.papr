@@ -1,6 +1,12 @@
 graph main {
-    |amp(0:1)=0.5 freq(20:2000)=440| -> |@dac0|
+    |
+        amp(0:1)=0.5 
+        freq(20:2000)=440
+        fm_amt(0:1) = 0.0
+        fm_freq(0:2000)=440
+    | -> |@dac0|
     ~ {
-        @dac0 = @sineosc(amp freq 0.0 0.0);
+        let @fm = @sineosc(fm_amt fm_freq 0.0 0.0);
+        @dac0 = (@fm + @sineosc(amp freq 1.0 @fm));
     }
 }
