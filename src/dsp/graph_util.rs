@@ -37,7 +37,7 @@ impl Processor for GraphInput {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = inputs[0];
+        outputs[0] = inputs[0];
     }
 
     fn process_control_sample(
@@ -47,7 +47,7 @@ impl Processor for GraphInput {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = inputs[0];
+        outputs[0] = inputs[0];
     }
 }
 
@@ -65,7 +65,7 @@ impl Processor for GraphOutput {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = inputs[0];
+        outputs[0] = inputs[0];
     }
 
     fn process_control_sample(
@@ -75,7 +75,7 @@ impl Processor for GraphOutput {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = inputs[0];
+        outputs[0] = inputs[0];
     }
 }
 
@@ -93,7 +93,7 @@ impl Processor for LetBinding {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = inputs[0];
+        outputs[0] = inputs[0];
     }
 
     fn process_control_sample(
@@ -103,7 +103,7 @@ impl Processor for LetBinding {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = inputs[0];
+        outputs[0] = inputs[0];
     }
 }
 

@@ -1,23 +1,11 @@
-use nom::{
-    branch::alt, bytes::complete::*, combinator::*, IResult,
-};
 use std::sync::Arc;
 
 use crate::{
     dsp::SignalRate,
     graph::Node,
-    Scalar,
 };
 
 use super::ParsedIdent;
-
-pub fn global_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scalar)> {
-    alt((
-        value(("PI".to_owned(), crate::PI), tag("PI")),
-        value(("TAU".to_owned(), crate::TAU), tag("TAU")),
-        //
-    ))
-}
 
 #[derive(Debug, Clone)]
 pub enum BuiltinNode {
@@ -41,12 +29,13 @@ pub enum BuiltinNode {
     Clip,
     Debug,
     If,
+    Not,
     // OscReceiver,
 }
 
 impl BuiltinNode {
     pub fn try_from_ident(id: &ParsedIdent) -> Option<BuiltinNode> {
-        match id.0.as_str().strip_prefix('@').unwrap_or(id.0.as_str()) {
+        match id.0.as_str() {
             "sin" => Some(BuiltinNode::Sine),
             "cos" => Some(BuiltinNode::Cosine),
             "exp" => Some(BuiltinNode::Exp),
@@ -67,6 +56,7 @@ impl BuiltinNode {
             "clip" => Some(BuiltinNode::Clip),
             "debug" => Some(BuiltinNode::Debug),
             "if" => Some(BuiltinNode::If),
+            "not" => Some(BuiltinNode::Not),
             // "oscrecv" => BuiltinNode::OscReceiver),
             _ => None,
         }
@@ -85,6 +75,7 @@ impl BuiltinNode {
             Self::Exp => crate::dsp::basic::Exp::create_node(name, signal_rate, audio_buffer_len, 0.0),
             Self::Tanh => crate::dsp::basic::Tanh::create_node(name, signal_rate, audio_buffer_len, 0.0),
             Self::Abs => crate::dsp::basic::Abs::create_node(name, signal_rate, audio_buffer_len, 0.0),
+            Self::Not => crate::dsp::basic::Not::create_node(name, signal_rate, audio_buffer_len, 0.0),
             Self::SineOsc => crate::dsp::generators::SineOsc::create_node(
                 name,
                 signal_rate, 

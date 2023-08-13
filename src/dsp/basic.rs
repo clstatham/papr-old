@@ -144,7 +144,7 @@ impl Processor for Constant {
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = Signal::new(self.value);
+        outputs[0] = Signal::new(self.value);
     }
 
     fn process_control_sample(
@@ -154,7 +154,7 @@ impl Processor for Constant {
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = Signal::new(self.value);
+        outputs[0] = Signal::new(self.value);
     }
 }
 
@@ -169,7 +169,7 @@ macro_rules! impl_arith {
                 outputs: &mut [Signal],
             ) {
                 use std::ops::$use;
-                *outputs.get_mut(0).unwrap() = inputs[0].$op(inputs[1]);
+                outputs[0] = inputs[0].$op(inputs[1]);
             }
 
             fn process_control_sample(
@@ -180,7 +180,7 @@ macro_rules! impl_arith {
                 outputs: &mut [Signal],
             ) {
                 use std::ops::$use;
-                *outputs.get_mut(0).unwrap() = inputs[0].$op(inputs[1]);
+                outputs[0] = inputs[0].$op(inputs[1]);
             }
         }
     };
@@ -402,7 +402,7 @@ impl Processor for Sine {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = Signal::new(Scalar::sin(inputs[0].value()));
+        outputs[0] = Signal::new(Scalar::sin(inputs[0].value()));
     }
 
     fn process_control_sample(
@@ -413,7 +413,7 @@ impl Processor for Sine {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        *outputs.get_mut(0).unwrap() = Signal::new(Scalar::sin(inputs[0].value()));
+        outputs[0] = Signal::new(Scalar::sin(inputs[0].value()));
     }
 }
 

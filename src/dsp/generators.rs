@@ -21,7 +21,7 @@ impl Processor for SineOsc {
         let fm_amt = inputs[2];
         let t = inputs[Self::input_idx("t").unwrap()].value();
         let fm = inputs[3];
-        *outputs.get_mut(0).unwrap() = Signal::new(
+        outputs[0] = Signal::new(
             Scalar::sin(t * TAU * freq.value() + fm.value() * TAU * fm_amt.value()) * amp.value(),
         );
     }
@@ -44,8 +44,7 @@ impl Processor for SineOscLFO {
         let amp = inputs[0];
         let freq = inputs[1];
         let t = inputs[Self::input_idx("t").unwrap()].value();
-        *outputs.get_mut(0).unwrap() =
-            Signal::new(Scalar::sin(t * TAU * freq.value()) * amp.value());
+        outputs[0] = Signal::new(Scalar::sin(t * TAU * freq.value()) * amp.value());
     }
 }
 
