@@ -27,10 +27,12 @@ impl std::fmt::Debug for Signal {
 }
 
 impl Signal {
+    #[inline(always)]
     pub const fn new(val: Scalar) -> Self {
         Self { val }
     }
 
+    #[inline(always)]
     pub const fn value(&self) -> Scalar {
         self.val
     }

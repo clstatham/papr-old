@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    ops::{BitAnd, BitOr, BitXor},
+    sync::{Arc, RwLock},
+};
 
 use eframe::egui::{Slider, Ui};
 use papr_proc_macro::node_constructor;
@@ -273,6 +276,34 @@ impl Processor for Min {
 }
 
 node_constructor! {
+    pub struct Abs;
+    in { input }
+    out { out }
+}
+
+impl Processor for Abs {
+    fn process_audio_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().abs());
+    }
+
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        outputs[0] = Signal::new(inputs[0].value().abs());
+    }
+}
+
+node_constructor! {
     pub struct Sine;
     in { input }
     out { out }
@@ -499,5 +530,166 @@ impl Processor for Clip {
                 .max(inputs[1].value())
                 .min(inputs[2].value()),
         );
+    }
+}
+
+node_constructor! {
+    pub struct If;
+    in { cmp, then, els }
+    out { out }
+}
+
+impl Processor for If {
+    fn process_audio_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        if inputs[0].value() > 0.0 {
+            outputs[0] = inputs[1];
+        } else {
+            outputs[0] = inputs[2];
+        }
+    }
+
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        if inputs[0].value() > 0.0 {
+            outputs[0] = inputs[1];
+        } else {
+            outputs[0] = inputs[2];
+        }
+    }
+}
+
+macro_rules! impl_cmp {
+    ($id:ident, $op:ident) => {
+        node_constructor! {
+            pub struct $id;
+            in { a, b }
+            out { out }
+        }
+
+        impl Processor for $id {
+            fn process_audio_sample(
+                &mut self,
+                _buffer_idx: usize,
+                _sample_rate: Scalar,
+                inputs: &[Signal],
+                outputs: &mut [Signal],
+            ) {
+                if inputs[0].$op(&inputs[1]) {
+                    outputs[0] = Signal::new(1.0);
+                } else {
+                    outputs[0] = Signal::new(0.0);
+                }
+            }
+
+            fn process_control_sample(
+                &mut self,
+                _buffer_idx: usize,
+                _sample_rate: Scalar,
+                inputs: &[Signal],
+                outputs: &mut [Signal],
+            ) {
+                if inputs[0].$op(&inputs[1]) {
+                    outputs[0] = Signal::new(1.0);
+                } else {
+                    outputs[0] = Signal::new(0.0);
+                }
+            }
+        }
+    };
+}
+
+impl_cmp!(Gt, gt);
+impl_cmp!(Lt, lt);
+impl_cmp!(Eq, eq);
+impl_cmp!(Neq, ne);
+
+macro_rules! impl_boolean {
+    ($id:ident, $op:ident) => {
+        node_constructor! {
+            pub struct $id;
+            in { a, b }
+            out { out }
+        }
+
+        impl Processor for $id {
+            fn process_audio_sample(
+                &mut self,
+                _buffer_idx: usize,
+                _sample_rate: Scalar,
+                inputs: &[Signal],
+                outputs: &mut [Signal],
+            ) {
+                if (inputs[0].value() > 0.0).$op(inputs[1].value() > 0.0) {
+                    outputs[0] = Signal::new(1.0);
+                } else {
+                    outputs[0] = Signal::new(0.0);
+                }
+            }
+
+            fn process_control_sample(
+                &mut self,
+                _buffer_idx: usize,
+                _sample_rate: Scalar,
+                inputs: &[Signal],
+                outputs: &mut [Signal],
+            ) {
+                if (inputs[0].value() > 0.0).$op(inputs[1].value() > 0.0) {
+                    outputs[0] = Signal::new(1.0);
+                } else {
+                    outputs[0] = Signal::new(0.0);
+                }
+            }
+        }
+    };
+}
+
+impl_boolean!(And, bitand);
+impl_boolean!(Or, bitor);
+impl_boolean!(Xor, bitxor);
+
+node_constructor! {
+    pub struct Not;
+    in { input }
+    out { out }
+}
+
+impl Processor for Not {
+    fn process_audio_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        if inputs[0].value() > 0.0 {
+            outputs[0] = Signal::new(0.0);
+        } else {
+            outputs[0] = Signal::new(1.0);
+        }
+    }
+
+    fn process_control_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _sample_rate: Scalar,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        if inputs[0].value() > 0.0 {
+            outputs[0] = Signal::new(0.0);
+        } else {
+            outputs[0] = Signal::new(1.0);
+        }
     }
 }

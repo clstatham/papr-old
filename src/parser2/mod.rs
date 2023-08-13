@@ -56,6 +56,11 @@ pub enum Token {
     Semicolon,
     At,
     Hash,
+    DoubleEquals,
+    Ampersand,
+    Caret,
+    Bang,
+    BangEquals,
     Comment(String),
     Unknown(String),
 }
@@ -81,6 +86,11 @@ impl Token {
             alt((
                 value(Token::At, tag("@")),
                 value(Token::Hash, tag("#")),
+                value(Token::DoubleEquals, tag("==")),
+                value(Token::BangEquals, tag("!=")),
+                value(Token::Ampersand, tag("&")),
+                value(Token::Caret, tag("^")),
+                value(Token::Bang, tag("!")),
                 //
             )),
             alt((
@@ -305,6 +315,11 @@ tag_token!(semicolon, Token::Semicolon);
 tag_token!(colon, Token::Colon);
 tag_token!(openbracket, Token::OpenBracket);
 tag_token!(closebracket, Token::CloseBracket);
+tag_token!(doubleequals, Token::DoubleEquals);
+tag_token!(bangequals, Token::BangEquals);
+tag_token!(ampersand, Token::Ampersand);
+tag_token!(caret, Token::Caret);
+tag_token!(bang, Token::Bang);
 
 tag_token!(graph_kw, Token::Graph);
 tag_token!(var_kw, Token::Var);
@@ -389,6 +404,13 @@ pub enum ParsedInfixOp {
     Sub,
     Mul,
     Div,
+    Gt,
+    Lt,
+    Eq,
+    Neq,
+    And,
+    Or,
+    Xor,
 }
 
 #[derive(Debug, Clone)]
@@ -420,6 +442,13 @@ pub fn expr(inp: Tokens) -> IResult<Tokens, ParsedExpr> {
                     value(ParsedInfixOp::Sub, minus),
                     value(ParsedInfixOp::Mul, asterisk),
                     value(ParsedInfixOp::Div, forwardslash),
+                    value(ParsedInfixOp::And, ampersand),
+                    value(ParsedInfixOp::Or, bar),
+                    value(ParsedInfixOp::Xor, caret),
+                    value(ParsedInfixOp::Gt, gt),
+                    value(ParsedInfixOp::Lt, lt),
+                    value(ParsedInfixOp::Eq, doubleequals),
+                    value(ParsedInfixOp::Neq, bangequals),
                 )),
                 expr,
                 closeparen,
@@ -649,6 +678,27 @@ fn solve_expr(
                 }
                 ParsedInfixOp::Div => {
                     crate::dsp::basic::Divide::create_node("/", lhs.rate, buffer_len, 0.0, 0.0)
+                }
+                ParsedInfixOp::Gt => {
+                    crate::dsp::basic::Gt::create_node(">", lhs.rate, buffer_len, 0.0, 0.0)
+                }
+                ParsedInfixOp::Lt => {
+                    crate::dsp::basic::Lt::create_node("<", lhs.rate, buffer_len, 0.0, 0.0)
+                }
+                ParsedInfixOp::Eq => {
+                    crate::dsp::basic::Eq::create_node("==", lhs.rate, buffer_len, 0.0, 0.0)
+                }
+                ParsedInfixOp::Neq => {
+                    crate::dsp::basic::Divide::create_node("!=", lhs.rate, buffer_len, 0.0, 0.0)
+                }
+                ParsedInfixOp::And => {
+                    crate::dsp::basic::And::create_node("&", lhs.rate, buffer_len, 0.0, 0.0)
+                }
+                ParsedInfixOp::Or => {
+                    crate::dsp::basic::Or::create_node("|", lhs.rate, buffer_len, 0.0, 0.0)
+                }
+                ParsedInfixOp::Xor => {
+                    crate::dsp::basic::Xor::create_node("^", lhs.rate, buffer_len, 0.0, 0.0)
                 }
             };
             match (lhs.rate, rhs.rate) {

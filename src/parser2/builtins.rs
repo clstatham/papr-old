@@ -22,6 +22,7 @@ pub fn global_const<'a>() -> impl FnMut(&'a str) -> IResult<&str, (String, Scala
 #[derive(Debug, Clone)]
 pub enum BuiltinNode {
     Sine,
+    Abs,
     SineOsc,
     SineOscLFO,
     BlSawOsc,
@@ -36,6 +37,7 @@ pub enum BuiltinNode {
     Min,
     Clip,
     Debug,
+    If,
     // OscReceiver,
 }
 
@@ -43,6 +45,7 @@ impl BuiltinNode {
     pub fn try_from_ident(id: &ParsedIdent) -> Option<BuiltinNode> {
         match id.0.as_str().strip_prefix('@').unwrap_or(id.0.as_str()) {
             "sin" => Some(BuiltinNode::Sine),
+            "abs" => Some(BuiltinNode::Abs),
             "sineosc" => Some(BuiltinNode::SineOsc),
             "sinelfo" => Some(BuiltinNode::SineOscLFO),
             "sawosc" => Some(BuiltinNode::BlSawOsc),
@@ -57,6 +60,7 @@ impl BuiltinNode {
             "min" => Some(BuiltinNode::Min),
             "clip" => Some(BuiltinNode::Clip),
             "debug" => Some(BuiltinNode::Debug),
+            "if" => Some(BuiltinNode::If),
             // "oscrecv" => BuiltinNode::OscReceiver),
             _ => None,
         }
@@ -71,6 +75,7 @@ impl BuiltinNode {
         match self {
             Self::Debug => crate::dsp::basic::DebugNode::create_node(name, signal_rate, audio_buffer_len),
             Self::Sine => crate::dsp::basic::Sine::create_node(name, signal_rate, audio_buffer_len, 0.0),
+            Self::Abs => crate::dsp::basic::Abs::create_node(name, signal_rate, audio_buffer_len, 0.0),
             Self::SineOsc => crate::dsp::generators::SineOsc::create_node(
                 name,
                 signal_rate, 
@@ -126,6 +131,9 @@ impl BuiltinNode {
             }
             Self::Clip => {
                 crate::dsp::basic::Clip::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0, 0.0)
+            }
+            Self::If => {
+                crate::dsp::basic::If::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0, 0.0)
             }
             // Self::OscReceiver => crate::io::osc::OscReceiver::create_node(
             //     name,

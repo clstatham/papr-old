@@ -196,13 +196,11 @@ impl PaprApp {
             .take()
             .expect("PaprApp::spawn(): audio context not initialized");
 
-        // let config = audio_cx.out_device.default_output_config().unwrap();
         let config = cpal::StreamConfig {
             channels: cpal::ChannelCount::from(1u16),
             sample_rate: cpal::SampleRate(self.sample_rate as u32),
             buffer_size: cpal::BufferSize::Fixed(self.audio_buffer_len as u32),
         };
-        // let audio_buffer_len = if let SupportedBufferSize::Range { min, max } = config.buffer_size()
         println!("Output device: {}", audio_cx.out_device.name().unwrap());
         println!("Output config: {:?}", config);
         println!("Control rate: {} Hz", self.control_rate);
