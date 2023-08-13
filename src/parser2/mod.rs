@@ -103,6 +103,7 @@ impl Token {
         map(many1(Self::parse), |toks| {
             toks.into_iter()
                 .filter(|tok| tok != &Token::Whitespace)
+                .filter(|tok| !matches!(tok, Token::Comment(_)))
                 .collect()
         })(inp)
     }
@@ -230,22 +231,6 @@ impl<'a> InputIter for Tokens<'a> {
     }
 }
 
-// impl<'a> nom::Compare<Self> for Tokens<'a> {
-//     fn compare(&self, t: Self) -> nom::CompareResult {
-//         if self.tokens.len() != t.tokens.len() {
-//             nom::CompareResult::Incomplete
-//         } else if self.tokens.iter().zip(t.tokens.iter()).all(|(a, b)| a == b) {
-//             nom::CompareResult::Ok
-//         } else {
-//             nom::CompareResult::Error
-//         }
-//     }
-
-//     fn compare_no_case(&self, t: Self) -> nom::CompareResult {
-//         self.compare(t)
-//     }
-// }
-
 pub fn ident_str<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
     recognize(tuple((
         opt(alt((tag("@"), tag("#")))),
@@ -275,25 +260,6 @@ macro_rules! tag_token {
         }
     };
 }
-
-/*
-   Bar,
-   LeftArrow,
-   RightArrow,
-   OpenBrace,
-   CloseBrace,
-   OpenParen,
-   CloseParen,
-   Equals,
-   Plus,
-   Minus,
-   Asterisk,
-   ForwardSlash,
-   Gt,
-   Lt,
-   Tilde,
-   Semicolon,
-*/
 
 tag_token!(bar, Token::Bar);
 tag_token!(leftarrow, Token::LeftArrow);
@@ -795,6 +761,7 @@ fn solve_expr(
         }
         ParsedExpr::Call(ParsedCall { ident, args }) => {
             let mut known_rate;
+            let n_outs;
             let (called_an, called_cn) = match ident {
                 ParsedCallee::ScriptDefined(ident) => {
                     known_rate = ident.1;
@@ -803,6 +770,7 @@ fn solve_expr(
                         &graph_id.0, &ident.0
                     ))?.clone();
                     graph.id.1 = known_rate;
+                    n_outs = graph.signature.outputs.len();
                     let (ag, cg) = solve_graph(&graph, buffer_len, known_graphs)?;
                     (Arc::new(ag.into_node()), Arc::new(cg.into_node()))
                 }
@@ -819,6 +787,11 @@ fn solve_expr(
                         SignalRate::Control,
                         buffer_len,
                     );
+                    n_outs = match known_rate {
+                        Some(SignalRate::Audio) => an.outputs.len(),
+                        Some(SignalRate::Control) => cn.outputs.len(),
+                        _ => todo!(),
+                    };
                     (an, cn)
                 }
             };
@@ -954,11 +927,11 @@ fn solve_expr(
             let (ag_idx, cg_idx) = match known_rate {
                 SignalRate::Audio => {
                     // todo: remove called control node from supergraph
-                    (Some((called_ag_idx, vec![0])), None)
+                    (Some((called_ag_idx, (0..n_outs).collect())), None)
                 }
                 SignalRate::Control => {
                     // todo: remove called audio node from supergraph
-                    (None, Some((called_cg_idx, vec![0])))
+                    (None, Some((called_cg_idx, (0..n_outs).collect())))
                 }
             };
 
@@ -1180,12 +1153,3 @@ pub fn parse_script(inp: &str, buffer_len: usize) -> Result<(Graph, Graph), Stri
         .ok_or("Parsing error: `main` graph not found".to_owned())?;
     solve_graph(main_graph, buffer_len, &graphs)
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     #[test]
-//     fn test_parse() {
-//         let (ag, cg) = parse_script(include_str!("../../test-scripts/syntax2.papr"), 1024).unwrap();
-//     }
-// }

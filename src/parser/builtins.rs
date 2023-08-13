@@ -2,7 +2,7 @@ use nom::{
     branch::alt, bytes::complete::*, combinator::*, multi::*, number::complete::float, sequence::*,
     IResult,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::{
     dsp::SignalRate,

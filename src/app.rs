@@ -130,8 +130,6 @@ impl PaprApp {
             let c_in = &control.digraph[c_in_idx];
             if !c_in.inputs[0].implicit {
                 let node = UiInput::create_node(c_in.inputs[0].clone(), audio_buffer_len);
-                // let (c2a_an, c2a_cn) =
-                //     ControlToAudio::create_nodes(c_in.name.as_ref(), audio_buffer_len);
                 self.ui_control_inputs.push(node.clone());
                 let c_in_ui_idx = control.add_node(node);
                 control.add_edge(
@@ -142,34 +140,8 @@ impl PaprApp {
                         sink_input: 0,
                     },
                 );
-                // let _c2a_an = audio.add_node(c2a_an);
-                // let c2a_cn = control.add_node(c2a_cn);
-                // control.add_edge(
-                //     c_in_ui_idx,
-                //     c2a_cn,
-                //     Connection {
-                //         source_output: 0,
-                //         sink_input: 0,
-                //     },
-                // );
             }
         }
-
-        // for c_out_idx in control.output_node_indices.clone().iter().copied() {
-        //     let c_out = &control.digraph[c_out_idx];
-        //     let dbg_name = format!("{}_dbg", &c_out.name);
-        //     let node =
-        //         DebugNode::create_node(dbg_name.to_owned(), SignalRate::Control, audio_buffer_len);
-        //     let debug0_cn = control.add_node(node);
-        //     control.add_edge(
-        //         c_out_idx,
-        //         debug0_cn,
-        //         Connection {
-        //             source_output: 0,
-        //             sink_input: 0,
-        //         },
-        //     );
-        // }
 
         self.audio_graph = Some(audio);
         self.control_graph = Some(control);

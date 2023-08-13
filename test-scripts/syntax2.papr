@@ -9,13 +9,14 @@ graph sineosc_manual {
 
 graph main {
     |
-        #amp(0:1)=0.5 
-        #freq(20:2000)=440
         #fm_amt(0:1) = 1.0
-        #fm_freq(20:2000)=440
+        #fm_mul(0.25:8.0) = 1.0
     | -> |@dac0|
     ~ {
-        let @fm = @sineosc_manual(#fm_amt #fm_freq 0.0 0.0);
-        @dac0 = @sineosc_manual(#amp #freq 1.0 @fm);
+        let [#pitch0 #vel0] = #notein();
+        let #freq = #m2f(#pitch0);
+        let @fm = @sineosc_manual(#fm_amt (#fm_mul * #freq) 0.0 0.0);
+        @dac0 = @sineosc_manual(#vel0 #freq 1.0 @fm);
+        /* testing comment stuff */
     }
 }
