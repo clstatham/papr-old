@@ -1,0 +1,29 @@
+%YAML 1.2
+---
+name: PAPR
+file_extensions:
+  - papr
+scope: source.papr
+variables:
+  ident: "[A-Za-z][A-Za-z_0-9]*"
+contexts:
+  # prototype:
+  #   - include: comments
+  main:
+    - match: \b(graph|let|import)\b
+      scope: keyword.control.papr
+
+    - match: '"'
+      push: string
+
+    - match: \b[0-9]+\.?[0-9]*\b
+      scope: constant.numeric.papr
+
+    - match: '\b{{ident}}\b'
+      scope: variable.papr
+
+  string:
+    - meta_scope: string.quoted.double.papr
+    - meta_include_prototype: false
+    - match: '"'
+      pop: true

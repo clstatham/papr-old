@@ -13,8 +13,12 @@ use cpal::{
     FromSample, SizedSample,
 };
 
-use eframe::egui::{CentralPanel, Layout, SidePanel, TextEdit, TopBottomPanel};
+use eframe::{
+    egui::{CentralPanel, Context, Layout, SidePanel, TextEdit, TopBottomPanel},
+    epaint::text::LayoutJob,
+};
 
+use syntect::parsing::SyntaxDefinition;
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -317,11 +321,110 @@ impl eframe::App for PaprApp {
         });
 
         CentralPanel::default().show(ctx, |ui| {
-            ui.max_rect();
+            let mut layouter = |ui: &eframe::egui::Ui, string: &str, _| {
+                let layout_job = highlight(ui.ctx(), string);
+                ui.fonts(|f| f.layout_job(layout_job))
+            };
             ui.add_sized(
                 ui.available_size(),
-                TextEdit::multiline(&mut self.script_text).code_editor(),
+                TextEdit::multiline(&mut self.script_text)
+                    .font(eframe::egui::TextStyle::Monospace)
+                    .code_editor()
+                    .layouter(&mut layouter),
             );
         });
     }
+}
+
+/*
+   Syntax highlighting impl based on:
+   https://github.com/emilk/egui/blob/1023f937a67f3771e25c45cc49067acb71740e97/crates/egui_demo_lib/src/syntax_highlighting.rs
+*/
+
+pub fn highlight(ctx: &Context, code: &str) -> LayoutJob {
+    impl eframe::egui::util::cache::ComputerMut<&str, LayoutJob> for Highlighter {
+        fn compute(&mut self, key: &str) -> LayoutJob {
+            self.highlight(key)
+        }
+    }
+
+    type HighlightCache = eframe::egui::util::cache::FrameCache<LayoutJob, Highlighter>;
+
+    ctx.memory_mut(|mem| mem.caches.cache::<HighlightCache>().get(code))
+}
+
+struct Highlighter {
+    ps: syntect::parsing::SyntaxSet,
+    ts: syntect::highlighting::ThemeSet,
+}
+
+impl Default for Highlighter {
+    fn default() -> Self {
+        let mut builder = syntect::parsing::SyntaxSetBuilder::new();
+        builder.add(
+            SyntaxDefinition::load_from_str(include_str!("../papr.sublime-syntax"), true, None)
+                .unwrap(),
+        );
+        let ps = builder.build();
+        Self {
+            ps,
+            ts: syntect::highlighting::ThemeSet::load_defaults(),
+        }
+    }
+}
+
+impl Highlighter {
+    fn highlight(&self, code: &str) -> LayoutJob {
+        use syntect::easy::HighlightLines;
+        use syntect::highlighting::FontStyle;
+        use syntect::util::LinesWithEndings;
+
+        let syntax = self.ps.find_syntax_by_name("PAPR").unwrap();
+
+        let theme = "base16-mocha.dark";
+        let mut h = HighlightLines::new(syntax, &self.ts.themes[theme]);
+
+        use eframe::egui::text::{LayoutSection, TextFormat};
+
+        let mut job = LayoutJob {
+            text: code.into(),
+            ..Default::default()
+        };
+
+        for line in LinesWithEndings::from(code) {
+            for (style, range) in h.highlight_line(line, &self.ps).unwrap() {
+                let fg = style.foreground;
+                let text_color = eframe::egui::Color32::from_rgb(fg.r, fg.g, fg.b);
+                let italics = style.font_style.contains(FontStyle::ITALIC);
+                let underline = style.font_style.contains(FontStyle::UNDERLINE);
+                let underline = if underline {
+                    eframe::egui::Stroke::new(1.0, text_color)
+                } else {
+                    eframe::egui::Stroke::NONE
+                };
+                job.sections.push(LayoutSection {
+                    leading_space: 0.0,
+                    byte_range: as_byte_range(code, range),
+                    format: TextFormat {
+                        font_id: eframe::egui::FontId::monospace(16.0),
+                        color: text_color,
+                        italics,
+                        underline,
+                        ..Default::default()
+                    },
+                });
+            }
+        }
+
+        job
+    }
+}
+
+fn as_byte_range(whole: &str, range: &str) -> std::ops::Range<usize> {
+    let whole_start = whole.as_ptr() as usize;
+    let range_start = range.as_ptr() as usize;
+    assert!(whole_start <= range_start);
+    assert!(range_start + range.len() <= whole_start + whole.len());
+    let offset = range_start - whole_start;
+    offset..(offset + range.len())
 }

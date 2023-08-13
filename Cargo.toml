@@ -32,6 +32,7 @@ crossbeam-channel = "0.5.8"
 lazy_static = "1.4.0"
 spin = { version = "0.9.8", features = ["std"] }
 rfd = { version = "0.11.4", default-features = false, features = ["xdg-portal"] }
+syntect = { version = "5.1.0", features = ["default-fancy"] }
 
 [profile.release]
 # debug = true
