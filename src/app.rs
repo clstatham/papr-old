@@ -5,7 +5,6 @@ use std::{
     io::Read,
     path::PathBuf,
     sync::Arc,
-    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
@@ -14,7 +13,7 @@ use cpal::{
     FromSample, SizedSample,
 };
 
-use eframe::egui::{CentralPanel, TopBottomPanel};
+use eframe::egui::{CentralPanel, Layout, SidePanel, TextEdit, TopBottomPanel};
 
 use tokio::runtime::Runtime;
 
@@ -105,6 +104,7 @@ pub struct PaprApp {
     control_rate: Scalar,
     audio_buffer_len: usize,
     script_path: Option<PathBuf>,
+    script_text: String,
     midi_ctx: Option<MidiContext>,
     control_thread_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
 }
@@ -126,19 +126,31 @@ impl PaprApp {
             sample_rate,
             audio_buffer_len,
             script_path,
+            script_text: String::new(),
             midi_ctx: None,
             control_thread_shutdown: None,
         }
     }
 
-    pub fn create_graphs(&mut self, audio_buffer_len: usize) {
+    pub fn load_file(&mut self) -> PathBuf {
         let path = self.script_path.as_ref().unwrap();
         let mut file = File::open(path).unwrap();
-        let mut script = String::new();
-        file.read_to_string(&mut script).unwrap();
-        let (audio, mut control) =
-            crate::parser2::parse_main_script(&script, &path.parent().unwrap(), audio_buffer_len)
-                .unwrap();
+        self.script_text = String::new();
+        file.read_to_string(&mut self.script_text).unwrap();
+        path.clone()
+    }
+
+    pub fn create_graphs(&mut self, audio_buffer_len: usize) {
+        let (audio, mut control) = crate::parser2::parse_main_script(
+            &self.script_text,
+            &self
+                .script_path
+                .as_ref()
+                .map(|p| p.parent().unwrap())
+                .unwrap_or(current_dir().unwrap().as_path()),
+            audio_buffer_len,
+        )
+        .unwrap();
 
         for c_in_idx in control.input_node_indices.clone().iter().copied() {
             let c_in = &control.digraph[c_in_idx];
@@ -262,33 +274,54 @@ impl eframe::App for PaprApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         // ctx.request_repaint();
         TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            if ui.button("Open...").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("PAPR Scripts", &["papr"])
-                    .set_directory(
-                        self.script_path
-                            .as_ref()
-                            .map(|p| p.parent().unwrap())
-                            .unwrap_or(current_dir().unwrap().as_path()),
-                    )
-                    .pick_file()
-                {
-                    self.script_path = Some(path);
+            ui.with_layout(Layout::left_to_right(eframe::emath::Align::Min), |ui| {
+                if ui.button("Open...").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("PAPR Scripts", &["papr"])
+                        .set_directory(
+                            self.script_path
+                                .as_ref()
+                                .map(|p| p.parent().unwrap())
+                                .unwrap_or(current_dir().unwrap().as_path()),
+                        )
+                        .pick_file()
+                    {
+                        self.script_path = Some(path);
+                        if let Some(tx) = self.control_thread_shutdown.take() {
+                            tx.send(()).unwrap();
+                            std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
+                        }
+                        self.ui_control_inputs.clear();
+                        self.init();
+                        self.load_file();
+                        self.spawn();
+                    }
+                }
+                if ui.button("Reload").clicked() {
                     if let Some(tx) = self.control_thread_shutdown.take() {
                         tx.send(()).unwrap();
                         std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
                     }
                     self.ui_control_inputs.clear();
                     self.init();
+                    // self.script_path = None;
                     self.spawn();
                 }
+            });
+        });
+
+        SidePanel::left("inputs").show(ctx, |ui| {
+            for inp in self.ui_control_inputs.iter() {
+                inp.control_processor.ui_update(ui);
             }
         });
 
         CentralPanel::default().show(ctx, |ui| {
-            for inp in self.ui_control_inputs.iter() {
-                inp.control_processor.ui_update(ui);
-            }
+            ui.max_rect();
+            ui.add_sized(
+                ui.available_size(),
+                TextEdit::multiline(&mut self.script_text).code_editor(),
+            );
         });
     }
 }

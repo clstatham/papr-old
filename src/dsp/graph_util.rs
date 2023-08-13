@@ -2,8 +2,10 @@ use std::sync::{Arc, RwLock};
 
 use crate::{
     graph::{Input, Node, NodeName, Output},
-    node_constructor, Scalar,
+    Scalar,
 };
+
+use papr_proc_macro::node_constructor;
 
 use super::{Processor, Signal, SignalRate};
 

@@ -1,4 +1,6 @@
-use crate::{node_constructor, Scalar, PI, TAU};
+use crate::{Scalar, PI, TAU};
+
+use papr_proc_macro::node_constructor;
 
 use super::{Processor, Signal};
 

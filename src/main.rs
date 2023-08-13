@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use app::PaprApp;
 use clap::Parser;
 use eframe::{egui::Visuals, NativeOptions};
-use papr_proc_macro::node_constructor;
 
 pub mod app;
 #[macro_use]
@@ -55,6 +54,7 @@ fn main() {
             );
             if args.script_path.is_some() {
                 app.init();
+                app.load_file();
                 app.spawn();
             }
 
