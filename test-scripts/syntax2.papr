@@ -17,6 +17,5 @@ graph main {
         let #freq = #m2f(#pitch0);
         let @fm = @sineosc_manual(#fm_amt (#fm_mul * #freq) 0.0 0.0);
         @dac0 = @sineosc_manual(#vel0 #freq 1.0 @fm);
-        /* testing comment stuff */
     }
 }

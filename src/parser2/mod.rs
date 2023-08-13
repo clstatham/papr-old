@@ -240,7 +240,10 @@ pub fn ident_str<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
 }
 
 pub fn comment<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
-    map(delimited(tag("/*"), take_until("*/"), tag("*/")), |_| "")
+    recognize(alt((
+        delimited(tag("/*"), take_until("*/"), tag("*/")),
+        delimited(tag("//"), take_until("\n"), tag("\n")),
+    )))
 }
 
 pub fn whitespace0<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
