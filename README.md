@@ -32,7 +32,7 @@ You should hear a sine tone!
 `|| -> |@dac0|` specifies the *signature* of our graphdef.
 
 - `||` means we have no inputs.
-- `|@dac0|` means that we have one input, named `@dac0`.
+- `|@dac0|` means that we have one output, named `@dac0`.
   - The `@` indicates that this is an audio-rate output.
   - Any output with `dac` in its name will be interpreted as something you will hear out of your speakers, and connected accordingly.
 
