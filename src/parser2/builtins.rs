@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::graph::Node;
+use crate::{dsp::generators::BL_SQUARE_MAX_COEFF, graph::Node};
 
 use super::{ParsedCreationArg, ParsedIdent};
 
@@ -14,6 +14,7 @@ pub enum BuiltinNode {
     FmSineOsc,
     SineOsc,
     BlSawOsc,
+    BlSquareOsc,
     MidiToFreq,
     Clock,
     Delay,
@@ -42,6 +43,7 @@ impl BuiltinNode {
             "SineFm" => Some(BuiltinNode::FmSineOsc),
             "SineOsc" => Some(BuiltinNode::SineOsc),
             "SawOsc" => Some(BuiltinNode::BlSawOsc),
+            "SquareOsc" => Some(BuiltinNode::BlSquareOsc),
             "M2F" => Some(BuiltinNode::MidiToFreq),
             "Clock" => Some(BuiltinNode::Clock),
             "Delay" => Some(BuiltinNode::Delay),
@@ -95,6 +97,7 @@ impl BuiltinNode {
                 1.0,
                 440.0,
             ),
+            Self::BlSquareOsc => crate::dsp::generators::BlSquareOsc::create_node(name, audio_buffer_len, [0.0; BL_SQUARE_MAX_COEFF], 0.0, 440.0, 0.5),
             Self::MidiToFreq => {
                 crate::dsp::midi::MidiToFreq::create_node(name, audio_buffer_len, 0.0)
             }

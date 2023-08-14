@@ -1,7 +1,7 @@
 import "oscs.papr"
 import "envs.papr"
 
-graph main {
+graph Main {
     |
         #fm_amt(0:1) = 1.0
         #fm_mul(0.25:8.0) = 1.0

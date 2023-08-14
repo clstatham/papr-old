@@ -1,0 +1,11 @@
+graph Main {
+    |
+     #amp(0:1) = 0.1
+     #freq(20:24000) = 440
+     #d(0.001:0.999) = 0.5
+    | 
+     -> |@dac0|
+    ~ {
+        @dac0 = @SquareOsc(#amp #freq #d);
+    }
+}
