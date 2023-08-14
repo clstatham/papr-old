@@ -2,7 +2,7 @@ use papr_proc_macro::node_constructor;
 
 use crate::Scalar;
 
-use super::{Processor, Signal};
+use super::{Processor, Signal, SignalRate};
 
 node_constructor! {
     pub struct MidiToFreq;
@@ -11,11 +11,10 @@ node_constructor! {
 }
 
 impl Processor for MidiToFreq {
-    fn process_control_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {

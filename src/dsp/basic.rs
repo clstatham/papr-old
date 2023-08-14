@@ -23,14 +23,13 @@ pub struct DebugNode {
 }
 
 impl DebugNode {
-    pub fn create_node(name: &str, signal_rate: SignalRate, buffer_len: usize) -> Arc<Node> {
+    pub fn create_node(name: &str, buffer_len: usize) -> Arc<Node> {
         let this = Box::new(RwLock::new(Self {
             name: name.to_string(),
         }));
 
         Arc::new(Node::new(
             NodeName::new(name),
-            signal_rate,
             buffer_len,
             vec![Input::new(
                 "input".to_owned().as_ref(),
@@ -45,10 +44,10 @@ impl DebugNode {
 }
 
 impl Processor for DebugNode {
-    fn process_control_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -66,10 +65,10 @@ pub struct UiInput {
 }
 
 impl Processor for UiInput {
-    fn process_control_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -99,7 +98,6 @@ impl UiInput {
 
         Arc::new(Node::new(
             for_input.name.clone().into(),
-            SignalRate::Control,
             audio_buffer_len,
             vec![],
             vec![Output {
@@ -115,17 +113,11 @@ pub struct Constant {
 }
 
 impl Constant {
-    pub fn create_node(
-        name: &str,
-        signal_rate: SignalRate,
-        audio_buffer_len: usize,
-        value: Scalar,
-    ) -> Arc<Node> {
+    pub fn create_node(name: &str, audio_buffer_len: usize, value: Scalar) -> Arc<Node> {
         let this = Box::new(RwLock::new(Self { value }));
 
         Arc::new(Node::new(
             NodeName::new(name),
-            signal_rate,
             audio_buffer_len,
             vec![],
             vec![Output {
@@ -137,20 +129,10 @@ impl Constant {
 }
 
 impl Processor for Constant {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-        _inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        outputs[0] = Signal::new(self.value);
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -167,21 +149,10 @@ macro_rules! impl_arith {
         }
 
         impl Processor for $typ {
-            fn process_audio_sample(
+            fn process_sample(
                 &mut self,
                 _buffer_idx: usize,
-                _sample_rate: Scalar,
-                inputs: &[Signal],
-                outputs: &mut [Signal],
-            ) {
-                use std::ops::$use;
-                outputs[0] = Signal::new(inputs[0].value().$op(inputs[1].value()));
-            }
-
-            fn process_control_sample(
-                &mut self,
-                _buffer_idx: usize,
-                _sample_rate: Scalar,
+                _signal_rate: SignalRate,
                 inputs: &[Signal],
                 outputs: &mut [Signal],
             ) {
@@ -205,21 +176,10 @@ node_constructor! {
 }
 
 impl Processor for Max {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        outputs[0] = Signal::new(inputs[0].value().max(inputs[1].value()));
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
 
         inputs: &[Signal],
         outputs: &mut [Signal],
@@ -235,21 +195,10 @@ node_constructor! {
 }
 
 impl Processor for Min {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        outputs[0] = Signal::new(inputs[0].value().min(inputs[1].value()));
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
 
         inputs: &[Signal],
         outputs: &mut [Signal],
@@ -265,20 +214,10 @@ node_constructor! {
 }
 
 impl Processor for Abs {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        outputs[0] = Signal::new(inputs[0].value().abs());
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -293,20 +232,10 @@ node_constructor! {
 }
 
 impl Processor for Exp {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        outputs[0] = Signal::new(inputs[0].value().exp());
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -321,20 +250,10 @@ node_constructor! {
 }
 
 impl Processor for Cosine {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        outputs[0] = Signal::new(inputs[0].value().cos());
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -349,20 +268,10 @@ node_constructor! {
 }
 
 impl Processor for Tanh {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        outputs[0] = Signal::new(inputs[0].value().tanh());
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -377,21 +286,10 @@ node_constructor! {
 }
 
 impl Processor for Sine {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        outputs[0] = Signal::new(Scalar::sin(inputs[0].value()));
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
 
         inputs: &[Signal],
         outputs: &mut [Signal],
@@ -400,37 +298,34 @@ impl Processor for Sine {
     }
 }
 
-pub struct ControlToAudio {
+struct ControlToAudioTx {
     tx: Option<tokio::sync::watch::Sender<Scalar>>,
+}
+struct ControlToAudioRx {
     rx: Option<tokio::sync::watch::Receiver<Scalar>>,
     value: Scalar,
 }
+
+pub struct ControlToAudio;
 
 impl ControlToAudio {
     pub fn create_nodes(name: &str, buffer_len: usize) -> (Arc<Node>, Arc<Node>) {
         let (tx, rx) = tokio::sync::watch::channel(0.0);
         let cn = Arc::new(Node::new(
             name.into(),
-            SignalRate::Control,
             buffer_len,
             vec![Input::new("c", Some(Signal::new(0.0)))],
             vec![],
-            ProcessorType::Builtin(Box::new(RwLock::new(Self {
-                tx: Some(tx),
-                rx: None,
-                value: 0.0,
-            }))),
+            ProcessorType::Builtin(Box::new(RwLock::new(ControlToAudioTx { tx: Some(tx) }))),
         ));
         let an = Arc::new(Node::new(
             name.into(),
-            SignalRate::Audio,
             buffer_len,
             vec![],
             vec![Output {
                 name: "a".to_owned(),
             }],
-            ProcessorType::Builtin(Box::new(RwLock::new(Self {
-                tx: None,
+            ProcessorType::Builtin(Box::new(RwLock::new(ControlToAudioRx {
                 rx: Some(rx),
                 value: 0.0,
             }))),
@@ -439,21 +334,22 @@ impl ControlToAudio {
     }
 }
 
-impl Processor for ControlToAudio {
-    fn process_control_sample(
+impl Processor for ControlToAudioTx {
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         _outputs: &mut [Signal],
     ) {
         self.tx.as_ref().unwrap().send_replace(inputs[0].value());
     }
-
-    fn process_audio_sample(
+}
+impl Processor for ControlToAudioRx {
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -462,60 +358,58 @@ impl Processor for ControlToAudio {
     }
 }
 
-pub struct AudioToControl {
+struct AudioToControlTx {
     tx: Option<tokio::sync::watch::Sender<Scalar>>,
+}
+struct AudioToControlRx {
     rx: Option<tokio::sync::watch::Receiver<Scalar>>,
     value: Scalar,
 }
+
+pub struct AudioToControl;
 
 impl AudioToControl {
     pub fn create_nodes(name: &str, buffer_len: usize) -> (Arc<Node>, Arc<Node>) {
         let (tx, rx) = tokio::sync::watch::channel(0.0);
         let cn = Arc::new(Node::new(
             name.into(),
-            SignalRate::Control,
             buffer_len,
             vec![],
             vec![Output {
                 name: "c".to_owned(),
             }],
-            ProcessorType::Builtin(Box::new(RwLock::new(Self {
-                tx: None,
+            ProcessorType::Builtin(Box::new(RwLock::new(AudioToControlRx {
                 rx: Some(rx),
                 value: 0.0,
             }))),
         ));
         let an = Arc::new(Node::new(
             name.into(),
-            SignalRate::Audio,
             buffer_len,
             vec![Input::new("a", Some(Signal::new(0.0)))],
             vec![],
-            ProcessorType::Builtin(Box::new(RwLock::new(Self {
-                tx: Some(tx),
-                rx: None,
-                value: 0.0,
-            }))),
+            ProcessorType::Builtin(Box::new(RwLock::new(AudioToControlTx { tx: Some(tx) }))),
         ));
         (an, cn)
     }
 }
 
-impl Processor for AudioToControl {
-    fn process_audio_sample(
+impl Processor for AudioToControlTx {
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         _outputs: &mut [Signal],
     ) {
         self.tx.as_ref().unwrap().send_replace(inputs[0].value());
     }
-
-    fn process_control_sample(
+}
+impl Processor for AudioToControlRx {
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -533,10 +427,10 @@ node_constructor! {
 }
 
 impl Processor for RisingEdge {
-    fn process_control_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
 
         inputs: &[Signal],
         outputs: &mut [Signal],
@@ -559,10 +453,10 @@ node_constructor! {
 }
 
 impl Processor for FallingEdge {
-    fn process_control_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
 
         inputs: &[Signal],
         outputs: &mut [Signal],
@@ -583,10 +477,10 @@ node_constructor! {
 }
 
 impl Processor for Clip {
-    fn process_control_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
 
         inputs: &[Signal],
         outputs: &mut [Signal],
@@ -607,24 +501,10 @@ node_constructor! {
 }
 
 impl Processor for If {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        if inputs[0].value() > 0.0 {
-            outputs[0] = inputs[1];
-        } else {
-            outputs[0] = inputs[2];
-        }
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -645,24 +525,10 @@ macro_rules! impl_cmp {
         }
 
         impl Processor for $id {
-            fn process_audio_sample(
+            fn process_sample(
                 &mut self,
                 _buffer_idx: usize,
-                _sample_rate: Scalar,
-                inputs: &[Signal],
-                outputs: &mut [Signal],
-            ) {
-                if inputs[0].$op(&inputs[1]) {
-                    outputs[0] = Signal::new(1.0);
-                } else {
-                    outputs[0] = Signal::new(0.0);
-                }
-            }
-
-            fn process_control_sample(
-                &mut self,
-                _buffer_idx: usize,
-                _sample_rate: Scalar,
+                _signal_rate: SignalRate,
                 inputs: &[Signal],
                 outputs: &mut [Signal],
             ) {
@@ -690,24 +556,10 @@ macro_rules! impl_boolean {
         }
 
         impl Processor for $id {
-            fn process_audio_sample(
+            fn process_sample(
                 &mut self,
                 _buffer_idx: usize,
-                _sample_rate: Scalar,
-                inputs: &[Signal],
-                outputs: &mut [Signal],
-            ) {
-                if (inputs[0].value() > 0.0).$op(inputs[1].value() > 0.0) {
-                    outputs[0] = Signal::new(1.0);
-                } else {
-                    outputs[0] = Signal::new(0.0);
-                }
-            }
-
-            fn process_control_sample(
-                &mut self,
-                _buffer_idx: usize,
-                _sample_rate: Scalar,
+                _signal_rate: SignalRate,
                 inputs: &[Signal],
                 outputs: &mut [Signal],
             ) {
@@ -732,24 +584,10 @@ node_constructor! {
 }
 
 impl Processor for Not {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-        if inputs[0].value() > 0.0 {
-            outputs[0] = Signal::new(0.0);
-        } else {
-            outputs[0] = Signal::new(1.0);
-        }
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {

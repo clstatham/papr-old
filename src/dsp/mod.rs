@@ -12,9 +12,32 @@ pub mod time;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SignalRate {
-    // todo: have these hold the actual rates in hertz
-    Audio,
-    Control,
+    Audio {
+        sample_rate: Scalar,
+        buffer_len: usize,
+    },
+    Control {
+        sample_rate: Scalar,
+        buffer_len: usize,
+    },
+}
+
+impl SignalRate {
+    #[inline(always)]
+    pub fn rate(self) -> Scalar {
+        match self {
+            Self::Audio { sample_rate, .. } => sample_rate,
+            Self::Control { sample_rate, .. } => sample_rate,
+        }
+    }
+
+    #[inline(always)]
+    pub fn buffer_len(self) -> usize {
+        match self {
+            Self::Audio { buffer_len, .. } => buffer_len,
+            Self::Control { buffer_len, .. } => buffer_len,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
@@ -71,21 +94,10 @@ impl std::ops::Div<Self> for Signal {
 pub trait Processor {
     #[inline]
     #[allow(unused_variables)]
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         buffer_idx: usize,
-        sample_rate: Scalar,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) {
-    }
-
-    #[inline]
-    #[allow(unused_variables)]
-    fn process_control_sample(
-        &mut self,
-        buffer_idx: usize,
-        sample_rate: Scalar,
+        signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -94,7 +106,6 @@ pub trait Processor {
     fn process_buffer(
         &mut self,
         signal_rate: SignalRate,
-        sample_rate: Scalar,
         inputs: &[Vec<Signal>],
         outputs: &mut [Vec<Signal>],
     ) {
@@ -119,10 +130,8 @@ pub trait Processor {
             for (val, buf) in inp.iter_mut().zip(inputs) {
                 *val = buf[i];
             }
-            match signal_rate {
-                SignalRate::Audio => self.process_audio_sample(i, sample_rate, &inp, &mut out),
-                SignalRate::Control => self.process_control_sample(i, sample_rate, &inp, &mut out),
-            };
+
+            self.process_sample(i, signal_rate, &inp, &mut out);
 
             for (j, out_val) in out.iter().enumerate() {
                 outputs.get_mut(j).unwrap()[i] = *out_val;

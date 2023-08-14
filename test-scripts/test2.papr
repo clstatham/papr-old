@@ -5,7 +5,6 @@ graph main {
     || -> |@dac0|
     ~ {
         let [@s @len] = @sample<"test.wav">((@t % @len));
-        //let #foo = #debug(@len);
         @dac0 = @s;
     }
 }

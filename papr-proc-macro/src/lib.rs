@@ -157,11 +157,10 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
 
 
             #[allow(clippy::too_many_arguments)]
-            pub fn create_node(name: &str, signal_rate: crate::dsp::SignalRate, buffer_len: usize, #args) -> std::sync::Arc<crate::graph::Node> {
+            pub fn create_node(name: &str, buffer_len: usize, #args) -> std::sync::Arc<crate::graph::Node> {
                 let this = Box::new(std::sync::RwLock::new(Self { #fields }));
                 let an = std::sync::Arc::new(crate::graph::Node::new(
                     crate::graph::NodeName::new(name),
-                    signal_rate,
                     buffer_len,
                     vec![#ins],
                     vec![#outs],

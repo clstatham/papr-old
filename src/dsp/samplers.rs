@@ -16,12 +16,7 @@ pub struct Sample {
 }
 
 impl Sample {
-    pub fn create_node(
-        name: &str,
-        signal_rate: SignalRate,
-        audio_buffer_len: usize,
-        sample_path: PathBuf,
-    ) -> Arc<Node> {
+    pub fn create_node(name: &str, audio_buffer_len: usize, sample_path: PathBuf) -> Arc<Node> {
         let dec = creak::Decoder::open(sample_path).unwrap();
         let channels = dec.info().channels();
         let buf: Box<[Scalar]> = dec
@@ -34,7 +29,6 @@ impl Sample {
             .collect();
         Arc::new(Node::new(
             NodeName::new(name),
-            signal_rate,
             audio_buffer_len,
             vec![Input::new("seek", Some(Signal::new(0.0)))],
             vec![
@@ -51,17 +45,17 @@ impl Sample {
 }
 
 impl Processor for Sample {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        sample_rate: Scalar,
+        signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
         let seek = inputs[0];
-        let seek_samps = (seek.value() * sample_rate) as usize;
+        let seek_samps = (seek.value() * signal_rate.rate()) as usize;
 
         outputs[0] = Signal::new(self.buf[seek_samps]);
-        outputs[1] = Signal::new(self.buf.len() as Scalar / sample_rate);
+        outputs[1] = Signal::new(self.buf.len() as Scalar / signal_rate.rate());
     }
 }

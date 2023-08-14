@@ -60,7 +60,14 @@ impl AudioContext {
             .map(|frame_idx| Signal::new(t as Scalar + frame_idx as Scalar / sample_rate))
             .collect::<Vec<_>>();
         let ins = BTreeMap::from_iter([(graph.node_id_by_name("t").unwrap(), &ts)]);
-        graph.process_graph(SignalRate::Audio, sample_rate, &ins, &mut out);
+        graph.process_graph(
+            SignalRate::Audio {
+                sample_rate,
+                buffer_len,
+            },
+            &ins,
+            &mut out,
+        );
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
             for (_c, sample) in frame.iter_mut().enumerate() {
                 *sample = T::from_sample(out[&dac0][frame_idx].value());
@@ -271,8 +278,10 @@ impl PaprApp {
                     }
                     let tik = Instant::now();
                     control_graph.process_graph(
-                        SignalRate::Control,
-                        control_rate,
+                        SignalRate::Control {
+                            sample_rate: control_rate,
+                            buffer_len,
+                        },
                         &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t); buffer_len])]),
                         &mut BTreeMap::default(),
                     );
@@ -432,7 +441,7 @@ impl eframe::App for PaprApp {
 
         SidePanel::left("inputs").show(ctx, |ui| {
             for inp in self.ui_control_inputs.iter() {
-                inp.control_processor.ui_update(ui);
+                inp.processor.ui_update(ui);
             }
         });
 

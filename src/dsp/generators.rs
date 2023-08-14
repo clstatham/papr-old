@@ -2,7 +2,7 @@ use crate::{Scalar, PI, TAU};
 
 use papr_proc_macro::node_constructor;
 
-use super::{Processor, Signal};
+use super::{Processor, Signal, SignalRate};
 
 node_constructor! {
     pub struct SineOsc;
@@ -11,10 +11,10 @@ node_constructor! {
 }
 
 impl Processor for SineOsc {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -36,10 +36,10 @@ node_constructor! {
 }
 
 impl Processor for SineOscLFO {
-    fn process_control_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -62,10 +62,10 @@ node_constructor! {
 }
 
 impl Processor for BlSawOsc {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        sample_rate: Scalar,
+        signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -74,7 +74,7 @@ impl Processor for BlSawOsc {
 
         // algorithm courtesy of https://www.musicdsp.org/en/latest/Synthesis/12-bandlimited-waveforms.html
 
-        let pmax = 0.5 * sample_rate / freq.value();
+        let pmax = 0.5 * signal_rate.rate() / freq.value();
         let dc = -0.498 / pmax;
 
         self.p += self.dp;

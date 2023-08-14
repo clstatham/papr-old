@@ -2,7 +2,7 @@ use papr_proc_macro::node_constructor;
 
 use crate::Scalar;
 
-use super::{Processor, Signal};
+use super::{Processor, Signal, SignalRate};
 
 node_constructor! {
     pub struct Clock;
@@ -11,29 +11,10 @@ node_constructor! {
 }
 
 impl Processor for Clock {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: crate::Scalar,
-        inputs: &[super::Signal],
-        outputs: &mut [super::Signal],
-    ) {
-        let t = inputs[Self::input_idx("t").unwrap()];
-        let period = inputs[0];
-        let width = inputs[1];
-        if period.value() == 0.0 {
-            outputs[0] = Signal::new(0.0);
-        } else if t.value() % period.value() < period.value() * width.value() {
-            outputs[0] = Signal::new(1.0);
-        } else {
-            outputs[0] = Signal::new(0.0);
-        }
-    }
-
-    fn process_control_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _sample_rate: crate::Scalar,
+        _signal_rate: SignalRate,
         inputs: &[super::Signal],
         outputs: &mut [super::Signal],
     ) {
@@ -62,10 +43,10 @@ node_constructor! {
 }
 
 impl Processor for Delay {
-    fn process_audio_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        sample_rate: Scalar,
+        signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -78,7 +59,7 @@ impl Processor for Delay {
             self.delay_current + 0.00005 * (delay_desired_secs - self.delay_current);
         // self.delay_current = delay_desired_secs;
 
-        let sample_offset = self.delay_current * sample_rate;
+        let sample_offset = self.delay_current * signal_rate.rate();
 
         self.buf[self.write_head as usize] = inputs[0].value();
 

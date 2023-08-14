@@ -16,7 +16,7 @@ use crate::{
     dsp::{
         basic::{AudioToControl, ControlToAudio},
         graph_util::LetBinding,
-        Signal, SignalRate,
+        Signal,
     },
     graph::{Connection, Graph, Input, NodeName, Output},
     Scalar,
@@ -131,9 +131,9 @@ impl Token {
     pub fn unwrap_ident(self) -> ParsedIdent {
         if let Token::Ident(id) = self {
             if let Some(id) = id.strip_prefix('@') {
-                ParsedIdent(id.to_owned(), Some(SignalRate::Audio))
+                ParsedIdent(id.to_owned(), Some(ParsedSignalRate::Audio))
             } else if let Some(id) = id.strip_prefix('#') {
-                ParsedIdent(id.to_owned(), Some(SignalRate::Control))
+                ParsedIdent(id.to_owned(), Some(ParsedSignalRate::Control))
             } else {
                 ParsedIdent(id, None)
             }
@@ -352,8 +352,14 @@ pub fn string(inp: Tokens) -> IResult<Tokens, String> {
     )(inp)
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum ParsedSignalRate {
+    Audio,
+    Control,
+}
+
 #[derive(Debug, PartialEq, Clone)]
-pub struct ParsedIdent(String, Option<SignalRate>);
+pub struct ParsedIdent(String, Option<ParsedSignalRate>);
 
 pub fn ident(tokens: Tokens) -> IResult<Tokens, ParsedIdent> {
     map(
@@ -373,7 +379,7 @@ pub fn import_stmt(inp: Tokens) -> IResult<Tokens, ParsedImport> {
 #[derive(Debug, Clone)]
 pub enum ParsedCallee {
     ScriptDefined(ParsedIdent),
-    Builtin(BuiltinNode, Option<SignalRate>),
+    Builtin(BuiltinNode, Option<ParsedSignalRate>),
 }
 
 #[derive(Debug, Clone)]
@@ -634,7 +640,7 @@ use petgraph::prelude::*;
 use self::builtins::BuiltinNode;
 
 struct SolvedExpr {
-    rate: SignalRate,
+    rate: ParsedSignalRate,
     ag_idx: Option<(NodeIndex, Vec<usize>)>,
     cg_idx: Option<(NodeIndex, Vec<usize>)>,
 }
@@ -649,15 +655,11 @@ fn solve_expr(
 ) -> Result<SolvedExpr, String> {
     match expr {
         ParsedExpr::Constant(value) => {
-            let rate = graph_id.1.unwrap_or(SignalRate::Control);
-            let node = crate::dsp::basic::Constant::create_node(
-                &format!("{value}"),
-                rate,
-                buffer_len,
-                *value,
-            );
+            let rate = graph_id.1.unwrap_or(ParsedSignalRate::Control);
+            let node =
+                crate::dsp::basic::Constant::create_node(&format!("{value}"), buffer_len, *value);
             match rate {
-                SignalRate::Audio => {
+                ParsedSignalRate::Audio => {
                     let idx = super_ag.add_node(node);
                     Ok(SolvedExpr {
                         rate,
@@ -665,7 +667,7 @@ fn solve_expr(
                         cg_idx: None,
                     })
                 }
-                SignalRate::Control => {
+                ParsedSignalRate::Control => {
                     let idx = super_cg.add_node(node);
                     Ok(SolvedExpr {
                         rate,
@@ -679,7 +681,7 @@ fn solve_expr(
             #[allow(clippy::if_same_then_else)]
             let rate = id.1.or(graph_id.1).unwrap();
             match rate {
-                SignalRate::Audio => {
+                ParsedSignalRate::Audio => {
                     let ag_idx = super_ag.node_id_by_name(&id.0).ok_or(format!("Parsing error (graph `{}`): while parsing expr: audio graph has no node named `{}`", &graph_id.0, &id.0))?;
                     Ok(SolvedExpr {
                         rate,
@@ -687,7 +689,7 @@ fn solve_expr(
                         cg_idx: None,
                     })
                 }
-                SignalRate::Control => {
+                ParsedSignalRate::Control => {
                     let cg_idx = super_cg.node_id_by_name(&id.0).ok_or(format!("Parsing error (graph `{}`): while parsing expr: control graph has no node named `{}`", &graph_id.0, &id.0))?;
                     Ok(SolvedExpr {
                         rate,
@@ -703,44 +705,36 @@ fn solve_expr(
             // todo: give these nodes actual names
             let op = match infix_op {
                 ParsedInfixOp::Add => {
-                    crate::dsp::basic::Add::create_node("+", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Add::create_node("+", buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::Sub => {
-                    crate::dsp::basic::Sub::create_node("-", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Sub::create_node("-", buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::Mul => {
-                    crate::dsp::basic::Mul::create_node("*", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Mul::create_node("*", buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::Div => {
-                    crate::dsp::basic::Div::create_node("/", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Div::create_node("/", buffer_len, 0.0, 0.0)
                 }
-                ParsedInfixOp::Gt => {
-                    crate::dsp::basic::Gt::create_node(">", lhs.rate, buffer_len, 0.0, 0.0)
-                }
-                ParsedInfixOp::Lt => {
-                    crate::dsp::basic::Lt::create_node("<", lhs.rate, buffer_len, 0.0, 0.0)
-                }
-                ParsedInfixOp::Eq => {
-                    crate::dsp::basic::Eq::create_node("==", lhs.rate, buffer_len, 0.0, 0.0)
-                }
+                ParsedInfixOp::Gt => crate::dsp::basic::Gt::create_node(">", buffer_len, 0.0, 0.0),
+                ParsedInfixOp::Lt => crate::dsp::basic::Lt::create_node("<", buffer_len, 0.0, 0.0),
+                ParsedInfixOp::Eq => crate::dsp::basic::Eq::create_node("==", buffer_len, 0.0, 0.0),
                 ParsedInfixOp::Neq => {
-                    crate::dsp::basic::Div::create_node("!=", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Div::create_node("!=", buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::And => {
-                    crate::dsp::basic::And::create_node("&", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::And::create_node("&", buffer_len, 0.0, 0.0)
                 }
-                ParsedInfixOp::Or => {
-                    crate::dsp::basic::Or::create_node("|", lhs.rate, buffer_len, 0.0, 0.0)
-                }
+                ParsedInfixOp::Or => crate::dsp::basic::Or::create_node("|", buffer_len, 0.0, 0.0),
                 ParsedInfixOp::Xor => {
-                    crate::dsp::basic::Xor::create_node("^", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Xor::create_node("^", buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::Rem => {
-                    crate::dsp::basic::Rem::create_node("%", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Rem::create_node("%", buffer_len, 0.0, 0.0)
                 }
             };
             match (lhs.rate, rhs.rate) {
-                (SignalRate::Audio, SignalRate::Audio) => {
+                (ParsedSignalRate::Audio, ParsedSignalRate::Audio) => {
                     let a_idx = lhs.ag_idx.unwrap().0;
                     let b_idx = rhs.ag_idx.unwrap().0;
                     let op_idx = super_ag.add_node(op);
@@ -768,7 +762,7 @@ fn solve_expr(
                         cg_idx: None,
                     })
                 }
-                (SignalRate::Control, SignalRate::Control) => {
+                (ParsedSignalRate::Control, ParsedSignalRate::Control) => {
                     let a_idx = lhs.cg_idx.unwrap().0;
                     let b_idx = rhs.cg_idx.unwrap().0;
                     let op_idx = super_cg.add_node(op);
@@ -796,7 +790,7 @@ fn solve_expr(
                         cg_idx: Some((op_idx, vec![0])),
                     })
                 }
-                (SignalRate::Audio, SignalRate::Control) => {
+                (ParsedSignalRate::Audio, ParsedSignalRate::Control) => {
                     let a_idx_ag = lhs.ag_idx.unwrap().0;
                     let b_idx_cg = rhs.cg_idx.unwrap().0;
                     let op_idx = super_ag.add_node(op);
@@ -835,12 +829,12 @@ fn solve_expr(
                     );
 
                     Ok(SolvedExpr {
-                        rate: SignalRate::Audio,
+                        rate: ParsedSignalRate::Audio,
                         ag_idx: Some((op_idx, vec![0])),
                         cg_idx: None,
                     })
                 }
-                (SignalRate::Control, SignalRate::Audio) => {
+                (ParsedSignalRate::Control, ParsedSignalRate::Audio) => {
                     let a_idx_cg = lhs.cg_idx.unwrap().0;
                     let b_idx_ag = rhs.ag_idx.unwrap().0;
                     let op_idx = super_cg.add_node(op);
@@ -879,7 +873,7 @@ fn solve_expr(
                     );
 
                     Ok(SolvedExpr {
-                        rate: SignalRate::Control,
+                        rate: ParsedSignalRate::Control,
                         ag_idx: None,
                         cg_idx: Some((op_idx, vec![0])),
                     })
@@ -908,21 +902,13 @@ fn solve_expr(
                 ParsedCallee::Builtin(builtin, rate) => {
                     // todo: don't abuse Debug/format here
                     known_rate = rate.or(graph_id.1);
-                    let an = builtin.create_node(
-                        &format!("{:?}", builtin),
-                        SignalRate::Audio,
-                        buffer_len,
-                        creation_args,
-                    );
-                    let cn = builtin.create_node(
-                        &format!("{:?}", builtin),
-                        SignalRate::Control,
-                        buffer_len,
-                        creation_args,
-                    );
+                    let an =
+                        builtin.create_node(&format!("{:?}", builtin), buffer_len, creation_args);
+                    let cn =
+                        builtin.create_node(&format!("{:?}", builtin), buffer_len, creation_args);
                     n_outs = match known_rate {
-                        Some(SignalRate::Audio) => an.outputs.len(),
-                        Some(SignalRate::Control) => cn.outputs.len(),
+                        Some(ParsedSignalRate::Audio) => an.outputs.len(),
+                        Some(ParsedSignalRate::Control) => cn.outputs.len(),
                         _ => todo!(),
                     };
                     (an, cn)
@@ -949,7 +935,7 @@ fn solve_expr(
             'arg_iter: for (arg_id, arg) in solved_args.into_iter().enumerate() {
                 if let Some(known_rate) = known_rate {
                     match (arg.rate, known_rate) {
-                        (SignalRate::Control, SignalRate::Audio) => {
+                        (ParsedSignalRate::Control, ParsedSignalRate::Audio) => {
                             // insert auto-c2a
                             let (c2a_an, c2a_cn) = ControlToAudio::create_nodes(
                                 &format!("auto_c2a_{:?}_{}", ident, arg_id),
@@ -981,7 +967,7 @@ fn solve_expr(
 
                             continue 'arg_iter;
                         }
-                        (SignalRate::Audio, SignalRate::Control) => {
+                        (ParsedSignalRate::Audio, ParsedSignalRate::Control) => {
                             // insert auto-a2c
                             let (a2c_an, a2c_cn) = AudioToControl::create_nodes(
                                 &format!("auto_a2c_{:?}_{}", ident, arg_id),
@@ -1058,11 +1044,11 @@ fn solve_expr(
             let known_rate = known_rate.unwrap();
 
             let (ag_idx, cg_idx) = match known_rate {
-                SignalRate::Audio => {
+                ParsedSignalRate::Audio => {
                     // todo: remove called control node from supergraph
                     (Some((called_ag_idx, (0..n_outs).collect())), None)
                 }
-                SignalRate::Control => {
+                ParsedSignalRate::Control => {
                     // todo: remove called audio node from supergraph
                     (None, Some((called_cg_idx, (0..n_outs).collect())))
                 }
@@ -1099,18 +1085,18 @@ fn solve_graph(
             minimum: inp.minimum.map(Signal::new),
             maximum: inp.maximum.map(Signal::new),
             default: inp.default.map(Signal::new),
-            is_ui: graph.id.0 == "main" && inp.id.1 == Some(SignalRate::Control), // FIXME: hacky
+            is_ui: graph.id.0 == "main" && inp.id.1 == Some(ParsedSignalRate::Control), // FIXME: hacky
             implicit: false,
         };
         match inp.id.1 {
-            Some(SignalRate::Audio) => audio_inputs.push(input),
-            Some(SignalRate::Control) => control_inputs.push(input),
+            Some(ParsedSignalRate::Audio) => audio_inputs.push(input),
+            Some(ParsedSignalRate::Control) => control_inputs.push(input),
             None => {
                 // audio_inputs.push(input.clone());
                 // control_inputs.push(input);
                 match graph.id.1 {
-                    Some(SignalRate::Audio) => audio_inputs.push(input),
-                    Some(SignalRate::Control) => control_inputs.push(input),
+                    Some(ParsedSignalRate::Audio) => audio_inputs.push(input),
+                    Some(ParsedSignalRate::Control) => control_inputs.push(input),
                     None => {
                         return Err(format!(
                             "Parsing error (graph `{}`): couldn't determine signal rate of input `{}`",
@@ -1127,11 +1113,11 @@ fn solve_graph(
             name: out.0.to_owned(),
         };
         match out.1 {
-            Some(SignalRate::Audio) => audio_outputs.push(output),
-            Some(SignalRate::Control) => control_outputs.push(output),
+            Some(ParsedSignalRate::Audio) => audio_outputs.push(output),
+            Some(ParsedSignalRate::Control) => control_outputs.push(output),
             None => match graph.id.1 {
-                Some(SignalRate::Audio) => audio_outputs.push(output),
-                Some(SignalRate::Control) => control_outputs.push(output),
+                Some(ParsedSignalRate::Audio) => audio_outputs.push(output),
+                Some(ParsedSignalRate::Control) => control_outputs.push(output),
                 None => {
                     return Err(format!(
                         "Parsing error (graph `{}`): couldn't determine signal rate of output `{}`",
@@ -1144,14 +1130,12 @@ fn solve_graph(
 
     let mut ag = Graph::new(
         Some(NodeName::new(&id.0)),
-        SignalRate::Audio,
         buffer_len,
         audio_inputs,
         audio_outputs,
     );
     let mut cg = Graph::new(
         Some(NodeName::new(&id.0)),
-        SignalRate::Control,
         buffer_len,
         control_inputs,
         control_outputs,
@@ -1163,10 +1147,10 @@ fn solve_graph(
                 let mut lhs_nodes = vec![];
                 for to in stmt.lhs.iter() {
                     let rate = to.1.or(graph.id.1).unwrap();
-                    let node = LetBinding::create_node(&to.0, rate, buffer_len, 0.0);
+                    let node = LetBinding::create_node(&to.0, buffer_len, 0.0);
                     let idx = match rate {
-                        SignalRate::Audio => ag.add_node(node),
-                        SignalRate::Control => cg.add_node(node),
+                        ParsedSignalRate::Audio => ag.add_node(node),
+                        ParsedSignalRate::Control => cg.add_node(node),
                     };
                     lhs_nodes.push(idx);
                 }

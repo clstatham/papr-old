@@ -45,10 +45,10 @@ pub struct NoteIn {
 }
 
 impl Processor for NoteIn {
-    fn process_control_sample(
+    fn process_sample(
         &mut self,
         _buffer_idx: usize,
-        _sample_rate: Scalar,
+        _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
@@ -102,7 +102,6 @@ impl NoteIn {
 
         Arc::new(Node::new(
             NodeName::new(name),
-            SignalRate::Control,
             audio_buffer_len,
             vec![],
             (0..POLYPHONY)
