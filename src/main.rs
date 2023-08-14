@@ -35,6 +35,8 @@ struct Args {
     sample_rate: u64,
     #[arg(short, long, default_value_t = 1024)]
     buffer_len: u64,
+    #[arg(short, long, default_value_t = 0)]
+    midi_port: usize,
 }
 
 fn main() -> Result<(), eframe::Error> {
@@ -52,6 +54,7 @@ fn main() -> Result<(), eframe::Error> {
                 args.sample_rate as Scalar,
                 args.control_rate as Scalar,
                 args.buffer_len as usize,
+                args.midi_port,
             );
             if args.script_path.is_some() {
                 app.init();

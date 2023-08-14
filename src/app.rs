@@ -121,6 +121,7 @@ pub struct PaprApp {
     allowed_to_close: bool,
     show_close_confirmation: bool,
     status_text: String,
+    midi_port: usize,
 }
 
 impl PaprApp {
@@ -129,6 +130,7 @@ impl PaprApp {
         sample_rate: Scalar,
         control_rate: Scalar,
         audio_buffer_len: usize,
+        midi_port: usize,
     ) -> Self {
         Self {
             audio_cx: None,
@@ -145,6 +147,7 @@ impl PaprApp {
             allowed_to_close: false,
             show_close_confirmation: false,
             status_text: "Welcome to PAPR! Runtime is off.".into(),
+            midi_port,
         }
     }
 
@@ -206,7 +209,7 @@ impl PaprApp {
         }
 
         if self.midi_ctx.is_none() {
-            self.midi_ctx = Some(MidiContext::new("PAPR Midi In"));
+            self.midi_ctx = Some(MidiContext::new("PAPR Midi In", Some(self.midi_port)));
         } else {
             eprintln!("PaprApp::init(): midi context already initialized");
         }

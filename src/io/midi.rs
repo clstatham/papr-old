@@ -19,11 +19,21 @@ pub struct MidiContext {
 }
 
 impl MidiContext {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: &str, port: Option<usize>) -> Self {
         let mut midi_in = MidiInput::new(name).unwrap();
         midi_in.ignore(midir::Ignore::None);
         let in_ports = midi_in.ports();
-        let port = &in_ports[0];
+        println!("Available MIDI ports:");
+        for (i, port) in in_ports.iter().enumerate() {
+            println!(
+                "    [{i}] {}",
+                midi_in.port_name(port).unwrap_or("(unknown)".to_owned())
+            );
+        }
+        let port = port.unwrap_or(0);
+        println!("Selecting port [{port}]");
+        let port = &in_ports[port];
+
         let (tx, rx) = crossbeam_channel::unbounded();
         let _conn_in = midi_in
             .connect(
