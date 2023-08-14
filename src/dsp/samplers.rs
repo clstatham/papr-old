@@ -16,7 +16,7 @@ pub struct Sample {
 }
 
 impl Sample {
-    pub fn create_node(name: &str, audio_buffer_len: usize, sample_path: PathBuf) -> Arc<Node> {
+    pub fn create_node(name: &str, sample_path: PathBuf) -> Arc<Node> {
         let dec = creak::Decoder::open(sample_path).unwrap();
         let channels = dec.info().channels();
         let buf: Box<[Scalar]> = dec
@@ -29,7 +29,6 @@ impl Sample {
             .collect();
         Arc::new(Node::new(
             NodeName::new(name),
-            audio_buffer_len,
             vec![Input::new("seek", Some(Signal::new(0.0)))],
             vec![
                 Output {

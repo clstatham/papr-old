@@ -41,23 +41,20 @@ impl AudioContext {
         graph: &mut Graph,
         output: &mut [T],
         channels: usize,
-        buffer_len: usize,
         t: Scalar,
     ) where
         T: SizedSample + FromSample<Scalar>,
     {
-        if output.len() != buffer_len {
-            panic!("Buffer len mismatch: {} vs {}", output.len(), buffer_len);
-        }
+        let buffer_len = output.len() / channels;
         let mut out = BTreeMap::new();
         // for c in 0..channels {
         let dac0 = graph
             .node_id_by_name("dac0")
             .expect("Expected `Main` graph to have at least `dac0` for outputs");
-        let mut dac0_vec = vec![Signal::new(0.0); output.len() / channels];
+        let mut dac0_vec = vec![Signal::new(0.0); buffer_len];
         out.insert(dac0, &mut dac0_vec);
         // }
-        let ts = (0usize..(output.len() / channels))
+        let ts = (0usize..buffer_len)
             .map(|frame_idx| Signal::new(t as Scalar + frame_idx as Scalar / sample_rate))
             .collect::<Vec<_>>();
         let ins = BTreeMap::from_iter([(graph.node_id_by_name("t").unwrap(), &ts)]);
@@ -76,12 +73,7 @@ impl AudioContext {
         }
     }
 
-    pub fn run<T>(
-        &mut self,
-        mut graph: Graph,
-        config: cpal::StreamConfig,
-        buffer_len: usize,
-    ) -> Result<(), String>
+    pub fn run<T>(&mut self, mut graph: Graph, config: cpal::StreamConfig) -> Result<(), String>
     where
         T: SizedSample + FromSample<Scalar>,
     {
@@ -101,7 +93,6 @@ impl AudioContext {
                         &mut graph,
                         data,
                         channels,
-                        buffer_len,
                         sample_clock,
                     );
                 },
@@ -173,7 +164,7 @@ impl PaprApp {
         Some(())
     }
 
-    pub fn create_graphs(&mut self, audio_buffer_len: usize) -> Result<(), String> {
+    pub fn create_graphs(&mut self) -> Result<(), String> {
         let (audio, control) = crate::parser2::parse_main_script(
             &self.script_text,
             &self
@@ -181,7 +172,6 @@ impl PaprApp {
                 .as_ref()
                 .and_then(|p| p.parent())
                 .unwrap_or(current_dir().unwrap().as_path()),
-            audio_buffer_len,
         )?;
 
         for c_in_idx in control.digraph.node_indices() {
@@ -191,14 +181,14 @@ impl PaprApp {
 
         self.audio_graph = Some(audio);
         self.control_graph = Some(control);
-        self.status_text = "Graphs creation successful.".into();
+        self.status_text = "Graph creation successful.".into();
         Ok(())
     }
 
     pub fn init(&mut self) {
         if self.audio_cx.is_none() {
             #[cfg(target_os = "linux")]
-            let host = cpal::host_from_id(cpal::HostId::Jack)
+            let host = cpal::host_from_id(cpal::HostId::Alsa)
                 .expect("PaprApp::init(): no JACK host available");
             #[cfg(target_os = "windows")]
             let host = cpal::host_from_id(cpal::HostId::Wasapi)
@@ -245,7 +235,7 @@ impl PaprApp {
         println!("Output config: {:?}", config);
         println!("Control rate: {} Hz", self.control_rate);
 
-        self.create_graphs(self.audio_buffer_len)?;
+        self.create_graphs()?;
 
         let audio_graph = self
             .audio_graph
@@ -256,11 +246,10 @@ impl PaprApp {
             .take()
             .expect("PaprApp::spawn(): control graph not initialized");
 
-        audio_cx.run::<f32>(audio_graph, config, self.audio_buffer_len)?;
+        audio_cx.run::<f32>(audio_graph, config)?;
         self.audio_cx = Some(audio_cx);
         let t_idx = control_graph.node_id_by_name("t").unwrap();
         let control_rate = self.control_rate;
-        let buffer_len = self.audio_buffer_len;
         let (tx, mut rx) = tokio::sync::oneshot::channel();
         self.control_thread_shutdown = Some(tx);
         std::thread::Builder::new()
@@ -278,9 +267,9 @@ impl PaprApp {
                     control_graph.process_graph(
                         SignalRate::Control {
                             sample_rate: control_rate,
-                            buffer_len,
+                            buffer_len: 1,
                         },
-                        &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t); buffer_len])]),
+                        &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t); 1])]),
                         &mut BTreeMap::default(),
                     );
                     let time = Instant::now() - tik;

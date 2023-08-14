@@ -95,14 +95,13 @@ impl Processor for NoteIn {
 }
 
 impl NoteIn {
-    pub fn create_node(name: &str, audio_buffer_len: usize) -> Arc<Node> {
+    pub fn create_node(name: &str) -> Arc<Node> {
         let this = Box::new(RwLock::new(Self {
             notes: [None; POLYPHONY],
         }));
 
         Arc::new(Node::new(
             NodeName::new(name),
-            audio_buffer_len,
             vec![],
             (0..POLYPHONY)
                 .map(|i| Output {

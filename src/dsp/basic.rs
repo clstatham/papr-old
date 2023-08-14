@@ -23,14 +23,13 @@ pub struct DebugNode {
 }
 
 impl DebugNode {
-    pub fn create_node(name: &str, buffer_len: usize) -> Arc<Node> {
+    pub fn create_node(name: &str) -> Arc<Node> {
         let this = Box::new(RwLock::new(Self {
             name: name.to_string(),
         }));
 
         Arc::new(Node::new(
             NodeName::new(name),
-            buffer_len,
             vec![Input::new(
                 "input".to_owned().as_ref(),
                 Some(Signal::new(0.0)),
@@ -101,12 +100,7 @@ impl Processor for UiInput {
 }
 
 impl UiInput {
-    pub fn create_node(
-        name: &str,
-        default: Scalar,
-        audio_buffer_len: usize,
-        widget: UiWidget,
-    ) -> Arc<Node> {
+    pub fn create_node(name: &str, default: Scalar, widget: UiWidget) -> Arc<Node> {
         let this = Box::new(RwLock::new(UiInput {
             name: name.to_string(),
             value: default,
@@ -115,7 +109,6 @@ impl UiInput {
 
         Arc::new(Node::new(
             name.to_string().into(),
-            audio_buffer_len,
             vec![],
             vec![Output {
                 name: name.to_string(),
@@ -130,12 +123,11 @@ pub struct Constant {
 }
 
 impl Constant {
-    pub fn create_node(name: &str, audio_buffer_len: usize, value: Scalar) -> Arc<Node> {
+    pub fn create_node(name: &str, value: Scalar) -> Arc<Node> {
         let this = Box::new(RwLock::new(Self { value }));
 
         Arc::new(Node::new(
             NodeName::new(name),
-            audio_buffer_len,
             vec![],
             vec![Output {
                 name: "out".to_owned(),
@@ -326,18 +318,16 @@ struct ControlToAudioRx {
 pub struct ControlToAudio;
 
 impl ControlToAudio {
-    pub fn create_nodes(name: &str, buffer_len: usize) -> (Arc<Node>, Arc<Node>) {
+    pub fn create_nodes(name: &str) -> (Arc<Node>, Arc<Node>) {
         let (tx, rx) = tokio::sync::watch::channel(0.0);
         let cn = Arc::new(Node::new(
             name.into(),
-            buffer_len,
             vec![Input::new("c", Some(Signal::new(0.0)))],
             vec![],
             ProcessorType::Builtin(Box::new(RwLock::new(ControlToAudioTx { tx: Some(tx) }))),
         ));
         let an = Arc::new(Node::new(
             name.into(),
-            buffer_len,
             vec![],
             vec![Output {
                 name: "a".to_owned(),
@@ -386,11 +376,10 @@ struct AudioToControlRx {
 pub struct AudioToControl;
 
 impl AudioToControl {
-    pub fn create_nodes(name: &str, buffer_len: usize) -> (Arc<Node>, Arc<Node>) {
+    pub fn create_nodes(name: &str) -> (Arc<Node>, Arc<Node>) {
         let (tx, rx) = tokio::sync::watch::channel(0.0);
         let cn = Arc::new(Node::new(
             name.into(),
-            buffer_len,
             vec![],
             vec![Output {
                 name: "c".to_owned(),
@@ -402,7 +391,6 @@ impl AudioToControl {
         ));
         let an = Arc::new(Node::new(
             name.into(),
-            buffer_len,
             vec![Input::new("a", Some(Signal::new(0.0)))],
             vec![],
             ProcessorType::Builtin(Box::new(RwLock::new(AudioToControlTx { tx: Some(tx) }))),

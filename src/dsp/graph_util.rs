@@ -12,10 +12,9 @@ use super::{Processor, Signal, SignalRate};
 pub struct GraphInput;
 
 impl GraphInput {
-    pub fn create_node(name: &str, audio_buffer_len: usize, for_input: Input) -> Arc<Node> {
+    pub fn create_node(name: &str, for_input: Input) -> Arc<Node> {
         Arc::new(Node::new(
             NodeName::new(name),
-            audio_buffer_len,
             vec![for_input],
             vec![Output {
                 name: "out".to_owned(),

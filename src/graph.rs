@@ -170,8 +170,6 @@ where
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
     pub processor: ProcessorType,
-    inputs_cache: RwLock<Vec<Vec<Signal>>>,
-    outputs_cache: RwLock<Vec<Vec<Signal>>>,
 }
 
 impl std::fmt::Debug for Node
@@ -189,7 +187,6 @@ where
 {
     pub fn new(
         name: NodeName,
-        buffer_len: usize,
         mut inputs: Vec<Input>,
         outputs: Vec<Output>,
         processor: ProcessorType,
@@ -201,18 +198,6 @@ where
         }
         Self {
             name,
-            inputs_cache: RwLock::new(
-                inputs
-                    .iter()
-                    .map(|v| vec![v.default.unwrap_or(Signal::new(0.0)); buffer_len])
-                    .collect(),
-            ),
-            outputs_cache: RwLock::new(
-                outputs
-                    .iter()
-                    .map(|_| vec![Signal::new(0.0); buffer_len])
-                    .collect(),
-            ),
             inputs,
             outputs,
             processor,
@@ -222,7 +207,6 @@ where
     pub fn from_graph(graph: Graph) -> Self {
         Self::new(
             graph.name.clone(),
-            graph.signaltype_buffer_len,
             graph
                 .input_node_indices
                 .iter()
@@ -260,18 +244,11 @@ where
     }
 }
 
-impl Node {
-    pub fn cached_input(&self, idx: usize) -> Option<Signal> {
-        self.inputs_cache.read().unwrap().get(idx).map(|inp| inp[0])
-    }
-}
-
 pub struct Graph
 where
     Self: Processor,
 {
     pub name: NodeName,
-    signaltype_buffer_len: usize,
     pub digraph: DiGraph<Arc<Node>, Connection>,
     node_indices_by_name: BTreeMap<String, NodeIndex>,
     pub input_node_indices: Vec<NodeIndex>,
@@ -280,12 +257,7 @@ where
 }
 
 impl Graph {
-    pub fn new(
-        name: Option<NodeName>,
-        buffer_len: usize,
-        mut inputs: Vec<Input>,
-        outputs: Vec<Output>,
-    ) -> Graph {
+    pub fn new(name: Option<NodeName>, mut inputs: Vec<Input>, outputs: Vec<Output>) -> Graph {
         let t = Input {
             name: "t".to_owned(),
             minimum: None,
@@ -297,7 +269,6 @@ impl Graph {
         inputs.push(t);
         let mut this = Self {
             name: name.unwrap_or(NodeName::new("graph")),
-            signaltype_buffer_len: buffer_len,
             digraph: DiGraph::new(),
             node_indices_by_name: BTreeMap::default(),
             input_node_indices: Vec::default(),
@@ -306,13 +277,13 @@ impl Graph {
         };
 
         for inp in inputs {
-            let an = GraphInput::create_node(&inp.name, buffer_len, inp.clone());
+            let an = GraphInput::create_node(&inp.name, inp.clone());
             let idx = this.add_node(an);
             this.node_indices_by_name.insert(inp.name.to_owned(), idx);
             this.input_node_indices.push(idx);
         }
         for out in outputs {
-            let node = GraphOutput::create_node(&out.name, buffer_len, 0.0);
+            let node = GraphOutput::create_node(&out.name, 0.0);
             let idx = this.add_node(node);
             this.node_indices_by_name.insert(out.name.to_owned(), idx);
             this.output_node_indices.push(idx);
@@ -423,18 +394,18 @@ where
             return;
         }
 
-        // copy the provided input values into each input node's input cache
-        for (inp_idx, value) in inputs.iter() {
-            assign!(
-                self.digraph[*inp_idx]
-                    .inputs_cache
-                    .write()
-                    .unwrap()
-                    .get_mut(0)
-                    .unwrap(),
-                value
-            );
+        let mut inputs_cache = BTreeMap::default();
+        for (id, inp) in inputs {
+            let inps = inputs_cache.entry(*id).or_insert(vec![
+                vec![
+                    Signal::new(0.0);
+                    signal_rate.buffer_len()
+                ];
+                self.digraph[*id].inputs.len()
+            ]);
+            assign!(inps[0], inp);
         }
+        let mut outputs_cache = BTreeMap::default();
 
         // walk the BFS...
         for layer in self.partitions.clone().iter() {
@@ -444,23 +415,41 @@ where
                 // - copy them to the input cache of the currently visited node
                 for edge in self.digraph.edges_directed(node_id, Direction::Incoming) {
                     let out = {
-                        &self.digraph[edge.source()].outputs_cache.read().unwrap()
-                            [edge.weight().source_output]
+                        outputs_cache.entry(edge.source()).or_insert(vec![
+                            vec![
+                                Signal::new(0.0);
+                                signal_rate
+                                    .buffer_len()
+                            ];
+                            self.digraph
+                                [edge.source()]
+                            .outputs
+                            .len()
+                        ])
                     };
                     assign!(
-                        self.digraph[node_id]
-                            .inputs_cache
-                            .write()
-                            .unwrap()
-                            .get_mut(edge.weight().sink_input)
-                            .unwrap(),
-                        out
+                        inputs_cache.entry(node_id).or_insert(vec![
+                            vec![
+                                Signal::new(0.0);
+                                signal_rate.buffer_len()
+                            ];
+                            self.digraph[node_id]
+                                .inputs
+                                .len()
+                        ])[edge.weight().sink_input],
+                        &out[edge.weight().source_output]
                     );
                 }
 
                 // create a copy of the inputs from the cache (necessary because we mutably borrow `self` in the next step)
-                let in_cache = self.digraph[node_id].inputs_cache.read().unwrap();
-                let mut inps = in_cache.iter().cloned().collect::<Vec<_>>();
+                let inps =
+                    inputs_cache.entry(node_id).or_insert(vec![
+                        vec![
+                            Signal::new(0.0);
+                            signal_rate.buffer_len()
+                        ];
+                        self.digraph[node_id].inputs.len()
+                    ]);
 
                 // manually copy over `t` since it's implicit
                 assign!(
@@ -468,27 +457,31 @@ where
                     inputs[&self.node_id_by_name("t").unwrap()]
                 );
 
-                let out_cache = { self.digraph[node_id].outputs_cache.read().unwrap().clone() };
-                let mut outs = out_cache
-                    .iter()
-                    .map(|v| vec![Signal::new(0.0); v.len()])
-                    .collect::<Vec<_>>();
+                // let out_cache = { self.digraph[node_id].outputs_cache.read().unwrap().clone() };
+                let outs =
+                    outputs_cache.entry(node_id).or_insert(vec![
+                        vec![
+                            Signal::new(0.0);
+                            signal_rate.buffer_len()
+                        ];
+                        self.digraph[node_id].outputs.len()
+                    ]);
 
                 // run the processing logic for this node, which will store its results directly in our output cache
                 self.digraph[node_id]
                     .processor
-                    .process_buffer(signal_rate, &inps, &mut outs);
+                    .process_buffer(signal_rate, inps, outs);
 
-                let mut out_cache = self.digraph[node_id].outputs_cache.write().unwrap();
-                for (i, out) in outs.into_iter().enumerate() {
-                    out_cache[i].copy_from_slice(&out);
-                }
+                // let out_cache = outputs_cache.get_mut(&node_id).unwrap();
+                // for (i, out) in outs.into_iter().enumerate() {
+                //     out_cache[i].copy_from_slice(&out);
+                // }
             });
         }
 
         // copy the cached (and now updated) output values into the mutable passed outputs
         for (out_name, out) in outputs.iter_mut() {
-            out.copy_from_slice(&self.digraph[*out_name].outputs_cache.read().unwrap()[0]);
+            out.copy_from_slice(&outputs_cache[out_name][0]);
         }
     }
 
