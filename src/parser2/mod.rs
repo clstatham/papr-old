@@ -396,11 +396,19 @@ impl ParsedCreationArg {
             panic!("expected creation argument to be a string, got {:?}", self);
         }
     }
+
+    pub fn unwrap_scalar(self) -> Scalar {
+        if let Self::Scalar(s) = self {
+            s
+        } else {
+            panic!("expected creation argument to be a scalar, got {:?}", self);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ParsedCall {
-    ident: ParsedCallee,
+    callee: ParsedCallee,
     creation_args: Vec<ParsedCreationArg>,
     args: Vec<ParsedExpr>,
 }
@@ -422,13 +430,13 @@ pub fn call(inp: Tokens) -> IResult<Tokens, ParsedCall> {
         |(ident, creation_args, args)| {
             if let Some(builtin) = BuiltinNode::try_from_ident(&ident) {
                 ParsedCall {
-                    ident: ParsedCallee::Builtin(builtin, ident.1),
+                    callee: ParsedCallee::Builtin(builtin, ident.1),
                     creation_args: creation_args.unwrap_or(vec![]),
                     args,
                 }
             } else {
                 ParsedCall {
-                    ident: ParsedCallee::ScriptDefined(ident),
+                    callee: ParsedCallee::ScriptDefined(ident),
                     creation_args: creation_args.unwrap_or(vec![]),
                     args,
                 }
@@ -652,6 +660,7 @@ fn solve_expr(
     super_cg: &mut Graph,
     known_graphs: &mut HashMap<String, ParsedGraph>,
     buffer_len: usize,
+    lhs_ident: Option<&ParsedIdent>,
 ) -> Result<SolvedExpr, String> {
     match expr {
         ParsedExpr::Constant(value) => {
@@ -705,8 +714,24 @@ fn solve_expr(
             }
         }
         ParsedExpr::Infix(InfixExpr { lhs, infix_op, rhs }) => {
-            let lhs = solve_expr(graph_id, lhs, super_ag, super_cg, known_graphs, buffer_len)?;
-            let rhs = solve_expr(graph_id, rhs, super_ag, super_cg, known_graphs, buffer_len)?;
+            let lhs = solve_expr(
+                graph_id,
+                lhs,
+                super_ag,
+                super_cg,
+                known_graphs,
+                buffer_len,
+                None,
+            )?;
+            let rhs = solve_expr(
+                graph_id,
+                rhs,
+                super_ag,
+                super_cg,
+                known_graphs,
+                buffer_len,
+                None,
+            )?;
             // todo: give these nodes actual names
             let op = match infix_op {
                 ParsedInfixOp::Add => {
@@ -886,13 +911,13 @@ fn solve_expr(
             }
         }
         ParsedExpr::Call(ParsedCall {
-            ident,
+            callee,
             creation_args,
             args,
         }) => {
             let mut known_rate;
             let n_outs;
-            let (called_an, called_cn) = match ident {
+            let (called_an, called_cn) = match callee {
                 ParsedCallee::ScriptDefined(ident) => {
                     known_rate = ident.1;
                     let mut graph = known_graphs.get(&ident.0).ok_or(format!(
@@ -907,10 +932,11 @@ fn solve_expr(
                 ParsedCallee::Builtin(builtin, rate) => {
                     // todo: don't abuse Debug/format here
                     known_rate = rate.or(graph_id.1);
-                    let an =
-                        builtin.create_node(&format!("{:?}", builtin), buffer_len, creation_args);
-                    let cn =
-                        builtin.create_node(&format!("{:?}", builtin), buffer_len, creation_args);
+                    let lhs_ident = lhs_ident
+                        .map(|id| id.0.clone())
+                        .unwrap_or(format!("{:?}", builtin));
+                    let an = builtin.create_node(&lhs_ident, buffer_len, creation_args);
+                    let cn = builtin.create_node(&lhs_ident, buffer_len, creation_args);
                     n_outs = match known_rate {
                         Some(ParsedSignalRate::Audio) => an.outputs.len(),
                         Some(ParsedSignalRate::Control) => cn.outputs.len(),
@@ -929,6 +955,7 @@ fn solve_expr(
                     super_cg,
                     known_graphs,
                     buffer_len,
+                    None,
                 )?);
             }
 
@@ -943,7 +970,7 @@ fn solve_expr(
                         (ParsedSignalRate::Control, ParsedSignalRate::Audio) => {
                             // insert auto-c2a
                             let (c2a_an, c2a_cn) = ControlToAudio::create_nodes(
-                                &format!("auto_c2a_{:?}_{}", ident, arg_id),
+                                &format!("auto_c2a_{:?}_{}", callee, arg_id),
                                 buffer_len,
                             );
                             let c2a_an = super_ag.add_node(c2a_an);
@@ -975,7 +1002,7 @@ fn solve_expr(
                         (ParsedSignalRate::Audio, ParsedSignalRate::Control) => {
                             // insert auto-a2c
                             let (a2c_an, a2c_cn) = AudioToControl::create_nodes(
-                                &format!("auto_a2c_{:?}_{}", ident, arg_id),
+                                &format!("auto_a2c_{:?}_{}", callee, arg_id),
                                 buffer_len,
                             );
                             let a2c_an = super_ag.add_node(a2c_an);
@@ -1166,7 +1193,20 @@ fn solve_graph(
                     };
                     lhs_nodes.push(idx);
                 }
-                let rhs = solve_expr(id, &stmt.rhs, &mut ag, &mut cg, known_graphs, buffer_len)?;
+                let lhs_ident = if stmt.lhs.len() == 1 {
+                    Some(&stmt.lhs[0])
+                } else {
+                    None
+                };
+                let rhs = solve_expr(
+                    id,
+                    &stmt.rhs,
+                    &mut ag,
+                    &mut cg,
+                    known_graphs,
+                    buffer_len,
+                    lhs_ident,
+                )?;
                 assert!(
                     !(rhs.ag_idx.is_some() && rhs.cg_idx.is_some()),
                     "todo: exprs using both graphs"
@@ -1206,7 +1246,15 @@ fn solve_graph(
                 }
             }
             ParsedStatement::Connection(conn) => {
-                let rhs = solve_expr(id, &conn.rhs, &mut ag, &mut cg, known_graphs, buffer_len)?;
+                let rhs = solve_expr(
+                    id,
+                    &conn.rhs,
+                    &mut ag,
+                    &mut cg,
+                    known_graphs,
+                    buffer_len,
+                    None,
+                )?;
                 assert!(
                     !(rhs.ag_idx.is_some() && rhs.cg_idx.is_some()),
                     "todo: exprs using both graphs"

@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use eframe::egui::{Slider, Ui};
+use eframe::egui::{Button, Slider, Ui};
 use papr_proc_macro::node_constructor;
 
 use crate::{
@@ -57,11 +57,15 @@ impl Processor for DebugNode {
     }
 }
 
+pub enum UiWidget {
+    Slider { minimum: Scalar, maximum: Scalar },
+    Button,
+}
+
 pub struct UiInput {
     pub name: String,
-    pub minimum: Signal,
-    pub maximum: Signal,
-    pub value: Signal,
+    pub value: Scalar,
+    pub widget: UiWidget,
 }
 
 impl Processor for UiInput {
@@ -72,36 +76,49 @@ impl Processor for UiInput {
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        outputs[0] = self.value;
+        outputs[0] = Signal::new(self.value);
     }
 
     fn ui_update(&mut self, ui: &mut Ui) {
-        let mut val = self.value.value();
-        ui.add(
-            Slider::new(&mut val, self.minimum.value()..=self.maximum.value())
-                .text(&self.name)
-                .step_by(0.0001),
-        );
-        self.value = Signal::new(val);
+        let mut val = self.value;
+        match self.widget {
+            UiWidget::Slider { minimum, maximum } => {
+                ui.add(
+                    Slider::new(&mut val, minimum..=maximum)
+                        .text(&self.name)
+                        .step_by(0.0001),
+                );
+            }
+            UiWidget::Button => {
+                if ui.add(Button::new(&self.name)).clicked() {
+                    val = if val > 0.0 { 0.0 } else { 1.0 };
+                }
+            }
+        }
+
+        self.value = val;
     }
 }
 
 impl UiInput {
-    pub fn create_node(for_input: Input, audio_buffer_len: usize) -> Arc<Node> {
-        let value = for_input.default.unwrap();
+    pub fn create_node(
+        name: &str,
+        default: Scalar,
+        audio_buffer_len: usize,
+        widget: UiWidget,
+    ) -> Arc<Node> {
         let this = Box::new(RwLock::new(UiInput {
-            maximum: for_input.maximum.unwrap(),
-            minimum: for_input.minimum.unwrap(),
-            name: for_input.name.clone(),
-            value,
+            name: name.to_string(),
+            value: default,
+            widget,
         }));
 
         Arc::new(Node::new(
-            for_input.name.clone().into(),
+            name.to_string().into(),
             audio_buffer_len,
             vec![],
             vec![Output {
-                name: for_input.name.clone(),
+                name: name.to_string(),
             }],
             ProcessorType::Builtin(this),
         ))

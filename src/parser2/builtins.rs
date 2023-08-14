@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::{dsp::generators::BL_SQUARE_MAX_COEFF, graph::Node};
+use crate::{
+    dsp::{basic::UiWidget, generators::BL_SQUARE_MAX_COEFF, Signal},
+    graph::{Input, Node},
+};
 
 use super::{ParsedCreationArg, ParsedIdent};
 
@@ -29,7 +32,10 @@ pub enum BuiltinNode {
     If,
     Not,
     Sample,
-    // OscReceiver,
+
+    // UI nodes
+    Slider,
+    Button,
 }
 
 impl BuiltinNode {
@@ -58,6 +64,10 @@ impl BuiltinNode {
             "If" => Some(BuiltinNode::If),
             "Not" => Some(BuiltinNode::Not),
             "Sample" => Some(BuiltinNode::Sample),
+
+            // UI nodes
+            "Slider" => Some(BuiltinNode::Slider),
+            "Button" => Some(BuiltinNode::Button),
             // "oscrecv" => BuiltinNode::OscReceiver),
             _ => None,
         }
@@ -97,7 +107,14 @@ impl BuiltinNode {
                 1.0,
                 440.0,
             ),
-            Self::BlSquareOsc => crate::dsp::generators::BlSquareOsc::create_node(name, audio_buffer_len, [0.0; BL_SQUARE_MAX_COEFF], 0.0, 440.0, 0.5),
+            Self::BlSquareOsc => crate::dsp::generators::BlSquareOsc::create_node(
+                name,
+                audio_buffer_len,
+                [0.0; BL_SQUARE_MAX_COEFF],
+                0.0,
+                440.0,
+                0.5,
+            ),
             Self::MidiToFreq => {
                 crate::dsp::midi::MidiToFreq::create_node(name, audio_buffer_len, 0.0)
             }
@@ -122,27 +139,35 @@ impl BuiltinNode {
             Self::Var => {
                 crate::dsp::graph_util::Var::create_node(name, audio_buffer_len, 0.0, 0.0, 0.0)
             }
-            Self::Max => {
-                crate::dsp::basic::Max::create_node(name, audio_buffer_len, 0.0, 0.0)
-            }
-            Self::Min => {
-                crate::dsp::basic::Min::create_node(name, audio_buffer_len, 0.0, 0.0)
-            }
+            Self::Max => crate::dsp::basic::Max::create_node(name, audio_buffer_len, 0.0, 0.0),
+            Self::Min => crate::dsp::basic::Min::create_node(name, audio_buffer_len, 0.0, 0.0),
             Self::Clip => {
                 crate::dsp::basic::Clip::create_node(name, audio_buffer_len, 0.0, 0.0, 0.0)
             }
-            Self::If => {
-                crate::dsp::basic::If::create_node(name, audio_buffer_len, 0.0, 0.0, 0.0)
-            }
-            Self::Sample => {
-                crate::dsp::samplers::Sample::create_node(name, audio_buffer_len, creation_args[0].clone().unwrap_string().into())
-            }
-            // Self::OscReceiver => crate::io::osc::OscReceiver::create_node(
-            //     name,
-            //     audio_buffer_len,
-            //     57110,
-            //     "127.0.0.1:9001",
-            // ),
+            Self::If => crate::dsp::basic::If::create_node(name, audio_buffer_len, 0.0, 0.0, 0.0),
+            Self::Sample => crate::dsp::samplers::Sample::create_node(
+                name,
+                audio_buffer_len,
+                creation_args[0].clone().unwrap_string().into(),
+            ),
+
+            // UI nodes
+            Self::Slider => crate::dsp::basic::UiInput::create_node(
+                name,
+                creation_args[2].clone().unwrap_scalar(),
+                audio_buffer_len,
+                UiWidget::Slider {
+                    minimum: creation_args[0].clone().unwrap_scalar(),
+                    maximum: creation_args[1].clone().unwrap_scalar(),
+                },
+            ),
+
+            Self::Button => crate::dsp::basic::UiInput::create_node(
+                name,
+                creation_args[0].clone().unwrap_scalar(),
+                audio_buffer_len,
+                UiWidget::Button,
+            ),
         }
     }
 }

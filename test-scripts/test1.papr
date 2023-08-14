@@ -2,13 +2,13 @@ import "oscs.papr"
 import "envs.papr"
 
 graph Main {
-    |
-        #fm_amt(0:1) = 1.0
-        #fm_mul(0.25:8.0) = 1.0
-        #decay0(0.1:2.0) = 1.0
-        #decay1(0.1:2.0) = 1.0
-    | -> |@dac0|
+    || -> |@dac0|
     ~ {
+        let #fm_amt = #Slider<0 1 1.0>();
+        let #fm_mul = #Slider<0.25 8 1.0>();
+        let #decay0 = #Slider<0.1 2.0 1.0>();
+        let #decay1 = #Slider<0.1 2.0 1.0>();
+
         let [#pitch0 #vel0] = #NoteIn();
         let #denv0 = #Denv(#vel0 #decay0);
         let #denv1 = #Denv(#vel0 #decay1);

@@ -24,7 +24,10 @@ use eframe::{
 use syntect::parsing::SyntaxDefinition;
 
 use crate::{
-    dsp::{basic::UiInput, Signal, SignalRate},
+    dsp::{
+        basic::{UiInput, UiWidget},
+        Signal, SignalRate,
+    },
     graph::{Connection, Graph, Node},
     io::midi::MidiContext,
     Scalar,
@@ -119,7 +122,7 @@ pub struct PaprApp {
     audio_cx: Option<AudioContext>,
     audio_graph: Option<Graph>,
     control_graph: Option<Graph>,
-    ui_control_inputs: Vec<Arc<Node>>,
+    control_node_refs: Vec<Arc<Node>>,
     sample_rate: Scalar,
     control_rate: Scalar,
     audio_buffer_len: usize,
@@ -143,7 +146,7 @@ impl PaprApp {
             audio_cx: None,
             audio_graph: None,
             control_graph: None,
-            ui_control_inputs: Vec::new(),
+            control_node_refs: Vec::new(),
             control_rate,
             sample_rate,
             audio_buffer_len,
@@ -174,7 +177,7 @@ impl PaprApp {
     }
 
     pub fn create_graphs(&mut self, audio_buffer_len: usize) -> Result<(), String> {
-        let (audio, mut control) = crate::parser2::parse_main_script(
+        let (audio, control) = crate::parser2::parse_main_script(
             &self.script_text,
             &self
                 .script_path
@@ -184,21 +187,9 @@ impl PaprApp {
             audio_buffer_len,
         )?;
 
-        for c_in_idx in control.input_node_indices.clone().iter().copied() {
+        for c_in_idx in control.digraph.node_indices() {
             let c_in = &control.digraph[c_in_idx];
-            if !c_in.inputs[0].implicit {
-                let node = UiInput::create_node(c_in.inputs[0].clone(), audio_buffer_len);
-                self.ui_control_inputs.push(node.clone());
-                let c_in_ui_idx = control.add_node(node);
-                control.add_edge(
-                    c_in_ui_idx,
-                    c_in_idx,
-                    Connection {
-                        source_output: 0,
-                        sink_input: 0,
-                    },
-                );
-            }
+            self.control_node_refs.push(c_in.clone());
         }
 
         self.audio_graph = Some(audio);
@@ -310,7 +301,7 @@ impl PaprApp {
                 .map_err(|_| "Error shutting down control rate thread".to_owned())?;
             std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
         }
-        self.ui_control_inputs.clear();
+        self.control_node_refs.clear();
         self.init();
         // self.script_path = None;
         self.spawn()
@@ -445,7 +436,7 @@ impl eframe::App for PaprApp {
                             tx.send(()).unwrap();
                             std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
                         }
-                        self.ui_control_inputs.clear();
+                        self.control_node_refs.clear();
                         self.init();
                         self.load_script_file();
                         self.spawn()
@@ -460,8 +451,8 @@ impl eframe::App for PaprApp {
         });
 
         SidePanel::left("inputs").show(ctx, |ui| {
-            for inp in self.ui_control_inputs.iter() {
-                inp.processor.ui_update(ui);
+            for node in self.control_node_refs.iter() {
+                node.processor.ui_update(ui);
             }
         });
 
