@@ -19,7 +19,7 @@ graph main {
 }
 ```
 
-Now open a terminal and run: `papr ./hello.papr`
+Save it as `hello.papr`. Now open a terminal and run: `papr ./hello.papr`
 
 You should hear a sine tone!
 
