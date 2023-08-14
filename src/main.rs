@@ -55,7 +55,6 @@ fn main() {
             if args.script_path.is_some() {
                 app.init();
                 app.load_script_file();
-                app.spawn();
             }
 
             Box::new(app)

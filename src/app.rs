@@ -123,6 +123,7 @@ pub struct PaprApp {
     control_thread_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
     allowed_to_close: bool,
     show_close_confirmation: bool,
+    status_text: String,
 }
 
 impl PaprApp {
@@ -147,6 +148,7 @@ impl PaprApp {
             control_thread_shutdown: None,
             allowed_to_close: false,
             show_close_confirmation: false,
+            status_text: "Welcome to PAPR! Runtime is off.".into(),
         }
     }
 
@@ -165,7 +167,7 @@ impl PaprApp {
         write!(file, "{}", &self.script_text).unwrap();
     }
 
-    pub fn create_graphs(&mut self, audio_buffer_len: usize) {
+    pub fn create_graphs(&mut self, audio_buffer_len: usize) -> Result<(), String> {
         let (audio, mut control) = crate::parser2::parse_main_script(
             &self.script_text,
             &self
@@ -174,8 +176,7 @@ impl PaprApp {
                 .map(|p| p.parent().unwrap())
                 .unwrap_or(current_dir().unwrap().as_path()),
             audio_buffer_len,
-        )
-        .unwrap();
+        )?;
 
         for c_in_idx in control.input_node_indices.clone().iter().copied() {
             let c_in = &control.digraph[c_in_idx];
@@ -196,6 +197,8 @@ impl PaprApp {
 
         self.audio_graph = Some(audio);
         self.control_graph = Some(control);
+        self.status_text = "Graphs creation successful.".into();
+        Ok(())
     }
 
     pub fn init(&mut self) {
@@ -230,9 +233,11 @@ impl PaprApp {
         } else {
             eprintln!("PaprApp::init(): tokio runtime already initialized");
         }
+
+        self.status_text = "Initialization successful.".into();
     }
 
-    pub fn spawn(&mut self) {
+    pub fn spawn(&mut self) -> Result<(), String> {
         let mut audio_cx = self
             .audio_cx
             .take()
@@ -247,7 +252,7 @@ impl PaprApp {
         println!("Output config: {:?}", config);
         println!("Control rate: {} Hz", self.control_rate);
 
-        self.create_graphs(self.audio_buffer_len);
+        self.create_graphs(self.audio_buffer_len)?;
 
         let audio_graph = self
             .audio_graph
@@ -294,9 +299,11 @@ impl PaprApp {
                 }
             })
             .expect("PaprApp::spawn(): error spawning control rate thread");
+        self.status_text = "Runtime is running.".into();
+        Ok(())
     }
 
-    fn reload(&mut self) {
+    fn reload(&mut self) -> Result<(), String> {
         if let Some(tx) = self.control_thread_shutdown.take() {
             tx.send(()).unwrap();
             std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
@@ -304,7 +311,7 @@ impl PaprApp {
         self.ui_control_inputs.clear();
         self.init();
         // self.script_path = None;
-        self.spawn();
+        self.spawn()
     }
 
     fn panic(&mut self) {
@@ -316,6 +323,7 @@ impl PaprApp {
         if let Some(tx) = self.control_thread_shutdown.take() {
             tx.send(()).unwrap();
         }
+        self.status_text = "Runtime stopped.".into();
     }
 }
 
@@ -356,11 +364,13 @@ impl eframe::App for PaprApp {
         }
         ctx.input(|i| {
             if i.key_pressed(Key::F5) {
-                self.reload();
+                self.reload()
+                    .unwrap_or_else(|e| self.status_text = format!("Failed to reload: {e}"));
             }
             if i.modifiers.ctrl {
                 if i.key_pressed(Key::Enter) {
-                    self.reload();
+                    self.reload()
+                        .unwrap_or_else(|e| self.status_text = format!("Failed to reload: {e}"));
                 }
                 if i.key_pressed(Key::S) {
                     if self.script_path.is_some() {
@@ -383,17 +393,20 @@ impl eframe::App for PaprApp {
                 .unwrap_or("(untitled)")
         ));
         TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            if ui
-                .add_sized(
-                    (80.0, 40.0),
-                    Button::new(RichText::new("PANIC").color(Color32::BLACK).size(20.0))
-                        .fill(Color32::YELLOW)
-                        .stroke(Stroke::new(1.0, Color32::BLACK)),
-                )
-                .clicked()
-            {
-                self.panic();
-            }
+            ui.horizontal(|ui| {
+                if ui
+                    .add_sized(
+                        (80.0, 40.0),
+                        Button::new(RichText::new("PANIC").color(Color32::BLACK).size(20.0))
+                            .fill(Color32::YELLOW)
+                            .stroke(Stroke::new(1.0, Color32::BLACK)),
+                    )
+                    .clicked()
+                {
+                    self.panic();
+                }
+                ui.label(&self.status_text);
+            });
         });
         TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.with_layout(Layout::left_to_right(eframe::emath::Align::Min), |ui| {
@@ -430,11 +443,13 @@ impl eframe::App for PaprApp {
                         self.ui_control_inputs.clear();
                         self.init();
                         self.load_script_file();
-                        self.spawn();
+                        self.spawn()
+                            .unwrap_or_else(|e| self.status_text = format!("Failed to spawn: {e}"));
                     }
                 }
                 if ui.button("Reload").clicked() {
-                    self.reload();
+                    self.reload()
+                        .unwrap_or_else(|e| self.status_text = format!("Failed to reload: {e}"));
                 }
             });
         });

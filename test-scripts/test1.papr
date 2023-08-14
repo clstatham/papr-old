@@ -13,8 +13,8 @@ graph Main {
         let #denv0 = #Denv(#vel0 #decay0);
         let #denv1 = #Denv(#vel0 #decay1);
         let #freq = #M2F(#pitch0);
-        let @s1 = @SineOscManual(#fm_amt (#fm_mul * #freq) 0.0 0.0);
-        let @s0 = @SineOscManual(#denv0 #freq #denv1 @s1);
+        let @s1 = @SineFm(#fm_amt (#fm_mul * #freq) 0.0 0.0);
+        let @s0 = @SineFm(#denv0 #freq #denv1 @s1);
         let @res = (@s0 ^ @s1);
         @dac0 = (@res * @s0);
     }

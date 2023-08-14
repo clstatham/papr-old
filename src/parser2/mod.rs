@@ -1257,7 +1257,8 @@ pub fn parse_imported_script(
     let ParsedImport(path) = script;
     let mut path_buf = cwd.as_ref().to_path_buf();
     path_buf.push(path);
-    let mut file = File::open(path_buf).unwrap();
+    let mut file = File::open(&path_buf)
+        .unwrap_or_else(|_| panic!("Error importing {}", path_buf.to_string_lossy()));
     let mut script = String::new();
     file.read_to_string(&mut script).unwrap();
     drop(file);
