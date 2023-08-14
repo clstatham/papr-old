@@ -5,7 +5,7 @@ use crate::{
     graph::Node,
 };
 
-use super::ParsedIdent;
+use super::{ParsedIdent, ParsedCreationArg};
 
 #[derive(Debug, Clone)]
 pub enum BuiltinNode {
@@ -30,6 +30,7 @@ pub enum BuiltinNode {
     Debug,
     If,
     Not,
+    Sample,
     // OscReceiver,
 }
 
@@ -57,6 +58,7 @@ impl BuiltinNode {
             "debug" => Some(BuiltinNode::Debug),
             "if" => Some(BuiltinNode::If),
             "not" => Some(BuiltinNode::Not),
+            "sample" => Some(BuiltinNode::Sample),
             // "oscrecv" => BuiltinNode::OscReceiver),
             _ => None,
         }
@@ -67,6 +69,7 @@ impl BuiltinNode {
         name: &str,
         signal_rate: SignalRate,
         audio_buffer_len: usize,
+        creation_args: &[ParsedCreationArg],
     ) -> Arc<Node> {
         match self {
             Self::Debug => crate::dsp::basic::DebugNode::create_node(name, signal_rate, audio_buffer_len),
@@ -134,6 +137,9 @@ impl BuiltinNode {
             }
             Self::If => {
                 crate::dsp::basic::If::create_node(name, signal_rate, audio_buffer_len, 0.0, 0.0, 0.0)
+            }
+            Self::Sample => {
+                crate::dsp::samplers::Sample::create_node(name, signal_rate, audio_buffer_len, creation_args[0].clone().unwrap_string().into())
             }
             // Self::OscReceiver => crate::io::osc::OscReceiver::create_node(
             //     name,

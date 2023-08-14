@@ -7,10 +7,12 @@ pub mod filters;
 pub mod generators;
 pub mod graph_util;
 pub mod midi;
+pub mod samplers;
 pub mod time;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SignalRate {
+    // todo: have these hold the actual rates in hertz
     Audio,
     Control,
 }

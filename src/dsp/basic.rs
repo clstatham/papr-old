@@ -160,6 +160,12 @@ impl Processor for Constant {
 
 macro_rules! impl_arith {
     ($typ:ident, $op:ident, $use:ident) => {
+        node_constructor! {
+            pub struct $typ;
+            in { a, b }
+            out { out }
+        }
+
         impl Processor for $typ {
             fn process_audio_sample(
                 &mut self,
@@ -169,7 +175,7 @@ macro_rules! impl_arith {
                 outputs: &mut [Signal],
             ) {
                 use std::ops::$use;
-                outputs[0] = inputs[0].$op(inputs[1]);
+                outputs[0] = Signal::new(inputs[0].value().$op(inputs[1].value()));
             }
 
             fn process_control_sample(
@@ -180,40 +186,17 @@ macro_rules! impl_arith {
                 outputs: &mut [Signal],
             ) {
                 use std::ops::$use;
-                outputs[0] = inputs[0].$op(inputs[1]);
+                outputs[0] = Signal::new(inputs[0].value().$op(inputs[1].value()));
             }
         }
     };
 }
 
-impl_arith!(Multiply, mul, Mul);
-impl_arith!(Divide, div, Div);
+impl_arith!(Mul, mul, Mul);
+impl_arith!(Div, div, Div);
 impl_arith!(Add, add, Add);
-impl_arith!(Subtract, sub, Sub);
-
-node_constructor! {
-    pub struct Multiply;
-    in { a, b }
-    out { out }
-}
-
-node_constructor! {
-    pub struct Divide;
-    in { a, b }
-    out { out }
-}
-
-node_constructor! {
-    pub struct Add;
-    in { a, b }
-    out { out }
-}
-
-node_constructor! {
-    pub struct Subtract;
-    in { a, b }
-    out { out }
-}
+impl_arith!(Sub, sub, Sub);
+impl_arith!(Rem, rem, Rem);
 
 node_constructor! {
     pub struct Max;

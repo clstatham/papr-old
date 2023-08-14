@@ -3,7 +3,10 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use petgraph::{dot::Dot, prelude::*};
+use petgraph::{
+    dot::{Config, Dot},
+    prelude::*,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
@@ -369,9 +372,14 @@ where
     pub fn write_dot(&self, name: &str) {
         use std::io::Write;
         let mut f = std::fs::File::create(name).unwrap();
-        // dbg!(&self.name, &self.partitions);
-        // println!();
-        write!(f, "{:?}", Dot::with_config(&self.digraph, &[])).unwrap();
+        dbg!(&self.name, &self.partitions);
+        println!();
+        write!(
+            f,
+            "{:?}",
+            Dot::with_config(&self.digraph, &[Config::NodeIndexLabel])
+        )
+        .unwrap();
     }
 
     pub fn add_node(&mut self, node: Arc<Node>) -> NodeIndex {
@@ -423,10 +431,10 @@ where
                     for edge in self.digraph.edges_directed(node, Direction::Outgoing) {
                         if !next_layer.contains(&edge.target())
                             && !bfs_visited.contains(&edge.target())
-                            && self
-                                .digraph
-                                .edges_directed(edge.target(), Direction::Incoming)
-                                .all(|next_incoming| bfs_visited.contains(&next_incoming.source()))
+                        // && self
+                        //     .digraph
+                        //     .edges_directed(edge.target(), Direction::Incoming)
+                        //     .all(|next_incoming| bfs_visited.contains(&next_incoming.source()))
                         {
                             next_layer.push(edge.target());
                         }

@@ -61,6 +61,7 @@ pub enum Token {
     Caret,
     Bang,
     BangEquals,
+    Percent,
     Comment(String),
     Unknown(String),
 }
@@ -91,6 +92,7 @@ impl Token {
                 value(Token::Ampersand, tag("&")),
                 value(Token::Caret, tag("^")),
                 value(Token::Bang, tag("!")),
+                value(Token::Percent, tag("%")),
                 //
             )),
             alt((
@@ -320,6 +322,7 @@ tag_token!(bangequals, Token::BangEquals);
 tag_token!(ampersand, Token::Ampersand);
 tag_token!(caret, Token::Caret);
 tag_token!(bang, Token::Bang);
+tag_token!(percent, Token::Percent);
 
 tag_token!(graph_kw, Token::Graph);
 tag_token!(var_kw, Token::Var);
@@ -349,7 +352,7 @@ pub fn string(inp: Tokens) -> IResult<Tokens, String> {
     )(inp)
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ParsedIdent(String, Option<SignalRate>);
 
 pub fn ident(tokens: Tokens) -> IResult<Tokens, ParsedIdent> {
@@ -374,23 +377,53 @@ pub enum ParsedCallee {
 }
 
 #[derive(Debug, Clone)]
+pub enum ParsedCreationArg {
+    Scalar(Scalar),
+    String(String),
+}
+
+impl ParsedCreationArg {
+    pub fn unwrap_string(self) -> String {
+        if let Self::String(s) = self {
+            s
+        } else {
+            panic!("expected creation argument to be a string, got {:?}", self);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ParsedCall {
     ident: ParsedCallee,
+    creation_args: Vec<ParsedCreationArg>,
     args: Vec<ParsedExpr>,
 }
 
 pub fn call(inp: Tokens) -> IResult<Tokens, ParsedCall> {
     map(
-        tuple((ident, delimited(openparen, many0(expr), closeparen))),
-        |(ident, args)| {
+        tuple((
+            ident,
+            opt(delimited(
+                lt,
+                many1(alt((
+                    map(scalar, ParsedCreationArg::Scalar),
+                    map(string, ParsedCreationArg::String),
+                ))),
+                gt,
+            )),
+            delimited(openparen, many0(expr), closeparen),
+        )),
+        |(ident, creation_args, args)| {
             if let Some(builtin) = BuiltinNode::try_from_ident(&ident) {
                 ParsedCall {
                     ident: ParsedCallee::Builtin(builtin, ident.1),
+                    creation_args: creation_args.unwrap_or(vec![]),
                     args,
                 }
             } else {
                 ParsedCall {
                     ident: ParsedCallee::ScriptDefined(ident),
+                    creation_args: creation_args.unwrap_or(vec![]),
                     args,
                 }
             }
@@ -411,6 +444,7 @@ pub enum ParsedInfixOp {
     And,
     Or,
     Xor,
+    Rem,
 }
 
 #[derive(Debug, Clone)]
@@ -449,6 +483,7 @@ pub fn expr(inp: Tokens) -> IResult<Tokens, ParsedExpr> {
                     value(ParsedInfixOp::Lt, lt),
                     value(ParsedInfixOp::Eq, doubleequals),
                     value(ParsedInfixOp::Neq, bangequals),
+                    value(ParsedInfixOp::Rem, percent),
                 )),
                 expr,
                 closeparen,
@@ -671,13 +706,13 @@ fn solve_expr(
                     crate::dsp::basic::Add::create_node("+", lhs.rate, buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::Sub => {
-                    crate::dsp::basic::Subtract::create_node("-", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Sub::create_node("-", lhs.rate, buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::Mul => {
-                    crate::dsp::basic::Multiply::create_node("*", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Mul::create_node("*", lhs.rate, buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::Div => {
-                    crate::dsp::basic::Divide::create_node("/", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Div::create_node("/", lhs.rate, buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::Gt => {
                     crate::dsp::basic::Gt::create_node(">", lhs.rate, buffer_len, 0.0, 0.0)
@@ -689,7 +724,7 @@ fn solve_expr(
                     crate::dsp::basic::Eq::create_node("==", lhs.rate, buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::Neq => {
-                    crate::dsp::basic::Divide::create_node("!=", lhs.rate, buffer_len, 0.0, 0.0)
+                    crate::dsp::basic::Div::create_node("!=", lhs.rate, buffer_len, 0.0, 0.0)
                 }
                 ParsedInfixOp::And => {
                     crate::dsp::basic::And::create_node("&", lhs.rate, buffer_len, 0.0, 0.0)
@@ -699,6 +734,9 @@ fn solve_expr(
                 }
                 ParsedInfixOp::Xor => {
                     crate::dsp::basic::Xor::create_node("^", lhs.rate, buffer_len, 0.0, 0.0)
+                }
+                ParsedInfixOp::Rem => {
+                    crate::dsp::basic::Rem::create_node("%", lhs.rate, buffer_len, 0.0, 0.0)
                 }
             };
             match (lhs.rate, rhs.rate) {
@@ -848,7 +886,11 @@ fn solve_expr(
                 }
             }
         }
-        ParsedExpr::Call(ParsedCall { ident, args }) => {
+        ParsedExpr::Call(ParsedCall {
+            ident,
+            creation_args,
+            args,
+        }) => {
             let mut known_rate;
             let n_outs;
             let (called_an, called_cn) = match ident {
@@ -870,11 +912,13 @@ fn solve_expr(
                         &format!("{:?}", builtin),
                         SignalRate::Audio,
                         buffer_len,
+                        creation_args,
                     );
                     let cn = builtin.create_node(
                         &format!("{:?}", builtin),
                         SignalRate::Control,
                         buffer_len,
+                        creation_args,
                     );
                     n_outs = match known_rate {
                         Some(SignalRate::Audio) => an.outputs.len(),
@@ -1116,6 +1160,16 @@ fn solve_graph(
     for stmt in statements {
         match stmt {
             ParsedStatement::Let(stmt) => {
+                let mut lhs_nodes = vec![];
+                for to in stmt.lhs.iter() {
+                    let rate = to.1.or(graph.id.1).unwrap();
+                    let node = LetBinding::create_node(&to.0, rate, buffer_len, 0.0);
+                    let idx = match rate {
+                        SignalRate::Audio => ag.add_node(node),
+                        SignalRate::Control => cg.add_node(node),
+                    };
+                    lhs_nodes.push(idx);
+                }
                 let rhs = solve_expr(id, &stmt.rhs, &mut ag, &mut cg, known_graphs, buffer_len)?;
                 assert!(
                     !(rhs.ag_idx.is_some() && rhs.cg_idx.is_some()),
@@ -1126,15 +1180,11 @@ fn solve_graph(
                     if ag_from_outs.len() != stmt.lhs.len() {
                         return Err(format!("Parsing error (graph `{}`): in `let` statement, expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), ag_from_outs.len()));
                     }
-                    for (to, ag_from_out) in stmt.lhs.iter().zip(ag_from_outs.iter()) {
-                        // this is where `let` statements differ from normal connections
-                        let node =
-                            LetBinding::create_node(&to.0, SignalRate::Audio, buffer_len, 0.0);
-                        let to_idx = ag.add_node(node);
+                    for (to_idx, ag_from_out) in lhs_nodes.iter().zip(ag_from_outs.iter()) {
                         // todo: don't assume it's the first input, probably
                         ag.add_edge(
                             ag_from_idx,
-                            to_idx,
+                            *to_idx,
                             Connection {
                                 source_output: *ag_from_out,
                                 sink_input: 0,
@@ -1146,15 +1196,11 @@ fn solve_graph(
                     if cg_from_outs.len() != stmt.lhs.len() {
                         return Err(format!("Parsing error (graph `{}`): in `let` statement, expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), cg_from_outs.len()));
                     }
-                    for (to, cg_from_out) in stmt.lhs.iter().zip(cg_from_outs.iter()) {
-                        // this is where `let` statements differ from normal connections
-                        let node =
-                            LetBinding::create_node(&to.0, SignalRate::Control, buffer_len, 0.0);
-                        let to_idx = cg.add_node(node);
+                    for (to_idx, cg_from_out) in lhs_nodes.iter().zip(cg_from_outs.iter()) {
                         // todo: don't assume it's the first input, probably
                         cg.add_edge(
                             cg_from_idx,
-                            to_idx,
+                            *to_idx,
                             Connection {
                                 source_output: *cg_from_out,
                                 sink_input: 0,
