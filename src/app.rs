@@ -22,7 +22,6 @@ use eframe::{
 };
 
 use syntect::parsing::SyntaxDefinition;
-use tokio::runtime::Runtime;
 
 use crate::{
     dsp::{basic::UiInput, Signal, SignalRate},
@@ -113,7 +112,6 @@ pub struct PaprApp {
     audio_graph: Option<Graph>,
     control_graph: Option<Graph>,
     ui_control_inputs: Vec<Arc<Node>>,
-    rt: Option<Runtime>,
     sample_rate: Scalar,
     control_rate: Scalar,
     audio_buffer_len: usize,
@@ -138,7 +136,6 @@ impl PaprApp {
             audio_graph: None,
             control_graph: None,
             ui_control_inputs: Vec::new(),
-            rt: None,
             control_rate,
             sample_rate,
             audio_buffer_len,
@@ -221,17 +218,6 @@ impl PaprApp {
             self.midi_ctx = Some(MidiContext::new("PAPR Midi In"));
         } else {
             eprintln!("PaprApp::init(): midi context already initialized");
-        }
-
-        if self.rt.is_none() {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_io()
-                .enable_time()
-                .build()
-                .expect("PaprApp::init(): error creating new tokio runtime");
-            self.rt = Some(rt);
-        } else {
-            eprintln!("PaprApp::init(): tokio runtime already initialized");
         }
 
         self.status_text = "Initialization successful.".into();
