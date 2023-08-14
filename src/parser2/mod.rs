@@ -679,7 +679,12 @@ fn solve_expr(
         }
         ParsedExpr::Ident(id) => {
             #[allow(clippy::if_same_then_else)]
-            let rate = id.1.or(graph_id.1).unwrap();
+            let rate = id.1.or(graph_id.1).ok_or_else(|| {
+                format!(
+                    "Parsing error (graph `{}`): couldn't determine signal rate of identifier `{}`",
+                    &graph_id.0, &id.0
+                )
+            })?;
             match rate {
                 ParsedSignalRate::Audio => {
                     let ag_idx = super_ag.node_id_by_name(&id.0).ok_or(format!("Parsing error (graph `{}`): while parsing expr: audio graph has no node named `{}`", &graph_id.0, &id.0))?;
@@ -1041,7 +1046,12 @@ fn solve_expr(
                 }
             }
 
-            let known_rate = known_rate.unwrap();
+            let known_rate = known_rate.ok_or_else(|| {
+                format!(
+                    "Parsing error (graph `{}`): couldn't determine signal rate of expr",
+                    &graph_id.0
+                )
+            })?;
 
             let (ag_idx, cg_idx) = match known_rate {
                 ParsedSignalRate::Audio => {
@@ -1146,7 +1156,9 @@ fn solve_graph(
             ParsedStatement::Let(stmt) => {
                 let mut lhs_nodes = vec![];
                 for to in stmt.lhs.iter() {
-                    let rate = to.1.or(graph.id.1).unwrap();
+                    let rate =
+                        to.1.or(graph.id.1)
+                            .ok_or_else(|| format!("Parsing error: (graph `{}`): in `let` statement, couldn't determine rate of lhs ident `{}`", &graph.id.0, &to.0))?;
                     let node = LetBinding::create_node(&to.0, buffer_len, 0.0);
                     let idx = match rate {
                         ParsedSignalRate::Audio => ag.add_node(node),
@@ -1260,21 +1272,23 @@ pub fn parse_imported_script(
     let mut file = File::open(&path_buf)
         .unwrap_or_else(|_| panic!("Error importing {}", path_buf.to_string_lossy()));
     let mut script = String::new();
-    file.read_to_string(&mut script).unwrap();
+    file.read_to_string(&mut script)
+        .map_err(|e| format!("Parsing error: {:?}", e))?;
     drop(file);
 
-    let (garbage, tokens) = Token::many1(&script).unwrap();
+    let (garbage, tokens) = Token::many1(&script).map_err(|e| format!("Parsing error: {:?}", e))?;
     if !garbage.is_empty() {
         return Err(format!("Parsing error: unexpected garbage:\n{garbage}"));
     }
     let tokens = Tokens { tokens: &tokens };
 
-    let (tokens, imports) = many0(import_stmt)(tokens).unwrap();
+    let (tokens, imports) =
+        many0(import_stmt)(tokens).map_err(|e| format!("Parsing error: {:?}", e))?;
     for imp in imports {
         parse_imported_script(imp, cwd, known_graphs)?;
     }
 
-    let (garbage, graphs) = many1(graph)(tokens).unwrap();
+    let (garbage, graphs) = many1(graph)(tokens).map_err(|e| format!("Parsing error: {:?}", e))?;
     if !garbage.tokens.is_empty() {
         return Err(format!(
             "Parsing error: unexpected garbage:\n{:?}",
@@ -1297,20 +1311,24 @@ pub fn parse_main_script(
     cwd: &impl AsRef<Path>,
     buffer_len: usize,
 ) -> Result<(Graph, Graph), String> {
-    let (garbage, tokens) = Token::many1(inp).unwrap();
+    if inp.is_empty() {
+        return Err("Parsing error: empty script".into());
+    }
+    let (garbage, tokens) = Token::many1(inp).map_err(|e| format!("Parsing error: {:?}", e))?;
     if !garbage.is_empty() {
         return Err(format!("Parsing error: unexpected garbage:\n{garbage}"));
     }
     let tokens = Tokens { tokens: &tokens };
 
-    let (tokens, imports) = many0(import_stmt)(tokens).unwrap();
+    let (tokens, imports) =
+        many0(import_stmt)(tokens).map_err(|e| format!("Parsing error: {:?}", e))?;
 
     let mut known_graphs = HashMap::default();
     for script in imports {
         parse_imported_script(script, cwd, &mut known_graphs)?;
     }
 
-    let (garbage, graphs) = many1(graph)(tokens).unwrap();
+    let (garbage, graphs) = many1(graph)(tokens).map_err(|e| format!("Parsing error: {:?}", e))?;
     if !garbage.tokens.is_empty() {
         return Err(format!(
             "Parsing error: unexpected garbage:\n{:?}",
