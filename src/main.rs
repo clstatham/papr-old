@@ -55,9 +55,13 @@ struct Args {
     #[arg(long, default_value_t = false)]
     headless: bool,
 
-    /// In headless mode, how long to run in milliseconds
-    #[arg(long, default_value_t = 1000, value_name = "MILLISECONDS")]
+    /// In headless mode, how long to run in milliseconds (0 to run until ctrl+c)
+    #[arg(long, default_value_t = 0, value_name = "MILLISECONDS")]
     run_for: u64,
+
+    /// In headless mode, file to write audio data to instead of using the audio backend
+    #[arg(short, long)]
+    out_file_name: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -76,12 +80,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             args.midi_port,
             #[cfg(target_os = "linux")]
             args.force_alsa,
+            args.out_file_name.clone(),
+            Some(args.run_for),
         );
         app.init();
         app.load_script_file();
         app.spawn()?;
 
-        std::thread::sleep(Duration::from_millis(args.run_for));
+        if args.out_file_name.is_none() {
+            if args.run_for > 0 {
+                std::thread::sleep(Duration::from_millis(args.run_for));
+            } else {
+                loop {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
 
         Ok(())
     } else {
@@ -99,6 +113,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     args.midi_port,
                     #[cfg(target_os = "linux")]
                     args.force_alsa,
+                    None,
+                    None,
                 );
                 if args.script_path.is_some() {
                     app.init();

@@ -124,9 +124,12 @@ pub struct PaprApp {
     midi_port: usize,
     #[cfg(target_os = "linux")]
     force_alsa: bool,
+    out_file_name: Option<PathBuf>,
+    run_for: Option<u64>,
 }
 
 impl PaprApp {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         script_path: Option<PathBuf>,
         sample_rate: Scalar,
@@ -134,6 +137,8 @@ impl PaprApp {
         audio_buffer_len: usize,
         midi_port: usize,
         #[cfg(target_os = "linux")] force_alsa: bool,
+        out_file_name: Option<PathBuf>,
+        run_for: Option<u64>,
     ) -> Self {
         Self {
             audio_cx: None,
@@ -153,6 +158,8 @@ impl PaprApp {
             midi_port,
             #[cfg(target_os = "linux")]
             force_alsa,
+            out_file_name,
+            run_for,
         }
     }
 
@@ -194,7 +201,7 @@ impl PaprApp {
     }
 
     pub fn init(&mut self) {
-        if self.audio_cx.is_none() {
+        if self.audio_cx.is_none() && self.out_file_name.is_none() {
             #[cfg(target_os = "linux")]
             let host = if self.force_alsa {
                 println!("Initializing ALSA host.");
@@ -218,43 +225,19 @@ impl PaprApp {
                 stream: None,
             };
             self.audio_cx = Some(inner);
-        } else {
-            eprintln!("PaprApp::init(): audio context already initialized");
         }
 
         if self.midi_ctx.is_none() {
             self.midi_ctx = Some(MidiContext::new("PAPR Midi In", Some(self.midi_port)));
-        } else {
-            eprintln!("PaprApp::init(): midi context already initialized");
         }
 
         self.status_text = "Initialization successful.".into();
     }
 
     pub fn spawn(&mut self) -> Result<(), String> {
-        let mut audio_cx = self
-            .audio_cx
-            .take()
-            .expect("PaprApp::spawn(): audio context not initialized");
-
-        let config = cpal::StreamConfig {
-            channels: cpal::ChannelCount::from(1u16),
-            sample_rate: cpal::SampleRate(self.sample_rate as u32),
-            buffer_size: cpal::BufferSize::Fixed(self.audio_buffer_len as u32),
-        };
-        println!(
-            "Output device: {}",
-            audio_cx
-                .out_device
-                .name()
-                .unwrap_or_else(|_| "(unknown)".to_string())
-        );
-        println!("Output config: {:?}", config);
-        println!("Control rate: {} Hz", self.control_rate);
-
         self.create_graphs()?;
 
-        let audio_graph = self
+        let mut audio_graph = self
             .audio_graph
             .take()
             .expect("PaprApp::spawn(): audio graph not initialized");
@@ -263,41 +246,124 @@ impl PaprApp {
             .take()
             .expect("PaprApp::spawn(): control graph not initialized");
 
-        audio_cx.run::<f32>(audio_graph, config)?;
-        self.audio_cx = Some(audio_cx);
         let t_idx = control_graph.node_id_by_name("t").unwrap();
         let control_rate = self.control_rate;
         let (tx, mut rx) = tokio::sync::oneshot::channel();
         self.control_thread_shutdown = Some(tx);
-        std::thread::Builder::new()
-            .name("PAPR Control".into())
-            .spawn(move || {
-                #[allow(clippy::unnecessary_cast)]
-                let clk = std::time::Duration::from_secs_f64((control_rate as f64).recip());
-                let mut t = 0 as Scalar;
-                loop {
-                    if rx.try_recv().is_ok() {
-                        println!("Shutting down control rate thread.");
-                        break;
-                    }
-                    let tik = Instant::now();
-                    control_graph.process_graph(
-                        SignalRate::Control {
-                            sample_rate: control_rate,
-                            buffer_len: 1,
-                        },
-                        &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t); 1])]),
-                        &mut BTreeMap::default(),
-                    );
-                    let time = Instant::now() - tik;
 
-                    if clk.as_secs_f64() > time.as_secs_f64() {
-                        std::thread::sleep(clk - time);
+        if let Some(out_file_name) = self.out_file_name.as_ref() {
+            let run_for = self.run_for.unwrap();
+            let run_for_secs = (run_for as f64) / 1000.0;
+            let run_for_samples = (run_for_secs * self.sample_rate) as usize;
+            let mut out_buf = vec![0.0; run_for_samples];
+            let mut sample_idx = 0;
+            let channels = 1;
+            let mut t = 0.0;
+            while sample_idx < run_for_samples {
+                let output = &mut out_buf[sample_idx..sample_idx + 1]; // not using the audio buffer length for now
+                let buffer_len = output.len() / channels;
+                let mut out = BTreeMap::new();
+                // for c in 0..channels {
+                let dac0 = audio_graph
+                    .node_id_by_name("dac0")
+                    .expect("Expected `Main` graph to have at least `dac0` for outputs");
+                let mut dac0_vec = vec![Signal::new(0.0); buffer_len];
+                out.insert(dac0, &mut dac0_vec);
+                // }
+                let ts = (0usize..buffer_len)
+                    .map(|frame_idx| {
+                        Signal::new(t as Scalar + frame_idx as Scalar / self.sample_rate)
+                    })
+                    .collect::<Vec<_>>();
+                let ins = BTreeMap::from_iter([(audio_graph.node_id_by_name("t").unwrap(), &ts)]);
+                audio_graph.process_graph(
+                    SignalRate::Audio {
+                        sample_rate: self.sample_rate,
+                        buffer_len,
+                    },
+                    &ins,
+                    &mut out,
+                );
+                control_graph.process_graph(
+                    SignalRate::Control {
+                        sample_rate: self.sample_rate,
+                        buffer_len,
+                    },
+                    &ins,
+                    &mut BTreeMap::new(),
+                );
+                for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
+                    for (_c, sample) in frame.iter_mut().enumerate() {
+                        *sample = out[&dac0][frame_idx].value() as f32;
                     }
-                    t += clk.as_secs_f64() as Scalar;
                 }
-            })
-            .expect("PaprApp::spawn(): error spawning control rate thread");
+
+                sample_idx += buffer_len;
+                t += (buffer_len as Scalar) / self.sample_rate;
+            }
+            let out = &out_buf[..run_for_samples];
+            let mut out_file = File::create(out_file_name).unwrap();
+            wav::write(
+                wav::Header::new(wav::WAV_FORMAT_IEEE_FLOAT, 1, self.sample_rate as u32, 32),
+                &wav::BitDepth::ThirtyTwoFloat(out.to_vec()),
+                &mut out_file,
+            )
+            .unwrap();
+        } else {
+            let mut audio_cx = self
+                .audio_cx
+                .take()
+                .expect("PaprApp::spawn(): audio context not initialized");
+
+            let config = cpal::StreamConfig {
+                channels: cpal::ChannelCount::from(1u16),
+                sample_rate: cpal::SampleRate(self.sample_rate as u32),
+                buffer_size: cpal::BufferSize::Fixed(self.audio_buffer_len as u32),
+            };
+            println!(
+                "Output device: {}",
+                audio_cx
+                    .out_device
+                    .name()
+                    .unwrap_or_else(|_| "(unknown)".to_string())
+            );
+            println!("Output config: {:?}", config);
+            println!("Control rate: {} Hz", self.control_rate);
+
+            audio_cx.run::<f32>(audio_graph, config)?;
+            self.audio_cx = Some(audio_cx);
+
+            std::thread::Builder::new()
+                .name("PAPR Control".into())
+                .spawn(move || {
+                    #[allow(clippy::unnecessary_cast)]
+                    let clk = std::time::Duration::from_secs_f64((control_rate as f64).recip());
+                    let mut t = 0 as Scalar;
+                    loop {
+                        if rx.try_recv().is_ok() {
+                            println!("Shutting down control rate thread.");
+                            break;
+                        }
+                        let tik = Instant::now();
+                        control_graph.process_graph(
+                            SignalRate::Control {
+                                sample_rate: control_rate,
+                                buffer_len: 1,
+                            },
+                            &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t); 1])]),
+                            &mut BTreeMap::default(),
+                        );
+                        let time = Instant::now() - tik;
+
+                        if clk.as_secs_f64() > time.as_secs_f64() {
+                            std::thread::sleep(clk - time);
+                        }
+                        t += clk.as_secs_f64() as Scalar;
+                    }
+                })
+                .expect("PaprApp::spawn(): error spawning control rate thread");
+        }
+
         self.status_text = "Runtime is running.".into();
         Ok(())
     }

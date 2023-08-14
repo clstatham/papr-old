@@ -36,6 +36,7 @@ rfd = { version = "0.11.4", default-features = false, features = [
 ] }
 syntect = { version = "5.1.0", features = ["default-fancy"] }
 creak = "0.3.0"
+wav = "1.0.0"
 
 [profile.release]
 # debug = true
