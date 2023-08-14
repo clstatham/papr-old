@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    dsp::{basic::UiWidget, generators::BL_SQUARE_MAX_COEFF, Signal},
-    graph::{Input, Node},
+    dsp::{basic::UiWidget, generators::BL_SQUARE_MAX_COEFF},
+    graph::Node,
 };
 
 use super::{ParsedCreationArg, ParsedIdent};

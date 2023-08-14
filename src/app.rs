@@ -24,11 +24,8 @@ use eframe::{
 use syntect::parsing::SyntaxDefinition;
 
 use crate::{
-    dsp::{
-        basic::{UiInput, UiWidget},
-        Signal, SignalRate,
-    },
-    graph::{Connection, Graph, Node},
+    dsp::{Signal, SignalRate},
+    graph::{Graph, Node},
     io::midi::MidiContext,
     Scalar,
 };
@@ -200,8 +197,12 @@ impl PaprApp {
 
     pub fn init(&mut self) {
         if self.audio_cx.is_none() {
+            #[cfg(target_os = "linux")]
             let host = cpal::host_from_id(cpal::HostId::Jack)
                 .expect("PaprApp::init(): no JACK host available");
+            #[cfg(target_os = "windows")]
+            let host = cpal::host_from_id(cpal::HostId::Wasapi)
+                .expect("PaprApp::init(): no WASAPI host available");
             let out_device = host
                 .default_output_device()
                 .expect("PaprApp::init(): failed to find output device");
