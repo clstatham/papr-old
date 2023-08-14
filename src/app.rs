@@ -51,7 +51,9 @@ impl AudioContext {
         }
         let mut out = BTreeMap::new();
         // for c in 0..channels {
-        let dac0 = graph.node_id_by_name("dac0").unwrap();
+        let dac0 = graph
+            .node_id_by_name("dac0")
+            .expect("Expected `Main` graph to have at least `dac0` for outputs");
         let mut dac0_vec = vec![Signal::new(0.0); output.len() / channels];
         out.insert(dac0, &mut dac0_vec);
         // }
@@ -74,7 +76,12 @@ impl AudioContext {
         }
     }
 
-    pub fn run<T>(&mut self, mut graph: Graph, config: cpal::StreamConfig, buffer_len: usize)
+    pub fn run<T>(
+        &mut self,
+        mut graph: Graph,
+        config: cpal::StreamConfig,
+        buffer_len: usize,
+    ) -> Result<(), String>
     where
         T: SizedSample + FromSample<Scalar>,
     {
@@ -101,9 +108,10 @@ impl AudioContext {
                 err_fn,
                 None,
             )
-            .unwrap();
-        stream.play().unwrap();
+            .map_err(|e| format!("{:?}", e))?;
+        stream.play().map_err(|e| format!("{:?}", e))?;
         self.stream = Some(stream);
+        Ok(())
     }
 }
 
@@ -149,19 +157,20 @@ impl PaprApp {
         }
     }
 
-    pub fn load_script_file(&mut self) -> PathBuf {
-        let path = self.script_path.as_ref().unwrap();
-        let mut file = File::open(path).unwrap();
+    pub fn load_script_file(&mut self) -> Option<PathBuf> {
+        let path = self.script_path.as_ref()?;
+        let mut file = File::open(path).ok()?;
         self.script_text = String::new();
-        file.read_to_string(&mut self.script_text).unwrap();
-        path.clone()
+        file.read_to_string(&mut self.script_text).ok()?;
+        Some(path.clone())
     }
 
-    pub fn save_script_file(&mut self) {
+    pub fn save_script_file(&mut self) -> Option<()> {
         use std::io::Write;
-        let path = self.script_path.as_ref().unwrap();
-        let mut file = File::create(path).unwrap();
-        write!(file, "{}", &self.script_text).unwrap();
+        let path = self.script_path.as_ref()?;
+        let mut file = File::create(path).ok()?;
+        write!(file, "{}", &self.script_text).ok()?;
+        Some(())
     }
 
     pub fn create_graphs(&mut self, audio_buffer_len: usize) -> Result<(), String> {
@@ -170,7 +179,7 @@ impl PaprApp {
             &self
                 .script_path
                 .as_ref()
-                .map(|p| p.parent().unwrap())
+                .and_then(|p| p.parent())
                 .unwrap_or(current_dir().unwrap().as_path()),
             audio_buffer_len,
         )?;
@@ -234,7 +243,13 @@ impl PaprApp {
             sample_rate: cpal::SampleRate(self.sample_rate as u32),
             buffer_size: cpal::BufferSize::Fixed(self.audio_buffer_len as u32),
         };
-        println!("Output device: {}", audio_cx.out_device.name().unwrap());
+        println!(
+            "Output device: {}",
+            audio_cx
+                .out_device
+                .name()
+                .unwrap_or_else(|_| "(unknown)".to_string())
+        );
         println!("Output config: {:?}", config);
         println!("Control rate: {} Hz", self.control_rate);
 
@@ -249,7 +264,7 @@ impl PaprApp {
             .take()
             .expect("PaprApp::spawn(): control graph not initialized");
 
-        audio_cx.run::<f32>(audio_graph, config, self.audio_buffer_len);
+        audio_cx.run::<f32>(audio_graph, config, self.audio_buffer_len)?;
         self.audio_cx = Some(audio_cx);
         let t_idx = control_graph.node_id_by_name("t").unwrap();
         let control_rate = self.control_rate;
@@ -291,7 +306,8 @@ impl PaprApp {
 
     fn reload(&mut self) -> Result<(), String> {
         if let Some(tx) = self.control_thread_shutdown.take() {
-            tx.send(()).unwrap();
+            tx.send(())
+                .map_err(|_| "Error shutting down control rate thread".to_owned())?;
             std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
         }
         self.ui_control_inputs.clear();
@@ -300,16 +316,18 @@ impl PaprApp {
         self.spawn()
     }
 
-    fn panic(&mut self) {
+    fn panic(&mut self) -> Result<(), String> {
         if let Some(mut cx) = self.audio_cx.take() {
             if let Some(stream) = cx.stream.take() {
                 drop(stream); // immediately stop playback
             }
         }
         if let Some(tx) = self.control_thread_shutdown.take() {
-            tx.send(()).unwrap();
+            tx.send(())
+                .map_err(|_| "Error shutting down control rate thread".to_owned())?;
         }
         self.status_text = "Runtime stopped.".into();
+        Ok(())
     }
 }
 
@@ -367,7 +385,7 @@ impl eframe::App for PaprApp {
                     }
                 }
                 if i.key_pressed(Key::K) {
-                    self.panic();
+                    self.panic().expect("Error while panicking");
                 }
             }
         });
@@ -375,7 +393,8 @@ impl eframe::App for PaprApp {
             "PAPR - {}",
             self.script_path
                 .as_ref()
-                .map(|p| p.file_name().unwrap().to_str().unwrap())
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
                 .unwrap_or("(untitled)")
         ));
         TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
@@ -389,7 +408,7 @@ impl eframe::App for PaprApp {
                     )
                     .clicked()
                 {
-                    self.panic();
+                    self.panic().expect("Error while panicking");
                 }
                 ui.label(&self.status_text);
             });
@@ -416,7 +435,7 @@ impl eframe::App for PaprApp {
                         .set_directory(
                             self.script_path
                                 .as_ref()
-                                .map(|p| p.parent().unwrap())
+                                .and_then(|p| p.parent())
                                 .unwrap_or(current_dir().unwrap().as_path()),
                         )
                         .pick_file()
@@ -489,7 +508,7 @@ impl Default for Highlighter {
         let mut builder = syntect::parsing::SyntaxSetBuilder::new();
         builder.add(
             SyntaxDefinition::load_from_str(include_str!("../papr.sublime-syntax"), false, None)
-                .unwrap(),
+                .expect("PAPR Sublime syntax file not found"),
         );
         let ps = builder.build();
         Self {
@@ -505,7 +524,10 @@ impl Highlighter {
         use syntect::highlighting::FontStyle;
         use syntect::util::LinesWithEndings;
 
-        let syntax = self.ps.find_syntax_by_name("PAPR").unwrap();
+        let syntax = self
+            .ps
+            .find_syntax_by_name("PAPR")
+            .expect("PAPR syntax not found");
 
         let theme = "base16-mocha.dark";
         let mut h = HighlightLines::new(syntax, &self.ts.themes[theme]);

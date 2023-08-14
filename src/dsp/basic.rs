@@ -61,7 +61,7 @@ pub struct UiInput {
     pub name: String,
     pub minimum: Signal,
     pub maximum: Signal,
-    pub value: Arc<RwLock<Signal>>,
+    pub value: Signal,
 }
 
 impl Processor for UiInput {
@@ -72,28 +72,28 @@ impl Processor for UiInput {
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) {
-        outputs[0] = *self.value.read().unwrap();
+        outputs[0] = self.value;
     }
 
-    fn ui_update(&self, ui: &mut Ui) {
-        let mut val = { self.value.read().unwrap().value() };
+    fn ui_update(&mut self, ui: &mut Ui) {
+        let mut val = self.value.value();
         ui.add(
             Slider::new(&mut val, self.minimum.value()..=self.maximum.value())
                 .text(&self.name)
                 .step_by(0.0001),
         );
-        *self.value.write().unwrap() = Signal::new(val);
+        self.value = Signal::new(val);
     }
 }
 
 impl UiInput {
     pub fn create_node(for_input: Input, audio_buffer_len: usize) -> Arc<Node> {
-        let value = Arc::new(RwLock::new(for_input.default.unwrap()));
+        let value = for_input.default.unwrap();
         let this = Box::new(RwLock::new(UiInput {
             maximum: for_input.maximum.unwrap(),
             minimum: for_input.minimum.unwrap(),
             name: for_input.name.clone(),
-            value: value.clone(),
+            value,
         }));
 
         Arc::new(Node::new(

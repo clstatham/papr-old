@@ -154,8 +154,8 @@ where
 
     pub fn ui_update(&self, ui: &mut eframe::egui::Ui) {
         match self {
-            Self::Builtin(p) => p.read().unwrap().ui_update(ui),
-            Self::Subgraph(p) => p.read().unwrap().ui_update(ui),
+            Self::Builtin(p) => p.write().unwrap().ui_update(ui),
+            Self::Subgraph(p) => p.write().unwrap().ui_update(ui),
             Self::None => {}
         }
     }

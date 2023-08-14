@@ -140,7 +140,7 @@ pub trait Processor {
     }
 
     #[allow(unused_variables)]
-    fn ui_update(&self, ui: &mut Ui) {}
+    fn ui_update(&mut self, ui: &mut Ui) {}
 }
 
 #[non_exhaustive]

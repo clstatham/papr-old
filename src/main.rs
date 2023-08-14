@@ -1,3 +1,4 @@
+// #![warn(clippy::unwrap_used)]
 use std::path::PathBuf;
 
 use app::PaprApp;
@@ -36,7 +37,7 @@ struct Args {
     buffer_len: u64,
 }
 
-fn main() {
+fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     log::trace!("Logger initialized.");
     let args = Args::parse();
@@ -60,5 +61,4 @@ fn main() {
             Box::new(app)
         }),
     )
-    .unwrap();
 }
