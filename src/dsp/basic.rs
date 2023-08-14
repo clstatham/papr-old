@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use eframe::egui::{Button, Slider, Ui};
+use eframe::egui::{Button, Checkbox, Slider, Ui};
 use papr_proc_macro::node_constructor;
 
 use crate::{
@@ -56,15 +56,17 @@ impl Processor for DebugNode {
     }
 }
 
-pub enum UiWidget {
+#[derive(Debug, Clone, Copy)]
+pub enum UiInputWidget {
     Slider { minimum: Scalar, maximum: Scalar },
     Button,
+    Toggle,
 }
 
 pub struct UiInput {
     pub name: String,
     pub value: Scalar,
-    pub widget: UiWidget,
+    pub widget: UiInputWidget,
 }
 
 impl Processor for UiInput {
@@ -81,16 +83,27 @@ impl Processor for UiInput {
     fn ui_update(&mut self, ui: &mut Ui) {
         let mut val = self.value;
         match self.widget {
-            UiWidget::Slider { minimum, maximum } => {
+            UiInputWidget::Slider { minimum, maximum } => {
                 ui.add(
                     Slider::new(&mut val, minimum..=maximum)
                         .text(&self.name)
                         .step_by(0.0001),
                 );
             }
-            UiWidget::Button => {
+            UiInputWidget::Button => {
                 if ui.add(Button::new(&self.name)).clicked() {
-                    val = if val > 0.0 { 0.0 } else { 1.0 };
+                    val = 1.0;
+                } else {
+                    val = 0.0;
+                }
+            }
+            UiInputWidget::Toggle => {
+                let mut b = val > 0.0;
+                ui.add(Checkbox::new(&mut b, &self.name));
+                if b {
+                    val = 1.0;
+                } else {
+                    val = 0.0;
                 }
             }
         }
@@ -100,7 +113,7 @@ impl Processor for UiInput {
 }
 
 impl UiInput {
-    pub fn create_node(name: &str, default: Scalar, widget: UiWidget) -> Arc<Node> {
+    pub fn create_node(name: &str, default: Scalar, widget: UiInputWidget) -> Arc<Node> {
         let this = Box::new(RwLock::new(UiInput {
             name: name.to_string(),
             value: default,
@@ -113,6 +126,66 @@ impl UiInput {
             vec![Output {
                 name: name.to_string(),
             }],
+            ProcessorType::Builtin(this),
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum UiOutputWidget {
+    Led { value: Scalar },
+}
+
+pub struct UiOutput {
+    pub name: String,
+    pub widget: UiOutputWidget,
+}
+
+impl Processor for UiOutput {
+    fn process_sample(
+        &mut self,
+        _buffer_idx: usize,
+        _signal_rate: SignalRate,
+        inputs: &[Signal],
+        outputs: &mut [Signal],
+    ) {
+        match &mut self.widget {
+            UiOutputWidget::Led { value } => {
+                *value = inputs[0].value();
+                outputs[0] = Signal::new(*value);
+            }
+        }
+    }
+
+    fn ui_update(&mut self, ui: &mut Ui) {
+        match self.widget {
+            UiOutputWidget::Led { value } => {
+                let _ = ui.radio(value > 0.0, &self.name);
+            }
+        }
+    }
+}
+
+impl UiOutput {
+    pub fn create_node(name: &str, widget: UiOutputWidget) -> Arc<Node> {
+        let this = Box::new(RwLock::new(UiOutput {
+            name: name.to_string(),
+            widget,
+        }));
+
+        let (inputs, outputs) = match widget {
+            UiOutputWidget::Led { value } => (
+                vec![Input::new("input", Some(Signal::new(value)))],
+                vec![Output {
+                    name: "out".to_owned(),
+                }],
+            ),
+        };
+
+        Arc::new(Node::new(
+            name.to_string().into(),
+            inputs,
+            outputs,
             ProcessorType::Builtin(this),
         ))
     }

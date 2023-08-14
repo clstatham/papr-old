@@ -1,0 +1,9 @@
+graph Main {
+	|| -> |@dac0|
+	~ {
+		let #v = #Toggle<0>();
+		let #set = #Button<0>();
+		let #o = #Var(#v #set);
+		let #q = #Led<0>(#o);
+	}
+}

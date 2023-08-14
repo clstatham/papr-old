@@ -12,11 +12,11 @@ graph Main {
         let [#pitch0 #vel0] = #NoteIn();
         let #denv0 = #Denv(#vel0 #decay0);
         let #denv1 = #Denv(#vel0 #decay1);
-        let #freq = #M2F(#pitch0);
+        let #freq = 440.0; //#M2F(#pitch0);
         let @s1 = @SineFm(#fm_amt (#fm_mul * #freq) 0.0 0.0);
-        let @s0 = @SineFm(#denv0 #freq #denv1 @s1);
+        let @s0 = @SineFm(0.1 #freq 1.0 @s1);
         let @res = (@s0 ^ @s1);
         @dac0 = (@res * @s0);
-		let #tmp = #Debug(@s0);
+		// let #tmp = #Debug(@s0);
     }
 }

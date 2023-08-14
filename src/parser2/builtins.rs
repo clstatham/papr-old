@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use crate::{
-    dsp::{basic::UiWidget, generators::BL_SQUARE_MAX_COEFF},
+    dsp::{
+        basic::{UiInputWidget, UiOutputWidget},
+        generators::BL_SQUARE_MAX_COEFF,
+    },
     graph::Node,
 };
 
@@ -36,6 +39,8 @@ pub enum BuiltinNode {
     // UI nodes
     Slider,
     Button,
+    Toggle,
+    Led,
 }
 
 impl BuiltinNode {
@@ -68,7 +73,8 @@ impl BuiltinNode {
             // UI nodes
             "Slider" => Some(BuiltinNode::Slider),
             "Button" => Some(BuiltinNode::Button),
-            // "oscrecv" => BuiltinNode::OscReceiver),
+            "Toggle" => Some(BuiltinNode::Toggle),
+            "Led" => Some(BuiltinNode::Led),
             _ => None,
         }
     }
@@ -124,7 +130,7 @@ impl BuiltinNode {
             Self::Slider => crate::dsp::basic::UiInput::create_node(
                 name,
                 creation_args[2].clone().unwrap_scalar(),
-                UiWidget::Slider {
+                UiInputWidget::Slider {
                     minimum: creation_args[0].clone().unwrap_scalar(),
                     maximum: creation_args[1].clone().unwrap_scalar(),
                 },
@@ -133,7 +139,19 @@ impl BuiltinNode {
             Self::Button => crate::dsp::basic::UiInput::create_node(
                 name,
                 creation_args[0].clone().unwrap_scalar(),
-                UiWidget::Button,
+                UiInputWidget::Button,
+            ),
+            Self::Toggle => crate::dsp::basic::UiInput::create_node(
+                name,
+                creation_args[0].clone().unwrap_scalar(),
+                UiInputWidget::Toggle,
+            ),
+
+            Self::Led => crate::dsp::basic::UiOutput::create_node(
+                name,
+                UiOutputWidget::Led {
+                    value: creation_args[0].clone().unwrap_scalar(),
+                },
             ),
         }
     }

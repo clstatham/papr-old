@@ -122,6 +122,8 @@ pub struct PaprApp {
     show_close_confirmation: bool,
     status_text: String,
     midi_port: usize,
+    #[cfg(target_os = "linux")]
+    force_alsa: bool,
 }
 
 impl PaprApp {
@@ -131,6 +133,7 @@ impl PaprApp {
         control_rate: Scalar,
         audio_buffer_len: usize,
         midi_port: usize,
+        #[cfg(target_os = "linux")] force_alsa: bool,
     ) -> Self {
         Self {
             audio_cx: None,
@@ -148,6 +151,8 @@ impl PaprApp {
             show_close_confirmation: false,
             status_text: "Welcome to PAPR! Runtime is off.".into(),
             midi_port,
+            #[cfg(target_os = "linux")]
+            force_alsa,
         }
     }
 
@@ -191,11 +196,20 @@ impl PaprApp {
     pub fn init(&mut self) {
         if self.audio_cx.is_none() {
             #[cfg(target_os = "linux")]
-            let host = cpal::host_from_id(cpal::HostId::Alsa)
-                .expect("PaprApp::init(): no JACK host available");
+            let host = if self.force_alsa {
+                println!("Initializing ALSA host.");
+                cpal::host_from_id(cpal::HostId::Alsa)
+                    .expect("PaprApp::init(): no ALSA host available")
+            } else {
+                println!("Initializing JACK host.");
+                cpal::host_from_id(cpal::HostId::Jack)
+                    .expect("PaprApp::init(): no JACK host available")
+            };
+
             #[cfg(target_os = "windows")]
             let host = cpal::host_from_id(cpal::HostId::Wasapi)
                 .expect("PaprApp::init(): no WASAPI host available");
+
             let out_device = host
                 .default_output_device()
                 .expect("PaprApp::init(): failed to find output device");
@@ -322,6 +336,7 @@ impl eframe::App for PaprApp {
     }
 
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+        ctx.request_repaint();
         if self.show_close_confirmation {
             Window::new("Save before exiting?")
                 .collapsible(false)
