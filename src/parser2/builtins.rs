@@ -11,8 +11,8 @@ pub enum BuiltinNode {
     Tanh,
     Exp,
     Abs,
+    FmSineOsc,
     SineOsc,
-    SineOscLFO,
     BlSawOsc,
     MidiToFreq,
     Clock,
@@ -34,28 +34,28 @@ pub enum BuiltinNode {
 impl BuiltinNode {
     pub fn try_from_ident(id: &ParsedIdent) -> Option<BuiltinNode> {
         match id.0.as_str() {
-            "sin" => Some(BuiltinNode::Sine),
-            "cos" => Some(BuiltinNode::Cosine),
-            "exp" => Some(BuiltinNode::Exp),
-            "tanh" => Some(BuiltinNode::Tanh),
-            "abs" => Some(BuiltinNode::Abs),
-            "sineosc" => Some(BuiltinNode::SineOsc),
-            "sinelfo" => Some(BuiltinNode::SineOscLFO),
-            "sawosc" => Some(BuiltinNode::BlSawOsc),
-            "m2f" => Some(BuiltinNode::MidiToFreq),
-            "clock" => Some(BuiltinNode::Clock),
-            "delay" => Some(BuiltinNode::Delay),
-            "notein" => Some(BuiltinNode::NoteIn),
-            "redge" => Some(BuiltinNode::RisingEdge),
-            "fedge" => Some(BuiltinNode::FallingEdge),
-            "var" => Some(BuiltinNode::Var),
-            "max" => Some(BuiltinNode::Max),
-            "min" => Some(BuiltinNode::Min),
-            "clip" => Some(BuiltinNode::Clip),
-            "debug" => Some(BuiltinNode::Debug),
-            "if" => Some(BuiltinNode::If),
-            "not" => Some(BuiltinNode::Not),
-            "sample" => Some(BuiltinNode::Sample),
+            "Sin" => Some(BuiltinNode::Sine),
+            "Cos" => Some(BuiltinNode::Cosine),
+            "Exp" => Some(BuiltinNode::Exp),
+            "Tanh" => Some(BuiltinNode::Tanh),
+            "Abs" => Some(BuiltinNode::Abs),
+            "SineFm" => Some(BuiltinNode::FmSineOsc),
+            "SineOsc" => Some(BuiltinNode::SineOsc),
+            "SawOsc" => Some(BuiltinNode::BlSawOsc),
+            "M2F" => Some(BuiltinNode::MidiToFreq),
+            "Clock" => Some(BuiltinNode::Clock),
+            "Delay" => Some(BuiltinNode::Delay),
+            "NoteIn" => Some(BuiltinNode::NoteIn),
+            "Redge" => Some(BuiltinNode::RisingEdge),
+            "Fedge" => Some(BuiltinNode::FallingEdge),
+            "Var" => Some(BuiltinNode::Var),
+            "Max" => Some(BuiltinNode::Max),
+            "Min" => Some(BuiltinNode::Min),
+            "Clip" => Some(BuiltinNode::Clip),
+            "Debug" => Some(BuiltinNode::Debug),
+            "If" => Some(BuiltinNode::If),
+            "Not" => Some(BuiltinNode::Not),
+            "Sample" => Some(BuiltinNode::Sample),
             // "oscrecv" => BuiltinNode::OscReceiver),
             _ => None,
         }
@@ -75,7 +75,7 @@ impl BuiltinNode {
             Self::Tanh => crate::dsp::basic::Tanh::create_node(name, audio_buffer_len, 0.0),
             Self::Abs => crate::dsp::basic::Abs::create_node(name, audio_buffer_len, 0.0),
             Self::Not => crate::dsp::basic::Not::create_node(name, audio_buffer_len, 0.0),
-            Self::SineOsc => crate::dsp::generators::SineOsc::create_node(
+            Self::FmSineOsc => crate::dsp::generators::FmSineOsc::create_node(
                 name,
                 audio_buffer_len,
                 1.0,
@@ -83,8 +83,8 @@ impl BuiltinNode {
                 0.0,
                 0.0,
             ),
-            Self::SineOscLFO => {
-                crate::dsp::generators::SineOscLFO::create_node(name, audio_buffer_len, 1.0, 1.0)
+            Self::SineOsc => {
+                crate::dsp::generators::SineOsc::create_node(name, audio_buffer_len, 1.0, 1.0)
             }
             Self::BlSawOsc => crate::dsp::generators::BlSawOsc::create_node(
                 name,

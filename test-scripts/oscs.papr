@@ -1,8 +1,8 @@
-graph sineosc_manual {
+graph SineOscManual {
     |amp freq fm_amt fm| -> |out|
     ~ {
         let TAU = (3.14159265 * 2);
-        let s = sin((((t * TAU) * freq) + ((fm * TAU) * fm_amt)));
+        let s = Sin((((t * TAU) * freq) + ((fm * TAU) * fm_amt)));
         out = (s * amp);
     }
 }

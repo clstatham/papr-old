@@ -19,6 +19,9 @@ contexts:
     - match: \b[0-9]+\.?[0-9]*\b
       scope: constant.numeric.papr
 
+    - match: \b[A-Z][A-Za-z_0-9]*\b
+      scope: entity.name.class.papr
+
     - match: '\b{{ident}}\b'
       scope: variable.papr
 

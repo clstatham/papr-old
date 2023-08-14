@@ -5,12 +5,12 @@ use papr_proc_macro::node_constructor;
 use super::{Processor, Signal, SignalRate};
 
 node_constructor! {
-    pub struct SineOsc;
+    pub struct FmSineOsc;
     in { amp, freq, fm_amt, fm }
     out { out }
 }
 
-impl Processor for SineOsc {
+impl Processor for FmSineOsc {
     fn process_sample(
         &mut self,
         _buffer_idx: usize,
@@ -30,12 +30,12 @@ impl Processor for SineOsc {
 }
 
 node_constructor! {
-    pub struct SineOscLFO;
+    pub struct SineOsc;
     in { amp, freq }
     out { out }
 }
 
-impl Processor for SineOscLFO {
+impl Processor for SineOsc {
     fn process_sample(
         &mut self,
         _buffer_idx: usize,

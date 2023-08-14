@@ -1085,7 +1085,7 @@ fn solve_graph(
             minimum: inp.minimum.map(Signal::new),
             maximum: inp.maximum.map(Signal::new),
             default: inp.default.map(Signal::new),
-            is_ui: graph.id.0 == "main" && inp.id.1 == Some(ParsedSignalRate::Control), // FIXME: hacky
+            is_ui: graph.id.0 == "Main" && inp.id.1 == Some(ParsedSignalRate::Control), // FIXME: hacky
             implicit: false,
         };
         match inp.id.1 {
@@ -1326,8 +1326,8 @@ pub fn parse_main_script(
     // dbg!(&graphs);
 
     let main_graph = known_graphs
-        .get("main")
-        .ok_or("Parsing error: `main` graph not found".to_owned())?
+        .get("Main")
+        .ok_or("Parsing error: `Main` graph not found".to_owned())?
         .clone();
     solve_graph(&main_graph, buffer_len, &mut known_graphs)
 }

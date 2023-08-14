@@ -1,10 +1,10 @@
 import "oscs.papr"
 import "envs.papr"
 
-graph main {
+graph Main {
     || -> |@dac0|
     ~ {
-        let [@s @len] = @sample<"test.wav">((@t % @len));
+        let [@s @len] = @Sample<"test.wav">((@t % @len));
         @dac0 = @s;
     }
 }

@@ -11,10 +11,10 @@ In order to use PAPR, you currently are required to have JACK Audio Connection K
 Open your favorite text editor, and type/paste the following:
 
 ```papr
-graph main {
+graph Main {
     || -> |@dac0|
     ~ {
-        @dac0 = @sineosc(0.1 440.0 0 0);
+        @dac0 = @SineOsc(0.1 440);
     }
 }
 ```
@@ -27,7 +27,7 @@ You should hear a sine tone!
 
 `graph` indicates a new audio- or control-rate graph definition (or *graphdef*).
 
-`main` is the name of our new graphdef. (Every script run on the command line MUST have a "main" graphdef!)
+`Main` is the name of our new graphdef. (Every script run on the command line MUST have a "Main" graphdef!)
 
 `|| -> |@dac0|` specifies the *signature* of our graphdef.
 
@@ -38,10 +38,10 @@ You should hear a sine tone!
 
 `~ {` indicates the beginning of a list of *statements*, which are typically just connections from a number of inputs to a number of outputs.
 
-`@dac0 = @sineosc(0.1 440.0 0 0);` is a statement that connects the output of a sine wave osscilator to the output `@dac0`.
+`@dac0 = @SineOsc(0.1 440.0);` is a statement that connects the output of a sine wave osscilator to the output `@dac0`.
 
 - Again, the `@` indicates that the sine oscillator will operate at audio-rate.
-- The four numbers in parentheses are simply the *inputs* to the sine oscillator. In this particular case, they correspond to the amplitude, frequency, frequency-modulation amount, and frequency-modulation inputs.
+- The four numbers in parentheses are simply the *inputs* to the sine oscillator. In this particular case, they correspond to the amplitude and frequency inputs.
 
 ## License
 
