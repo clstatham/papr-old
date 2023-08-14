@@ -14,8 +14,11 @@ use cpal::{
 };
 
 use eframe::{
-    egui::{CentralPanel, Context, Layout, SidePanel, TextEdit, TopBottomPanel},
-    epaint::text::LayoutJob,
+    egui::{
+        Button, CentralPanel, Context, Key, Layout, RichText, SidePanel, TextEdit, TopBottomPanel,
+        Window,
+    },
+    epaint::{text::LayoutJob, Color32, Stroke},
 };
 
 use syntect::parsing::SyntaxDefinition;
@@ -111,6 +114,8 @@ pub struct PaprApp {
     script_text: String,
     midi_ctx: Option<MidiContext>,
     control_thread_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+    allowed_to_close: bool,
+    show_close_confirmation: bool,
 }
 
 impl PaprApp {
@@ -133,15 +138,24 @@ impl PaprApp {
             script_text: String::new(),
             midi_ctx: None,
             control_thread_shutdown: None,
+            allowed_to_close: false,
+            show_close_confirmation: false,
         }
     }
 
-    pub fn load_file(&mut self) -> PathBuf {
+    pub fn load_script_file(&mut self) -> PathBuf {
         let path = self.script_path.as_ref().unwrap();
         let mut file = File::open(path).unwrap();
         self.script_text = String::new();
         file.read_to_string(&mut self.script_text).unwrap();
         path.clone()
+    }
+
+    pub fn save_script_file(&mut self) {
+        use std::io::Write;
+        let path = self.script_path.as_ref().unwrap();
+        let mut file = File::create(path).unwrap();
+        write!(file, "{}", &self.script_text).unwrap();
     }
 
     pub fn create_graphs(&mut self, audio_buffer_len: usize) {
@@ -272,13 +286,122 @@ impl PaprApp {
             })
             .expect("PaprApp::spawn(): error spawning control rate thread");
     }
+
+    fn reload(&mut self) {
+        if let Some(tx) = self.control_thread_shutdown.take() {
+            tx.send(()).unwrap();
+            std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
+        }
+        self.ui_control_inputs.clear();
+        self.init();
+        // self.script_path = None;
+        self.spawn();
+    }
+
+    fn panic(&mut self) {
+        if let Some(mut cx) = self.audio_cx.take() {
+            if let Some(stream) = cx.stream.take() {
+                drop(stream); // immediately stop playback
+            }
+        }
+        if let Some(tx) = self.control_thread_shutdown.take() {
+            tx.send(()).unwrap();
+        }
+    }
 }
 
 impl eframe::App for PaprApp {
-    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        // ctx.request_repaint();
+    fn on_close_event(&mut self) -> bool {
+        self.show_close_confirmation = true;
+        self.allowed_to_close
+    }
+
+    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+        if self.show_close_confirmation {
+            Window::new("Save before exiting?")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            self.show_close_confirmation = false;
+                        }
+                        if ui.button("No").clicked() {
+                            self.allowed_to_close = true;
+                            self.show_close_confirmation = false;
+                            frame.close();
+                        }
+                        if ui.button("Yes").clicked() {
+                            if self.script_path.is_some() {
+                                self.save_script_file();
+                            } else if let Some(path) = rfd::FileDialog::new().save_file() {
+                                self.script_path = Some(path.clone());
+                                self.save_script_file();
+                            }
+                            self.allowed_to_close = true;
+                            self.show_close_confirmation = false;
+                            frame.close();
+                        }
+                    })
+                });
+        }
+        ctx.input(|i| {
+            if i.key_pressed(Key::F5) {
+                self.reload();
+            }
+            if i.modifiers.ctrl {
+                if i.key_pressed(Key::Enter) {
+                    self.reload();
+                }
+                if i.key_pressed(Key::S) {
+                    if self.script_path.is_some() {
+                        self.save_script_file();
+                    } else if let Some(path) = rfd::FileDialog::new().save_file() {
+                        self.script_path = Some(path.clone());
+                        self.save_script_file();
+                    }
+                }
+                if i.key_pressed(Key::K) {
+                    self.panic();
+                }
+            }
+        });
+        frame.set_window_title(&format!(
+            "PAPR - {}",
+            self.script_path
+                .as_ref()
+                .map(|p| p.file_name().unwrap().to_str().unwrap())
+                .unwrap_or("(untitled)")
+        ));
+        TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+            if ui
+                .add_sized(
+                    (80.0, 40.0),
+                    Button::new(RichText::new("PANIC").color(Color32::BLACK).size(20.0))
+                        .fill(Color32::YELLOW)
+                        .stroke(Stroke::new(1.0, Color32::BLACK)),
+                )
+                .clicked()
+            {
+                self.panic();
+            }
+        });
         TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.with_layout(Layout::left_to_right(eframe::emath::Align::Min), |ui| {
+                if ui.button("Save").clicked() {
+                    if self.script_path.is_some() {
+                        self.save_script_file();
+                    } else if let Some(path) = rfd::FileDialog::new().save_file() {
+                        self.script_path = Some(path.clone());
+                        self.save_script_file();
+                    }
+                }
+                if ui.button("Save As...").clicked() {
+                    if let Some(path) = rfd::FileDialog::new().save_file() {
+                        self.script_path = Some(path.clone());
+                        self.save_script_file();
+                    }
+                }
                 if ui.button("Open...").clicked() {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("PAPR Scripts", &["papr"])
@@ -297,19 +420,12 @@ impl eframe::App for PaprApp {
                         }
                         self.ui_control_inputs.clear();
                         self.init();
-                        self.load_file();
+                        self.load_script_file();
                         self.spawn();
                     }
                 }
                 if ui.button("Reload").clicked() {
-                    if let Some(tx) = self.control_thread_shutdown.take() {
-                        tx.send(()).unwrap();
-                        std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
-                    }
-                    self.ui_control_inputs.clear();
-                    self.init();
-                    // self.script_path = None;
-                    self.spawn();
+                    self.reload();
                 }
             });
         });
@@ -362,7 +478,7 @@ impl Default for Highlighter {
     fn default() -> Self {
         let mut builder = syntect::parsing::SyntaxSetBuilder::new();
         builder.add(
-            SyntaxDefinition::load_from_str(include_str!("../papr.sublime-syntax"), true, None)
+            SyntaxDefinition::load_from_str(include_str!("../papr.sublime-syntax"), false, None)
                 .unwrap(),
         );
         let ps = builder.build();
