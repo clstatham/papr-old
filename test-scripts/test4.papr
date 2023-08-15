@@ -1,3 +1,1 @@
-graph Main {
-    \garbage garbage garbage
-}
+let foo = @Fedge(1 2 #Clock @Fedge @Min @Exp @Exp @Exp @Fedge @Min @Fedge @Tanh @Min @Fedge @Min #Redge @Exp @Exp @Fedge @Min #Fedge @Exp @Tanh @Tanh @Fedge @Fedge

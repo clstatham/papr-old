@@ -5,10 +5,11 @@ import sys
 import subprocess
 import os
 import re
+import shutil
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='')
 
-minibatch_size = 32
+minibatch_size = 8
 successful_renders = 0
 
 checkpoint = "Salesforce/codegen2-1B"
@@ -38,7 +39,7 @@ extra_tokens = [
 audio_tokens = ["@" + tok for tok in extra_tokens]
 control_tokens = ["#" + tok for tok in extra_tokens]
 extra_tokens = audio_tokens + control_tokens
-extra_tokens += ["let", "=", ";"]
+extra_tokens += ["let", "=", ";", "@dac0"]
 print(extra_tokens)
 tokenizer.add_tokens(extra_tokens)
 model = AutoModelForCausalLM.from_pretrained(
@@ -84,8 +85,11 @@ class PaaiprEnv(TextRLEnv):
 
             if result_full.returncode == 0:
                 reward[i] += 1000
-                os.rename(
+                shutil.copyfile(
                     f"training/{i}.wav", f"training/success_{successful_renders}.wav")
+                shutil.copyfile(
+                    f"training/{i}.papr", f"training/success_{successful_renders}.papr")
+
                 successful_renders += 1
 
             reward[i] += int(
@@ -104,7 +108,7 @@ actor = TextRLActor(env, model, tokenizer, act_deterministically=False,
 agent = actor.agent_ppo(
     update_interval=10, minibatch_size=minibatch_size, epochs=20)
 # print(actor.predict(observation_list[0]))
-# agent.load("training_tokenizer/best")
+# agent.load("training/best")
 train_agent_with_evaluation(agent, env, steps=1000000, eval_n_steps=None,
                             eval_n_episodes=1, eval_interval=10, outdir='training', use_tensorboard=True)
 

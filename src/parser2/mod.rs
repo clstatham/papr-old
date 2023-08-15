@@ -290,7 +290,7 @@ pub fn whitespace1<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
 macro_rules! tag_token {
     ($func:ident, $tag:expr) => {
         #[allow(dead_code)]
-        fn $func(tokens: Tokens) -> IResult<Tokens, Tokens> {
+        pub fn $func(tokens: Tokens) -> IResult<Tokens, Tokens> {
             verify(take(1usize), |t: &Tokens| t.tokens[0] == $tag)(tokens)
         }
     };
