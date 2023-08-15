@@ -1298,7 +1298,10 @@ pub fn parse_main_script(inp: &str, cwd: &impl AsRef<Path>) -> Result<(Graph, Gr
     }
     let (garbage, tokens) = Token::many1(inp).map_err(|e| format!("Parsing error: {:?}", e))?;
     if !garbage.is_empty() {
-        return Err(format!("Parsing error: unexpected garbage:\n{garbage}"));
+        return Err(format!(
+            "Parsing error: unexpected garbage:\n{garbage}\nCorrect Tokens: <<<{}>>>",
+            tokens.len()
+        ));
     }
     let tokens = Tokens { tokens: &tokens };
 

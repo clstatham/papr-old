@@ -4,8 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["papr-proc-macro"]
+members = ["papr-proc-macro", "paaipr/papr-tokenizer"]
+exclude = []
 
+
+[[bin]]
+name = "papr"
+path = "src/main.rs"
+
+[lib]
+name = "papr_lib"
+path = "src/lib.rs"
 
 [features]
 default = ["double"]

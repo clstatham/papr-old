@@ -46,8 +46,7 @@ struct Args {
     #[arg(short, long, default_value_t = 0, value_name = "PORT")]
     midi_port: usize,
 
-    /// Force ALSA as the audio backend, instead of JACK
-    #[cfg(target_os = "linux")]
+    /// On Linux, Force ALSA as the audio backend, instead of JACK
     #[arg(long, default_value_t = false)]
     force_alsa: bool,
 

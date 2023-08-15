@@ -4,3 +4,5 @@ perf.data*
 *.svg
 *.dot
 *.wav
+/paaipr/papr-tokenizer/target
+/paaipr/training*
