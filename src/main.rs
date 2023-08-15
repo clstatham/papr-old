@@ -5,6 +5,8 @@ use app::PaprApp;
 use clap::Parser;
 use eframe::{egui::Visuals, NativeOptions};
 
+use crate::app::PaprRuntime;
+
 pub mod app;
 #[macro_use]
 pub mod dsp;
@@ -38,10 +40,6 @@ struct Args {
     #[arg(short, long, default_value_t = 48000, value_name = "HERTZ")]
     sample_rate: u64,
 
-    /// The desired audio buffer length to request (in samples)
-    #[arg(short, long, default_value_t = 1024, value_name = "SAMPLES")]
-    buffer_len: u64,
-
     /// The MIDI input port id to use
     #[arg(short, long, default_value_t = 0, value_name = "PORT")]
     midi_port: usize,
@@ -71,20 +69,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         let script_path = args
             .script_path
             .expect("A script path is required when running with --headless");
-        let mut app = PaprApp::new(
-            Some(script_path),
+        let rt = PaprRuntime::new(
             args.sample_rate as Scalar,
             args.control_rate as Scalar,
-            args.buffer_len as usize,
-            args.midi_port,
-            #[cfg(target_os = "linux")]
-            args.force_alsa,
             args.out_path.clone(),
             Some(args.run_for),
         );
-        app.init();
-        app.load_script_file();
-        app.spawn()?;
+        let mut app = PaprApp::new(rt);
+        app.init_audio(
+            #[cfg(target_os = "linux")]
+            args.force_alsa,
+        );
+        app.rt.init();
+        app.load_script_file(&script_path).unwrap();
+        app.rt.spawn(&app.script_text, app.audio_cx.take())?;
 
         if args.out_path.is_none() {
             if args.run_for > 0 {
@@ -104,25 +102,25 @@ fn main() -> Result<(), Box<dyn Error>> {
             Box::new(move |cc| {
                 cc.egui_ctx.set_visuals(Visuals::dark());
 
-                let mut app = PaprApp::new(
-                    args.script_path.clone(),
+                let rt = PaprRuntime::new(
                     args.sample_rate as Scalar,
                     args.control_rate as Scalar,
-                    args.buffer_len as usize,
-                    args.midi_port,
-                    #[cfg(target_os = "linux")]
-                    args.force_alsa,
                     None,
                     None,
                 );
-                if args.script_path.is_some() {
-                    app.init();
-                    app.load_script_file();
+                let mut app = PaprApp::new(rt);
+                if let Some(script_path) = args.script_path.as_ref() {
+                    app.init_audio(
+                        #[cfg(target_os = "linux")]
+                        args.force_alsa,
+                    );
+                    app.rt.init();
+                    app.load_script_file(script_path).unwrap();
                 }
 
                 Box::new(app)
             }),
-        )?;
+        );
         Ok(())
     }
 }

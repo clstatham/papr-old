@@ -1,9 +1,10 @@
 use std::{
     collections::BTreeMap,
     env::current_dir,
+    error::Error,
     fs::File,
     io::Read,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -106,88 +107,42 @@ impl AudioContext {
     }
 }
 
-pub struct PaprApp {
-    audio_cx: Option<AudioContext>,
-    audio_graph: Option<Graph>,
-    control_graph: Option<Graph>,
+pub struct PaprRuntime {
+    pub audio_graph: Option<Graph>,
+    pub control_graph: Option<Graph>,
     control_node_refs: Vec<Arc<Node>>,
     sample_rate: Scalar,
-    control_rate: Scalar,
-    audio_buffer_len: usize,
-    script_path: Option<PathBuf>,
-    script_text: String,
-    midi_ctx: Option<MidiContext>,
-    control_thread_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
-    allowed_to_close: bool,
-    show_close_confirmation: bool,
+    pub control_rate: Scalar,
+    pub control_thread_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
     status_text: String,
-    midi_port: usize,
-    #[cfg(target_os = "linux")]
-    force_alsa: bool,
     out_file_name: Option<PathBuf>,
     run_for: Option<u64>,
 }
 
-impl PaprApp {
+impl PaprRuntime {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        script_path: Option<PathBuf>,
         sample_rate: Scalar,
         control_rate: Scalar,
-        audio_buffer_len: usize,
-        midi_port: usize,
-        #[cfg(target_os = "linux")] force_alsa: bool,
         out_file_name: Option<PathBuf>,
         run_for: Option<u64>,
     ) -> Self {
         Self {
-            audio_cx: None,
             audio_graph: None,
             control_graph: None,
             control_node_refs: Vec::new(),
             control_rate,
             sample_rate,
-            audio_buffer_len,
-            script_path,
-            script_text: String::new(),
-            midi_ctx: None,
             control_thread_shutdown: None,
-            allowed_to_close: false,
-            show_close_confirmation: false,
             status_text: "Welcome to PAPR! Runtime is off.".into(),
-            midi_port,
-            #[cfg(target_os = "linux")]
-            force_alsa,
             out_file_name,
             run_for,
         }
     }
 
-    pub fn load_script_file(&mut self) -> Option<PathBuf> {
-        let path = self.script_path.as_ref()?;
-        let mut file = File::open(path).ok()?;
-        self.script_text = String::new();
-        file.read_to_string(&mut self.script_text).ok()?;
-        Some(path.clone())
-    }
-
-    pub fn save_script_file(&mut self) -> Option<()> {
-        use std::io::Write;
-        let path = self.script_path.as_ref()?;
-        let mut file = File::create(path).ok()?;
-        write!(file, "{}", &self.script_text).ok()?;
-        Some(())
-    }
-
-    pub fn create_graphs(&mut self) -> Result<(), String> {
-        let (audio, control) = crate::parser2::parse_main_script(
-            &self.script_text,
-            &self
-                .script_path
-                .as_ref()
-                .and_then(|p| p.parent())
-                .unwrap_or(current_dir().unwrap().as_path()),
-        )?;
+    pub fn create_graphs(&mut self, script_text: &str) -> Result<(), String> {
+        let (audio, control) =
+            crate::parser2::parse_main_script(script_text, &current_dir().unwrap().as_path())?;
 
         for c_in_idx in control.digraph.node_indices() {
             let c_in = &control.digraph[c_in_idx];
@@ -200,42 +155,42 @@ impl PaprApp {
         Ok(())
     }
 
+    pub fn create_audio_context(force_alsa: bool) -> AudioContext {
+        // if self.audio_cx.is_none() && self.out_file_name.is_none() {
+        #[cfg(target_os = "linux")]
+        let host = if force_alsa {
+            println!("Initializing ALSA host.");
+            cpal::host_from_id(cpal::HostId::Alsa).expect("PaprApp::init(): no ALSA host available")
+        } else {
+            println!("Initializing JACK host.");
+            cpal::host_from_id(cpal::HostId::Jack).expect("PaprApp::init(): no JACK host available")
+        };
+
+        #[cfg(target_os = "windows")]
+        let host = cpal::host_from_id(cpal::HostId::Wasapi)
+            .expect("PaprApp::init(): no WASAPI host available");
+
+        let out_device = host
+            .default_output_device()
+            .expect("PaprApp::init(): failed to find output device");
+        AudioContext {
+            out_device,
+            stream: None,
+        }
+        // self.audio_cx = Some(inner);
+        // }
+    }
+
     pub fn init(&mut self) {
-        if self.audio_cx.is_none() && self.out_file_name.is_none() {
-            #[cfg(target_os = "linux")]
-            let host = if self.force_alsa {
-                println!("Initializing ALSA host.");
-                cpal::host_from_id(cpal::HostId::Alsa)
-                    .expect("PaprApp::init(): no ALSA host available")
-            } else {
-                println!("Initializing JACK host.");
-                cpal::host_from_id(cpal::HostId::Jack)
-                    .expect("PaprApp::init(): no JACK host available")
-            };
-
-            #[cfg(target_os = "windows")]
-            let host = cpal::host_from_id(cpal::HostId::Wasapi)
-                .expect("PaprApp::init(): no WASAPI host available");
-
-            let out_device = host
-                .default_output_device()
-                .expect("PaprApp::init(): failed to find output device");
-            let inner = AudioContext {
-                out_device,
-                stream: None,
-            };
-            self.audio_cx = Some(inner);
-        }
-
-        if self.midi_ctx.is_none() {
-            self.midi_ctx = Some(MidiContext::new("PAPR Midi In", Some(self.midi_port)));
-        }
-
         self.status_text = "Initialization successful.".into();
     }
 
-    pub fn spawn(&mut self) -> Result<(), String> {
-        self.create_graphs()?;
+    pub fn spawn(
+        &mut self,
+        script_text: &str,
+        mut audio_cx: Option<AudioContext>,
+    ) -> Result<Option<AudioContext>, String> {
+        self.create_graphs(script_text)?;
 
         let mut audio_graph = self
             .audio_graph
@@ -246,7 +201,7 @@ impl PaprApp {
             .take()
             .expect("PaprApp::spawn(): control graph not initialized");
 
-        let t_idx = control_graph.node_id_by_name("t").unwrap();
+        let t_idx: petgraph::stable_graph::NodeIndex = control_graph.node_id_by_name("t").unwrap();
         let control_rate = self.control_rate;
         let (tx, mut rx) = tokio::sync::oneshot::channel();
         self.control_thread_shutdown = Some(tx);
@@ -310,15 +265,14 @@ impl PaprApp {
             )
             .unwrap();
         } else {
-            let mut audio_cx = self
-                .audio_cx
+            let mut audio_cx = audio_cx
                 .take()
                 .expect("PaprApp::spawn(): audio context not initialized");
 
             let config = cpal::StreamConfig {
                 channels: cpal::ChannelCount::from(1u16),
                 sample_rate: cpal::SampleRate(self.sample_rate as u32),
-                buffer_size: cpal::BufferSize::Fixed(self.audio_buffer_len as u32),
+                buffer_size: cpal::BufferSize::Default,
             };
             println!(
                 "Output device: {}",
@@ -331,7 +285,6 @@ impl PaprApp {
             println!("Control rate: {} Hz", self.control_rate);
 
             audio_cx.run::<f32>(audio_graph, config)?;
-            self.audio_cx = Some(audio_cx);
 
             std::thread::Builder::new()
                 .name("PAPR Control".into())
@@ -365,10 +318,14 @@ impl PaprApp {
         }
 
         self.status_text = "Runtime is running.".into();
-        Ok(())
+        Ok(audio_cx)
     }
 
-    fn reload(&mut self) -> Result<(), String> {
+    pub fn reload(
+        &mut self,
+        script_text: &str,
+        audio_cx: Option<AudioContext>,
+    ) -> Result<Option<AudioContext>, String> {
         if let Some(tx) = self.control_thread_shutdown.take() {
             tx.send(())
                 .map_err(|_| "Error shutting down control rate thread".to_owned())?;
@@ -377,13 +334,17 @@ impl PaprApp {
         self.control_node_refs.clear();
         self.init();
         // self.script_path = None;
-        self.spawn()
+        self.spawn(script_text, audio_cx)
     }
 
-    fn panic(&mut self) -> Result<(), String> {
-        if let Some(mut cx) = self.audio_cx.take() {
+    pub fn panic(
+        &mut self,
+        mut audio_cx: Option<AudioContext>,
+    ) -> Result<Option<AudioContext>, String> {
+        if let Some(mut cx) = audio_cx.take() {
             if let Some(stream) = cx.stream.take() {
                 drop(stream); // immediately stop playback
+                audio_cx = Some(cx);
             }
         }
         if let Some(tx) = self.control_thread_shutdown.take() {
@@ -391,6 +352,47 @@ impl PaprApp {
                 .map_err(|_| "Error shutting down control rate thread".to_owned())?;
         }
         self.status_text = "Runtime stopped.".into();
+        Ok(audio_cx)
+    }
+}
+
+pub struct PaprApp {
+    pub rt: PaprRuntime,
+    allowed_to_close: bool,
+    show_close_confirmation: bool,
+    pub audio_cx: Option<AudioContext>,
+    pub script_path: Option<PathBuf>,
+    pub script_text: String,
+}
+
+impl PaprApp {
+    pub fn new(rt: PaprRuntime) -> Self {
+        Self {
+            rt,
+            allowed_to_close: false,
+            show_close_confirmation: false,
+            audio_cx: None,
+            script_path: None,
+            script_text: String::new(),
+        }
+    }
+
+    pub fn init_audio(&mut self, #[cfg(target_os = "linux")] force_alsa: bool) {
+        self.audio_cx = Some(PaprRuntime::create_audio_context(force_alsa));
+    }
+
+    pub fn load_script_file(&mut self, script_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+        // let path = self.script_path.as_ref()?;
+        let mut file = File::open(script_path)?;
+        self.script_text = String::new();
+        file.read_to_string(&mut self.script_text)?;
+        Ok(())
+    }
+
+    pub fn save_script_file(&mut self, script_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+        use std::io::Write;
+        let mut file = File::create(script_path)?;
+        write!(file, "{}", &self.script_text)?;
         Ok(())
     }
 }
@@ -418,11 +420,11 @@ impl eframe::App for PaprApp {
                             frame.close();
                         }
                         if ui.button("Yes").clicked() {
-                            if self.script_path.is_some() {
-                                self.save_script_file();
+                            if let Some(script_path) = self.script_path.clone() {
+                                self.save_script_file(&script_path);
                             } else if let Some(path) = rfd::FileDialog::new().save_file() {
                                 self.script_path = Some(path.clone());
-                                self.save_script_file();
+                                self.save_script_file(&path);
                             }
                             self.allowed_to_close = true;
                             self.show_close_confirmation = false;
@@ -431,29 +433,42 @@ impl eframe::App for PaprApp {
                     })
                 });
         }
-        ctx.input(|i| {
-            if i.key_pressed(Key::F5) {
-                self.reload()
-                    .unwrap_or_else(|e| self.status_text = format!("Failed to reload: {e}"));
-            }
-            if i.modifiers.ctrl {
-                if i.key_pressed(Key::Enter) {
-                    self.reload()
-                        .unwrap_or_else(|e| self.status_text = format!("Failed to reload: {e}"));
-                }
-                if i.key_pressed(Key::S) {
-                    if self.script_path.is_some() {
-                        self.save_script_file();
-                    } else if let Some(path) = rfd::FileDialog::new().save_file() {
-                        self.script_path = Some(path.clone());
-                        self.save_script_file();
-                    }
-                }
-                if i.key_pressed(Key::K) {
-                    self.panic().expect("Error while panicking");
-                }
-            }
-        });
+        // ctx.input(|i| {
+        //     if i.key_pressed(Key::F5) {
+        //         self.audio_cx = self
+        //             .rt
+        //             .reload(&self.script_text, self.audio_cx.take())
+        //             .unwrap_or_else(|e| {
+        //                 self.rt.status_text = format!("Failed to reload: {e}");
+        //                 None
+        //             });
+        //     }
+        //     if i.modifiers.ctrl {
+        //         if i.key_pressed(Key::Enter) {
+        //             self.audio_cx = self
+        //                 .rt
+        //                 .reload(&self.script_text, self.audio_cx.take())
+        //                 .unwrap_or_else(|e| {
+        //                     self.rt.status_text = format!("Failed to reload: {e}");
+        //                     None
+        //                 });
+        //         }
+        //         if i.key_pressed(Key::S) {
+        //             if let Some(script_path) = self.script_path.clone() {
+        //                 self.save_script_file(&script_path);
+        //             } else if let Some(path) = rfd::FileDialog::new().save_file() {
+        //                 self.script_path = Some(path.clone());
+        //                 self.save_script_file(&path);
+        //             }
+        //         }
+        //         if i.key_pressed(Key::K) {
+        //             self.audio_cx = self
+        //                 .rt
+        //                 .panic(self.audio_cx.take())
+        //                 .expect("Error while panicking");
+        //         }
+        //     }
+        // });
         frame.set_window_title(&format!(
             "PAPR - {}",
             self.script_path
@@ -473,25 +488,28 @@ impl eframe::App for PaprApp {
                     )
                     .clicked()
                 {
-                    self.panic().expect("Error while panicking");
+                    self.audio_cx = self
+                        .rt
+                        .panic(self.audio_cx.take())
+                        .expect("Error while panicking");
                 }
-                ui.label(&self.status_text);
+                ui.label(&self.rt.status_text);
             });
         });
         TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.with_layout(Layout::left_to_right(eframe::emath::Align::Min), |ui| {
                 if ui.button("Save").clicked() {
-                    if self.script_path.is_some() {
-                        self.save_script_file();
+                    if let Some(script_path) = self.script_path.clone() {
+                        self.save_script_file(&script_path);
                     } else if let Some(path) = rfd::FileDialog::new().save_file() {
                         self.script_path = Some(path.clone());
-                        self.save_script_file();
+                        self.save_script_file(&path);
                     }
                 }
                 if ui.button("Save As...").clicked() {
                     if let Some(path) = rfd::FileDialog::new().save_file() {
                         self.script_path = Some(path.clone());
-                        self.save_script_file();
+                        self.save_script_file(&path);
                     }
                 }
                 if ui.button("Open...").clicked() {
@@ -505,27 +523,39 @@ impl eframe::App for PaprApp {
                         )
                         .pick_file()
                     {
-                        self.script_path = Some(path);
-                        if let Some(tx) = self.control_thread_shutdown.take() {
+                        self.script_path = Some(path.clone());
+                        if let Some(tx) = self.rt.control_thread_shutdown.take() {
                             tx.send(()).unwrap();
                             std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
                         }
-                        self.control_node_refs.clear();
-                        self.init();
-                        self.load_script_file();
-                        self.spawn()
-                            .unwrap_or_else(|e| self.status_text = format!("Failed to spawn: {e}"));
+                        self.rt.control_node_refs.clear();
+                        self.rt.init();
+                        self.load_script_file(&path).unwrap_or_else(|e| {
+                            self.rt.status_text = format!("Failed to load script: {e}");
+                        });
+                        self.audio_cx = self
+                            .rt
+                            .spawn(&self.script_text, self.audio_cx.take())
+                            .unwrap_or_else(|e| {
+                                self.rt.status_text = format!("Failed to spawn: {e}");
+                                None
+                            });
                     }
                 }
                 if ui.button("Reload").clicked() {
-                    self.reload()
-                        .unwrap_or_else(|e| self.status_text = format!("Failed to reload: {e}"));
+                    self.audio_cx = self
+                        .rt
+                        .reload(&self.script_text, self.audio_cx.take())
+                        .unwrap_or_else(|e| {
+                            self.rt.status_text = format!("Failed to reload: {e}");
+                            None
+                        });
                 }
             });
         });
 
         SidePanel::left("inputs").show(ctx, |ui| {
-            for node in self.control_node_refs.iter() {
+            for node in self.rt.control_node_refs.iter() {
                 node.processor.ui_update(ui);
             }
         });
@@ -533,7 +563,7 @@ impl eframe::App for PaprApp {
         CentralPanel::default().show(ctx, |ui| {
             let mut layouter = |ui: &eframe::egui::Ui, string: &str, _| {
                 let layout_job = highlight(ui.ctx(), string);
-                ui.fonts(|f| f.layout_job(layout_job))
+                ui.fonts().layout_job(layout_job)
             };
             ui.add_sized(
                 ui.available_size(),
@@ -560,7 +590,7 @@ pub fn highlight(ctx: &Context, code: &str) -> LayoutJob {
 
     type HighlightCache = eframe::egui::util::cache::FrameCache<LayoutJob, Highlighter>;
 
-    ctx.memory_mut(|mem| mem.caches.cache::<HighlightCache>().get(code))
+    ctx.memory().caches.cache::<HighlightCache>().get(code)
 }
 
 struct Highlighter {
@@ -613,7 +643,7 @@ impl Highlighter {
                 let underline = if underline {
                     eframe::egui::Stroke::new(1.0, text_color)
                 } else {
-                    eframe::egui::Stroke::NONE
+                    eframe::egui::Stroke::none()
                 };
                 job.sections.push(LayoutSection {
                     leading_space: 0.0,

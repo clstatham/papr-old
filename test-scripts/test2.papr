@@ -1,6 +1,3 @@
-import "oscs.papr"
-import "envs.papr"
-
 graph Main {
     || -> |@dac0|
     ~ {

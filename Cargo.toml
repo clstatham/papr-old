@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["papr-proc-macro", "paaipr/papr-tokenizer"]
+members = ["papr-proc-macro", "paaipr/papr-tokenizer", "papr_plugin"]
 exclude = []
 
 
@@ -28,7 +28,7 @@ cfg-if = "1.0.0"
 clap = { version = "4.3.19", features = ["derive"] }
 cpal = { version = "0.15.2", features = ["jack"] }
 derive_more = "0.99.17"
-eframe = "0.21"
+eframe = "0.19"
 env_logger = "0.10.0"
 log = "0.4.19"
 nom = "7.1.3"

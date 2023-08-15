@@ -1,0 +1,26 @@
+[package]
+name = "papr_plugin"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "papr_plugin"
+path = "src/main.rs"
+
+[dependencies]
+papr = { path = "../" }
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug", features = [
+    "standalone",
+    "vst3",
+] }
+nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug" }
+crossbeam-channel = "0.5.8"
+tokio = { version = "*", features = ["sync"] }
+rfd = { version = "0.11.4", default-features = false, features = [
+    "xdg-portal",
+] }
