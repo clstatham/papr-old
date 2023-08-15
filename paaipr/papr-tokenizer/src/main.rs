@@ -1,7 +1,7 @@
 use clap::Parser;
 use nom::multi::many1_count;
 use papr_lib::parser2::{graph, Token, Tokens};
-use std::{env::args, error::Error, fs::File, io::Read, path::PathBuf};
+use std::{error::Error, fs::File, io::Read, path::PathBuf};
 
 #[derive(clap::Parser)]
 struct Args {

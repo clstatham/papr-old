@@ -2,6 +2,7 @@
 pub mod dsp;
 #[macro_use]
 pub mod graph;
+pub mod app;
 pub mod io;
 pub mod parser2;
 
