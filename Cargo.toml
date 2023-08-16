@@ -46,6 +46,12 @@ rfd = { version = "0.11.4", default-features = false, features = [
 syntect = { version = "5.1.0", features = ["default-fancy"] }
 creak = "0.3.0"
 wav = "1.0.0"
+nom-supreme = "0.8.0"
+nom_locate = "4.1.0"
+miette = { version = "5.10.0", features = ["fancy"] }
+thiserror = "1.0.46"
+pest = "2.7.2"
+pest_derive = { version = "2.7.2", features = ["grammar-extras"] }
 
 [profile.release]
 # debug = true

@@ -1,0 +1,73 @@
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+
+line_comment  = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" }
+block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+COMMENT       = _{ line_comment | block_comment }
+
+// keywords
+keyword = @{ "graph" | "let" }
+
+// operators
+add      = @{ "+" }
+sub      = @{ "-" }
+mul      = @{ "*" }
+div      = @{ "/" }
+gt       = @{ ">" }
+lt       = @{ "<" }
+eq       = @{ "==" }
+neq      = @{ "!=" }
+and      = @{ "&" }
+or       = @{ "|" }
+xor      = @{ "^" }
+rem      = @{ "%" }
+infix_op =  { add | sub | mul | div | gt | lt | eq | neq | and | or | xor | rem }
+
+// signal rates
+audio_rate   = @{ "@" }
+control_rate = @{ "#" }
+signal_rate  =  { audio_rate | control_rate }
+
+// atomic types
+int            = @{ ASCII_DIGIT+ }
+scalar         = @{ int ~ ("." ~ int)? }
+char           =  { !"\"" ~ ANY }
+string_inner   = @{ char* }
+string         = ${ "\"" ~ string_inner ~ "\"" }
+ident_raw      = @{ "_"* ~ ASCII_ALPHA ~ ("_" | ASCII_ALPHA | ASCII_DIGIT)* }
+graph_name_raw = @{ ASCII_ALPHA_UPPER ~ ident_raw }
+
+// rated idents
+ident      = { signal_rate? ~ ident_raw }
+graph_name = { signal_rate? ~ graph_name_raw }
+
+// imports
+import_stmt = { "import" ~ string }
+
+// calls
+creation_args = { "<" ~ (scalar | string)+ ~ ">" }
+call          = { graph_name ~ creation_args? ~ "(" ~ expr* ~ ")" }
+
+// exprs
+expr       = { scalar | call | ident | infix_expr }
+infix_expr = { "(" ~ expr ~ infix_op ~ expr ~ ")" }
+
+// connections
+list           = { "[" ~ ident+ ~ "]" }
+connection_lhs = { list | ident }
+connection     = { connection_lhs ~ "=" ~ expr ~ ";" }
+
+// statements
+let_statement   = { "let" ~ connection }
+statement       = { let_statement | connection }
+statement_block = { "~" ~ "{" ~ statement* ~ "}" }
+
+// signatures
+inputs    = { "|" ~ ident* ~ "|" }
+outputs   = { "|" ~ ident* ~ "|" }
+signature = { inputs ~ "->" ~ outputs }
+
+// graphs
+graph_def = { "graph" ~ graph_name ~ "{" ~ signature ~ statement_block ~ "}" }
+
+// main
+main = { SOI ~ import_stmt* ~ graph_def* ~ EOI }

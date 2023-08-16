@@ -3,7 +3,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import logging
 import sys
 import subprocess
-import os
 import re
 import shutil
 
@@ -41,7 +40,9 @@ control_tokens = ["#" + tok for tok in extra_tokens]
 extra_tokens = audio_tokens + control_tokens
 extra_tokens += ["let", "=", ";", "@dac0"]
 print(extra_tokens)
+print(tokenizer(' '.join(extra_tokens)))
 tokenizer.add_tokens(extra_tokens)
+print(tokenizer(' '.join(extra_tokens)))
 model = AutoModelForCausalLM.from_pretrained(
     checkpoint, torch_dtype="auto").cuda()
 model.resize_token_embeddings(len(tokenizer))

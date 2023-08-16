@@ -1,4 +1,5 @@
 // #![warn(clippy::unwrap_used)]
+#![allow(clippy::result_large_err)]
 use std::{error::Error, path::PathBuf, time::Duration};
 
 use app::PaprApp;
@@ -14,6 +15,7 @@ pub mod dsp;
 pub mod graph;
 pub mod io;
 pub mod parser2;
+pub mod parser3;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "double")] {
@@ -76,13 +78,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             Some(args.run_for),
         );
         let mut app = PaprApp::new(rt);
+        app.init_midi();
         app.init_audio(
             #[cfg(target_os = "linux")]
             args.force_alsa,
         );
         app.rt.init();
         app.load_script_file(&script_path).unwrap();
-        app.rt.spawn(&app.script_text, app.audio_cx.take())?;
+        app.rt.spawn(&script_path, app.audio_cx.take())?;
 
         if args.out_path.is_none() {
             if args.run_for > 0 {
@@ -110,6 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 );
                 let mut app = PaprApp::new(rt);
                 if let Some(script_path) = args.script_path.as_ref() {
+                    app.init_midi();
                     app.init_audio(
                         #[cfg(target_os = "linux")]
                         args.force_alsa,

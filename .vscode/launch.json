@@ -23,7 +23,7 @@
                 "RUST_LOG": "papr=trace"
             },
             "args": [
-                "test-scripts/syntax2.papr"
+                "test-scripts/test4.papr"
             ],
             "cwd": "${workspaceFolder}"
         },
