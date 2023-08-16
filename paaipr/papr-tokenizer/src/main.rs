@@ -1,14 +1,7 @@
 use clap::Parser;
-use nom::{
-    combinator::recognize,
-    complete::take,
-    error::ParseError,
-    multi::many1_count,
-    sequence::{preceded, tuple},
-    IResult,
-};
+use nom::multi::many1_count;
 use papr_lib::parser2::*;
-use std::{env::args, error::Error, fs::File, io::Read, path::PathBuf};
+use std::{error::Error, fs::File, io::Read, path::PathBuf};
 
 #[derive(clap::Parser)]
 struct Args {
@@ -31,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         })
         .count() as isize;
-    match Token::many1(&input).map_err(|e| e.to_owned()) {
+    match Token::many1(&input) {
         Ok((garbage, tokens)) => {
             reward -= garbage.split_ascii_whitespace().count() as isize * 10;
 

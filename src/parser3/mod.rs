@@ -1,30 +1,15 @@
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     fs::File,
     io::Read,
-    ops::{Range, RangeFrom, RangeFull, RangeTo},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
-
-use nom::{
-    branch::*,
-    bytes::complete::{take, take_until},
-    character::complete::*,
-    combinator::*,
-    multi::*,
-    number::complete::float,
-    sequence::*,
-    InputIter, InputLength, InputTake,
-};
-
-use nom_supreme::{
-    error::{ErrorTree},
-    final_parser::final_parser,
-    tag::complete::tag,
-};
-
+use miette::{miette, Diagnostic, Result, SourceOffset};
+use pest::{error::ErrorVariant, Parser, Position};
+use pest_derive::Parser;
+use thiserror::Error;
 
 use crate::{
     dsp::{
@@ -36,336 +21,42 @@ use crate::{
     Scalar,
 };
 
+use self::builtins::BuiltinNode;
+
 pub mod builtins;
+#[cfg(test)]
+mod tests;
 
-pub type IResult<I, O> = nom::IResult<I, O, nom_supreme::error::ErrorTree<I>>;
+#[derive(Error, Diagnostic, Debug)]
+#[error("parsing error")]
+#[diagnostic()]
+pub struct ParsingError {
+    // inner: pest::error::Error<Rule>,
+    #[source_code]
+    src: String,
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Token {
-    Whitespace,
-    Number(Scalar),
-    Ident(String),
-    String(String),
-    Graph,
-    Var,
-    Let,
-    Do,
-    Import,
-    Bar,
-    Colon,
-    LeftArrow,
-    RightArrow,
-    OpenBrace,
-    CloseBrace,
-    OpenParen,
-    CloseParen,
-    OpenBracket,
-    CloseBracket,
-    Equals,
-    Plus,
-    Minus,
-    Asterisk,
-    ForwardSlash,
-    Gt,
-    Lt,
-    Tilde,
-    Semicolon,
-    At,
-    Hash,
-    DoubleEquals,
-    Ampersand,
-    Caret,
-    Bang,
-    BangEquals,
-    Percent,
-    Comment(String),
-    Unknown(String),
+    #[label("here")]
+    span: SourceOffset,
+
+    #[help]
+    msg: String,
 }
 
-impl Token {
-    pub fn parse(inp: &str) -> IResult<&str, Token> {
-        alt((
-            alt((
-                map(comment, |i| Token::Comment(i.to_owned())),
-                value(Token::Whitespace, whitespace1()),
-                map(string_str(), |s| Token::String(s.to_owned())),
-                map(float, |f| Token::Number(f as Scalar)),
-                alt((
-                    value(Token::Graph, tag("graph")),
-                    // value(Token::Var, tag("var")),
-                    value(Token::Let, tag("let")),
-                    value(Token::Do, tag("do")),
-                    value(Token::Import, tag("import")),
-                    //
-                )),
-                map(ident_str(), |i| Token::Ident(i.to_owned())),
-            )),
-            alt((
-                value(Token::At, tag("@")),
-                value(Token::Hash, tag("#")),
-                value(Token::DoubleEquals, tag("==")),
-                value(Token::BangEquals, tag("!=")),
-                value(Token::Ampersand, tag("&")),
-                value(Token::Caret, tag("^")),
-                value(Token::Bang, tag("!")),
-                value(Token::Percent, tag("%")),
-                //
-            )),
-            alt((
-                value(Token::Bar, tag("|")),
-                value(Token::CloseBrace, tag("}")),
-                value(Token::CloseParen, tag(")")),
-                value(Token::CloseBracket, tag("]")),
-                value(Token::LeftArrow, tag("<-")),
-                value(Token::RightArrow, tag("->")),
-                value(Token::Gt, tag(">")),
-                value(Token::Lt, tag("<")),
-                value(Token::OpenBrace, tag("{")),
-                value(Token::OpenParen, tag("(")),
-                value(Token::OpenBracket, tag("[")),
-                value(Token::Equals, tag("=")),
-                value(Token::Plus, tag("+")),
-                value(Token::Minus, tag("-")),
-                value(Token::Asterisk, tag("*")),
-                value(Token::ForwardSlash, tag("/")),
-                value(Token::Tilde, tag("~")),
-                value(Token::Semicolon, tag(";")),
-                value(Token::Colon, tag(":")),
-            )),
-        ))(inp)
+impl ParsingError {
+    pub fn new_from_pos(src: &str, variant: ErrorVariant<Rule>, pos: Position<'_>) -> Self {
+        Self::from_source_and_pest_error(src, pest::error::Error::new_from_pos(variant, pos))
     }
 
-    pub fn many1(inp: &str) -> IResult<&str, Vec<Token>> {
-        map(many1(Self::parse), |toks| {
-            toks.into_iter()
-                .filter(|tok| tok != &Token::Whitespace)
-                .filter(|tok| !matches!(tok, Token::Comment(_)))
-                .collect()
-        })(inp)
-    }
-
-    pub fn unwrap_ident(self) -> ParsedIdent {
-        if let Token::Ident(id) = self {
-            if let Some(id) = id.strip_prefix('@') {
-                ParsedIdent(id.to_owned(), Some(ParsedSignalRate::Audio))
-            } else if let Some(id) = id.strip_prefix('#') {
-                ParsedIdent(id.to_owned(), Some(ParsedSignalRate::Control))
-            } else {
-                ParsedIdent(id, None)
-            }
-        } else {
-            panic!("expected token to be an ident, got {self:?}")
-        }
-    }
-
-    pub fn unwrap_scalar(self) -> Scalar {
-        if let Token::Number(n) = self {
-            n as Scalar
-        } else {
-            panic!("expected token to be a number, got {self:?}")
-        }
-    }
-
-    pub fn unwrap_string(self) -> String {
-        if let Token::String(n) = self {
-            n
-        } else {
-            panic!("expected token to be a string, got {self:?}")
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Tokens<'a> {
-    pub tokens: &'a [Token],
-}
-
-impl<'a> From<&'a [Token]> for Tokens<'a> {
-    fn from(value: &'a [Token]) -> Self {
-        Self { tokens: value }
-    }
-}
-
-impl<'a> InputLength for Tokens<'a> {
-    fn input_len(&self) -> usize {
-        self.tokens.len()
-    }
-}
-
-impl<'a> InputTake for Tokens<'a> {
-    fn take(&self, count: usize) -> Self {
+    pub fn from_source_and_pest_error(src: &str, value: pest::error::Error<Rule>) -> Self {
         Self {
-            tokens: &self.tokens[0..count],
+            src: src.to_owned(),
+            span: match value.location {
+                pest::error::InputLocation::Pos(pos) => pos.into(),
+                pest::error::InputLocation::Span(sp) => sp.0.into(),
+            },
+            msg: value.variant.message().into(),
         }
     }
-
-    fn take_split(&self, count: usize) -> (Self, Self) {
-        let (pre, suf) = self.tokens.split_at(count);
-        (Self { tokens: suf }, Self { tokens: pre })
-    }
-}
-
-impl InputLength for Token {
-    fn input_len(&self) -> usize {
-        1
-    }
-}
-
-impl<'a> nom::Slice<Range<usize>> for Tokens<'a> {
-    fn slice(&self, range: Range<usize>) -> Self {
-        Self {
-            tokens: self.tokens.slice(range),
-        }
-    }
-}
-
-impl<'a> nom::Slice<RangeTo<usize>> for Tokens<'a> {
-    fn slice(&self, range: RangeTo<usize>) -> Self {
-        Self {
-            tokens: self.tokens.slice(range),
-        }
-    }
-}
-
-impl<'a> nom::Slice<RangeFrom<usize>> for Tokens<'a> {
-    fn slice(&self, range: RangeFrom<usize>) -> Self {
-        Self {
-            tokens: self.tokens.slice(range),
-        }
-    }
-}
-
-impl<'a> nom::Slice<RangeFull> for Tokens<'a> {
-    fn slice(&self, range: RangeFull) -> Self {
-        Self {
-            tokens: self.tokens.slice(range),
-        }
-    }
-}
-
-impl nom::UnspecializedInput for Token {}
-impl<'a> nom::UnspecializedInput for Tokens<'a> {}
-
-impl<'a> InputIter for Tokens<'a> {
-    type Item = &'a Token;
-    type Iter = std::iter::Enumerate<std::slice::Iter<'a, Token>>;
-    type IterElem = std::slice::Iter<'a, Token>;
-
-    fn iter_indices(&self) -> Self::Iter {
-        self.tokens.iter().enumerate()
-    }
-
-    fn iter_elements(&self) -> Self::IterElem {
-        self.tokens.iter()
-    }
-
-    fn position<P>(&self, predicate: P) -> Option<usize>
-    where
-        P: Fn(Self::Item) -> bool,
-    {
-        self.tokens.iter().position(predicate)
-    }
-
-    fn slice_index(&self, count: usize) -> Result<usize, nom::Needed> {
-        if self.tokens.len() >= count {
-            Ok(count)
-        } else {
-            Err(nom::Needed::Unknown)
-        }
-    }
-}
-
-pub fn ident_str<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
-    recognize(tuple((
-        opt(alt((tag("@"), tag("#")))),
-        alpha1,
-        opt(many1(alt((alphanumeric1, tag("_"))))),
-    )))
-}
-
-pub fn comment(inp: &str) -> IResult<&str, &str> {
-    recognize(alt((
-        delimited(tag("/*"), take_until("*/"), tag("*/")),
-        delimited(tag("//"), take_until("\n"), tag("\n")),
-    )))(inp)
-}
-
-pub fn string_str<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
-    delimited(tag("\""), take_until("\""), tag("\""))
-}
-
-pub fn whitespace0<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
-    recognize(many0(alt((space1, tag("\n"), tag("\r")))))
-}
-
-pub fn whitespace1<'a>() -> impl FnMut(&'a str) -> IResult<&str, &str> {
-    recognize(many1(alt((space1, tag("\n"), tag("\r")))))
-}
-
-// macro inspired by https://github.com/Rydgel/monkey-rust/blob/master/lib/parser/mod.rs
-macro_rules! tag_token {
-    ($func:ident, $tag:expr) => {
-        #[allow(dead_code)]
-        pub fn $func(tokens: Tokens) -> IResult<Tokens, Tokens> {
-            verify(take(1usize), |t: &Tokens| t.tokens[0] == $tag)(tokens)
-        }
-    };
-}
-
-tag_token!(bar, Token::Bar);
-tag_token!(leftarrow, Token::LeftArrow);
-tag_token!(rightarrow, Token::RightArrow);
-tag_token!(openbrace, Token::OpenBrace);
-tag_token!(closebrace, Token::CloseBrace);
-tag_token!(openparen, Token::OpenParen);
-tag_token!(closeparen, Token::CloseParen);
-tag_token!(equals, Token::Equals);
-tag_token!(plus, Token::Plus);
-tag_token!(minus, Token::Minus);
-tag_token!(asterisk, Token::Asterisk);
-tag_token!(forwardslash, Token::ForwardSlash);
-tag_token!(gt, Token::Gt);
-tag_token!(lt, Token::Lt);
-tag_token!(at, Token::At);
-tag_token!(hash, Token::Hash);
-tag_token!(tilde, Token::Tilde);
-tag_token!(semicolon, Token::Semicolon);
-tag_token!(colon, Token::Colon);
-tag_token!(openbracket, Token::OpenBracket);
-tag_token!(closebracket, Token::CloseBracket);
-tag_token!(doubleequals, Token::DoubleEquals);
-tag_token!(bangequals, Token::BangEquals);
-tag_token!(ampersand, Token::Ampersand);
-tag_token!(caret, Token::Caret);
-tag_token!(bang, Token::Bang);
-tag_token!(percent, Token::Percent);
-
-tag_token!(graph_kw, Token::Graph);
-tag_token!(var_kw, Token::Var);
-tag_token!(let_kw, Token::Let);
-tag_token!(do_kw, Token::Do);
-tag_token!(import_kw, Token::Import);
-
-/*
- ===================================================================================
-*/
-
-pub fn scalar(inp: Tokens) -> IResult<Tokens, Scalar> {
-    map(
-        verify(take(1usize), |t: &Tokens| {
-            matches!(t.tokens[0], Token::Number(_))
-        }),
-        |t: Tokens| t.tokens[0].clone().unwrap_scalar(),
-    )(inp)
-}
-
-pub fn string(inp: Tokens) -> IResult<Tokens, String> {
-    map(
-        verify(take(1usize), |t: &Tokens| {
-            matches!(t.tokens[0], Token::String(_))
-        }),
-        |t: Tokens| t.tokens[0].clone().unwrap_string(),
-    )(inp)
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -377,20 +68,18 @@ pub enum ParsedSignalRate {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ParsedIdent(String, Option<ParsedSignalRate>);
 
-pub fn ident(tokens: Tokens) -> IResult<Tokens, ParsedIdent> {
-    map(
-        verify(take(1usize), |t: &Tokens| {
-            matches!(t.tokens[0], Token::Ident(_))
-        }),
-        |t: Tokens| t.tokens[0].clone().unwrap_ident(),
-    )(tokens)
+impl ParsedIdent {
+    pub fn into_parsed_callee(self) -> ParsedCallee {
+        if let Some(node) = BuiltinNode::try_from_ident(&self) {
+            ParsedCallee::Builtin(node, self.1)
+        } else {
+            ParsedCallee::ScriptDefined(self)
+        }
+    }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct ParsedImport(String);
-
-pub fn import_stmt(inp: Tokens) -> IResult<Tokens, ParsedImport> {
-    map(preceded(import_kw, string), ParsedImport)(inp)
-}
 
 #[derive(Debug, Clone)]
 pub enum ParsedCallee {
@@ -405,7 +94,7 @@ pub enum ParsedCreationArg {
 }
 
 impl ParsedCreationArg {
-    pub fn unwrap_string(self) -> String {
+    pub fn unwrap_string(&self) -> &str {
         if let Self::String(s) = self {
             s
         } else {
@@ -413,7 +102,7 @@ impl ParsedCreationArg {
         }
     }
 
-    pub fn unwrap_scalar(self) -> Scalar {
+    pub fn unwrap_scalar(&self) -> &Scalar {
         if let Self::Scalar(s) = self {
             s
         } else {
@@ -429,39 +118,7 @@ pub struct ParsedCall {
     args: Vec<ParsedExpr>,
 }
 
-pub fn call(inp: Tokens) -> IResult<Tokens, ParsedCall> {
-    map(
-        tuple((
-            ident,
-            opt(delimited(
-                lt,
-                many1(alt((
-                    map(scalar, ParsedCreationArg::Scalar),
-                    map(string, ParsedCreationArg::String),
-                ))),
-                gt,
-            )),
-            delimited(openparen, many0(expr), closeparen),
-        )),
-        |(ident, creation_args, args)| {
-            if let Some(builtin) = BuiltinNode::try_from_ident(&ident) {
-                ParsedCall {
-                    callee: ParsedCallee::Builtin(builtin, ident.1),
-                    creation_args: creation_args.unwrap_or(vec![]),
-                    args,
-                }
-            } else {
-                ParsedCall {
-                    callee: ParsedCallee::ScriptDefined(ident),
-                    creation_args: creation_args.unwrap_or(vec![]),
-                    args,
-                }
-            }
-        },
-    )(inp)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ParsedInfixOp {
     Add,
     Sub,
@@ -481,60 +138,15 @@ pub enum ParsedInfixOp {
 pub enum ParsedExpr {
     Constant(Scalar),
     Ident(ParsedIdent),
-    Infix(InfixExpr),
+    Infix(ParsedInfixExpr),
     Call(ParsedCall),
 }
 
 #[derive(Debug, Clone)]
-pub struct InfixExpr {
+pub struct ParsedInfixExpr {
     pub lhs: Box<ParsedExpr>,
     pub infix_op: ParsedInfixOp,
     pub rhs: Box<ParsedExpr>,
-}
-
-pub fn expr(inp: Tokens) -> IResult<Tokens, ParsedExpr> {
-    alt((
-        map(scalar, ParsedExpr::Constant),
-        map(call, ParsedExpr::Call),
-        map(ident, ParsedExpr::Ident),
-        map(
-            tuple((
-                openparen,
-                expr,
-                alt((
-                    value(ParsedInfixOp::Add, plus),
-                    value(ParsedInfixOp::Sub, minus),
-                    value(ParsedInfixOp::Mul, asterisk),
-                    value(ParsedInfixOp::Div, forwardslash),
-                    value(ParsedInfixOp::And, ampersand),
-                    value(ParsedInfixOp::Or, bar),
-                    value(ParsedInfixOp::Xor, caret),
-                    value(ParsedInfixOp::Gt, gt),
-                    value(ParsedInfixOp::Lt, lt),
-                    value(ParsedInfixOp::Eq, doubleequals),
-                    value(ParsedInfixOp::Neq, bangequals),
-                    value(ParsedInfixOp::Rem, percent),
-                )),
-                expr,
-                closeparen,
-            )),
-            |(_, lhs, infix_op, rhs, _)| {
-                ParsedExpr::Infix(InfixExpr {
-                    lhs: lhs.into(),
-                    infix_op,
-                    rhs: rhs.into(),
-                })
-            },
-        ),
-    ))(inp)
-}
-
-pub fn list(inp: Tokens) -> IResult<Tokens, Vec<ParsedIdent>> {
-    delimited(openbracket, many1(ident), closebracket)(inp)
-}
-
-pub fn connection_lhs(inp: Tokens) -> IResult<Tokens, Vec<ParsedIdent>> {
-    alt((list, map(ident, |i| vec![i])))(inp)
 }
 
 #[derive(Debug, Clone)]
@@ -543,41 +155,16 @@ pub struct ParsedConnection {
     rhs: ParsedExpr,
 }
 
-pub fn connection(inp: Tokens) -> IResult<Tokens, ParsedConnection> {
-    map(
-        tuple((connection_lhs, equals, expr, semicolon)),
-        |(lhs, _, rhs, _)| ParsedConnection { lhs, rhs },
-    )(inp)
-}
-
 #[derive(Debug, Clone)]
 pub struct ParsedLetStatement {
     lhs: Vec<ParsedIdent>,
     rhs: ParsedExpr,
 }
 
-pub fn let_statement(inp: Tokens) -> IResult<Tokens, ParsedLetStatement> {
-    map(
-        preceded(let_kw, tuple((connection_lhs, equals, expr, semicolon))),
-        |(lhs, _, rhs, _)| ParsedLetStatement { lhs, rhs },
-    )(inp)
-}
-
-// pub struct ParsedDoBlock; // todo
-
 #[derive(Debug, Clone)]
 pub enum ParsedStatement {
-    Connection(ParsedConnection),
     Let(ParsedLetStatement),
-    // DoBlock(ParsedDoBlock), // todo
-}
-
-pub fn statement(inp: Tokens) -> IResult<Tokens, ParsedStatement> {
-    alt((
-        map(let_statement, ParsedStatement::Let),
-        map(connection, ParsedStatement::Connection),
-        // todo: ParsedDoBlock
-    ))(inp)
+    Connection(ParsedConnection),
 }
 
 #[derive(Debug, Clone)]
@@ -588,49 +175,10 @@ pub struct ParsedInput {
     maximum: Option<Scalar>,
 }
 
-pub fn input(inp: Tokens) -> IResult<Tokens, ParsedInput> {
-    map(
-        tuple((
-            ident,
-            opt(delimited(
-                openparen,
-                tuple((scalar, colon, scalar)),
-                closeparen,
-            )),
-            opt(preceded(equals, scalar)),
-        )),
-        |(id, bounds, default)| ParsedInput {
-            id,
-            minimum: bounds.clone().map(|b| b.0),
-            maximum: bounds.map(|b| b.2),
-            default,
-        },
-    )(inp)
-}
-
-pub fn inputs(inp: Tokens) -> IResult<Tokens, Vec<ParsedInput>> {
-    delimited(bar, many0(input), bar)(inp)
-}
-
-pub fn outputs(inp: Tokens) -> IResult<Tokens, Vec<ParsedIdent>> {
-    delimited(bar, many0(ident), bar)(inp)
-}
-
 #[derive(Debug, Clone)]
 pub struct ParsedSignature {
     inputs: Vec<ParsedInput>,
     outputs: Vec<ParsedIdent>,
-}
-
-pub fn signature(inp: Tokens) -> IResult<Tokens, ParsedSignature> {
-    map(
-        tuple((inputs, rightarrow, outputs)),
-        |(inputs, _, outputs)| ParsedSignature { inputs, outputs },
-    )(inp)
-}
-
-pub fn statements(inp: Tokens) -> IResult<Tokens, Vec<ParsedStatement>> {
-    preceded(tilde, delimited(openbrace, many0(statement), closebrace))(inp)
 }
 
 #[derive(Debug, Clone)]
@@ -640,28 +188,493 @@ pub struct ParsedGraph {
     statements: Vec<ParsedStatement>,
 }
 
-pub fn graph(inp: Tokens) -> IResult<Tokens, ParsedGraph> {
-    map(
-        tuple((
-            graph_kw,
-            ident,
-            delimited(openbrace, tuple((signature, statements)), closebrace),
-        )),
-        |(_, id, (signature, statements))| ParsedGraph {
-            id,
-            signature,
-            statements,
-        },
-    )(inp)
+#[derive(Parser)]
+#[grammar = "src/parser3/papr.pest"]
+pub struct PaprParser;
+
+use pest::iterators::Pair;
+
+pub fn parse_signal_rate(src: &str, inp: Pair<Rule>) -> Result<ParsedSignalRate> {
+    if inp.as_rule() == Rule::signal_rate {
+        match inp.as_str() {
+            "@" => Ok(ParsedSignalRate::Audio),
+            "#" => Ok(ParsedSignalRate::Control),
+            _ => unreachable!(),
+        }
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: format!(
+                    "Expected signal rate (either `@` or `#`)\nGot {:?}",
+                    inp.as_rule()
+                ),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
 }
 
-/*
- ===================================================================================
-*/
+pub fn parse_ident(src: &str, inp: Pair<Rule>) -> Result<ParsedIdent> {
+    if let Rule::ident = inp.as_rule() {
+        let mut inner = inp.into_inner();
+        match inner.next() {
+            Some(rate) if rate.as_rule() == Rule::signal_rate => match inner.next() {
+                Some(id) if id.as_rule() == Rule::ident_raw => Ok(ParsedIdent(
+                    id.as_str().to_owned(),
+                    Some(parse_signal_rate(src, rate)?),
+                )),
+                _ => Err(ParsingError::new_from_pos(
+                    src,
+                    ErrorVariant::CustomError {
+                        message: "Expected identifier after signal rate".to_owned(),
+                    },
+                    rate.as_span().start_pos(),
+                )
+                .into()),
+            },
+            Some(name) if name.as_rule() == Rule::ident_raw => {
+                Ok(ParsedIdent(name.as_str().to_owned(), None))
+            }
+            _ => unreachable!("BUG: Internal parsing error: failed to parse ident"),
+        }
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected identifier".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_graph_name(src: &str, inp: Pair<Rule>) -> Result<ParsedCallee> {
+    if let Rule::graph_name = inp.as_rule() {
+        let mut inner = inp.into_inner();
+        match inner.next() {
+            Some(rate) if rate.as_rule() == Rule::signal_rate => match inner.next() {
+                Some(id) if id.as_rule() == Rule::graph_name_raw => Ok(ParsedIdent(
+                    id.as_str().to_owned(),
+                    Some(parse_signal_rate(src, rate)?),
+                )
+                .into_parsed_callee()),
+                _ => Err(ParsingError::new_from_pos(
+                    src,
+                    ErrorVariant::CustomError {
+                        message: "Expected graph name after signal rate".to_owned(),
+                    },
+                    rate.as_span().start_pos(),
+                )
+                .into()),
+            },
+            Some(name) if name.as_rule() == Rule::graph_name_raw => {
+                Ok(ParsedIdent(name.as_str().to_owned(), None).into_parsed_callee())
+            }
+            _ => unreachable!("BUG: Internal parsing error: failed to parse graph name"),
+        }
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected graph name".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_scalar(src: &str, inp: Pair<Rule>) -> Result<Scalar> {
+    if let Rule::scalar = inp.as_rule() {
+        let val = inp
+            .as_str()
+            .parse::<Scalar>()
+            .expect("BUG: Internal parsing error: failed to parse scalar");
+        Ok(val)
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected number".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_string(src: &str, inp: Pair<Rule>) -> Result<String> {
+    if inp.as_rule() == Rule::string {
+        // trim the quotes
+        Ok(inp.into_inner().next().unwrap().as_str().to_owned())
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected string".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_import(src: &str, inp: Pair<Rule>) -> Result<String> {
+    if inp.as_rule() == Rule::import_stmt {
+        Ok(parse_string(src, inp.into_inner().next().unwrap())?)
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected import statement".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_call(src: &str, inp: Pair<Rule>) -> Result<ParsedCall> {
+    if inp.as_rule() == Rule::call {
+        let mut inner = inp.into_inner();
+        let callee = parse_graph_name(src, inner.next().unwrap())?;
+        let mut creation_args = vec![];
+        if let Some(Rule::creation_args) = inner.peek().map(|i| i.as_rule()) {
+            let ca = inner.next().unwrap();
+            for ca in ca.into_inner() {
+                if ca.as_rule() == Rule::scalar {
+                    creation_args.push(ParsedCreationArg::Scalar(parse_scalar(src, ca)?));
+                } else if ca.as_rule() == Rule::string {
+                    creation_args.push(ParsedCreationArg::String(parse_string(src, ca)?));
+                } else {
+                    unreachable!("BUG: Internal parsing error: failed to parse creation arg");
+                }
+            }
+        }
+        let mut args = vec![];
+        for arg in inner {
+            args.push(parse_expr(src, arg)?);
+        }
+        Ok(ParsedCall {
+            callee,
+            creation_args,
+            args,
+        })
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected graph instantiation".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_expr(src: &str, inp: Pair<Rule>) -> Result<ParsedExpr> {
+    if inp.as_rule() == Rule::expr {
+        let inner = inp.into_inner().next().unwrap();
+        match inner.as_rule() {
+            Rule::scalar => Ok(ParsedExpr::Constant(parse_scalar(src, inner)?)),
+            Rule::ident => Ok(ParsedExpr::Ident(parse_ident(src, inner)?)),
+            Rule::call => Ok(ParsedExpr::Call(parse_call(src, inner)?)),
+            Rule::infix_expr => Ok(ParsedExpr::Infix(parse_infix_expr(src, inner)?)),
+            _ => unreachable!("BUG: Internal parsing error: failed to parse expr"),
+        }
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected expression".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_infix_expr(src: &str, inp: Pair<Rule>) -> Result<ParsedInfixExpr> {
+    if inp.as_rule() == Rule::infix_expr {
+        let mut inner = inp.into_inner();
+        let lhs = parse_expr(src, inner.next().unwrap())?;
+        let infix_op = parse_infix_op(src, inner.next().unwrap())?;
+        let rhs = parse_expr(src, inner.next().unwrap())?;
+        Ok(ParsedInfixExpr {
+            lhs: Box::new(lhs),
+            infix_op,
+            rhs: Box::new(rhs),
+        })
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected infix expression".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_infix_op(src: &str, inp: Pair<Rule>) -> Result<ParsedInfixOp> {
+    if inp.as_rule() == Rule::infix_op {
+        match inp.as_str() {
+            "+" => Ok(ParsedInfixOp::Add),
+            "-" => Ok(ParsedInfixOp::Sub),
+            "*" => Ok(ParsedInfixOp::Mul),
+            "/" => Ok(ParsedInfixOp::Div),
+            "&" => Ok(ParsedInfixOp::And),
+            "|" => Ok(ParsedInfixOp::Or),
+            "^" => Ok(ParsedInfixOp::Xor),
+            "==" => Ok(ParsedInfixOp::Eq),
+            "!=" => Ok(ParsedInfixOp::Neq),
+            ">" => Ok(ParsedInfixOp::Gt),
+            "<" => Ok(ParsedInfixOp::Lt),
+            "%" => Ok(ParsedInfixOp::Rem),
+            _ => unreachable!("BUG: Internal parsing error: failed to parse infix op"),
+        }
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected infix operator".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_list(src: &str, inp: Pair<Rule>) -> Result<Vec<ParsedIdent>> {
+    if inp.as_rule() == Rule::list {
+        let mut list = vec![];
+        for inp in inp.into_inner() {
+            list.push(parse_ident(src, inp)?);
+        }
+        Ok(list)
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected list of identifiers".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_connection(src: &str, inp: Pair<Rule>) -> Result<ParsedConnection> {
+    if inp.as_rule() == Rule::connection {
+        let mut inner = inp.into_inner();
+        let lhs = inner.next().unwrap();
+        let lhs = if lhs.as_rule() == Rule::connection_lhs {
+            let lhs = lhs.into_inner().next().unwrap();
+            match lhs.as_rule() {
+                Rule::list => parse_list(src, lhs)?,
+                Rule::ident => vec![parse_ident(src, lhs)?],
+                _ => unreachable!(),
+            }
+        } else {
+            unreachable!()
+        };
+        let expr = inner.next().unwrap();
+        let expr = parse_expr(src, expr)?;
+        Ok(ParsedConnection { lhs, rhs: expr })
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: format!("Expected connection\nGot {:?}", inp.as_rule()),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_statement(src: &str, inp: Pair<Rule>) -> Result<ParsedStatement> {
+    if inp.as_rule() == Rule::statement {
+        let next = inp.into_inner().next().unwrap();
+        match next.as_rule() {
+            Rule::connection => Ok(ParsedStatement::Connection(parse_connection(src, next)?)),
+            Rule::let_statement => {
+                let connection = next.into_inner().next().unwrap();
+                let connection = parse_connection(src, connection)?;
+                Ok(ParsedStatement::Let(ParsedLetStatement {
+                    lhs: connection.lhs,
+                    rhs: connection.rhs,
+                }))
+            }
+            _ => unreachable!(),
+        }
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected statement".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_statement_block(src: &str, inp: Pair<Rule>) -> Result<Vec<ParsedStatement>> {
+    if inp.as_rule() == Rule::statement_block {
+        let mut stmts = vec![];
+        for inp in inp.into_inner() {
+            stmts.push(parse_statement(src, inp)?);
+        }
+        Ok(stmts)
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected statement block (`~ { ... }`)".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_inputs(src: &str, inp: Pair<Rule>) -> Result<Vec<ParsedInput>> {
+    if inp.as_rule() == Rule::inputs {
+        let mut ins = vec![];
+        for inp in inp.into_inner() {
+            ins.push(ParsedInput {
+                id: parse_ident(src, inp)?,
+                default: None,
+                minimum: None,
+                maximum: None,
+            });
+        }
+        Ok(ins)
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected inputs".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_outputs(src: &str, inp: Pair<Rule>) -> Result<Vec<ParsedIdent>> {
+    if inp.as_rule() == Rule::outputs {
+        let mut ins = vec![];
+        for inp in inp.into_inner() {
+            ins.push(parse_ident(src, inp)?);
+        }
+        Ok(ins)
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected outputs".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_signature(src: &str, inp: Pair<Rule>) -> Result<ParsedSignature> {
+    if inp.as_rule() == Rule::signature {
+        let mut inner = inp.into_inner();
+        let inputs = parse_inputs(src, inner.next().unwrap())?;
+        let outputs = parse_outputs(src, inner.next().unwrap())?;
+        Ok(ParsedSignature { inputs, outputs })
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: "Expected signature (`|...| -> |...|`)".to_owned(),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_graph_def(src: &str, inp: Pair<Rule>) -> Result<ParsedGraph> {
+    if inp.as_rule() == Rule::graph_def {
+        let mut inner = inp.into_inner();
+        let graph_name = parse_graph_name(src, inner.next().unwrap())?;
+        let signature = parse_signature(src, inner.next().unwrap())?;
+        let statements = parse_statement_block(src, inner.next().unwrap())?;
+        if let ParsedCallee::ScriptDefined(id) = graph_name {
+            Ok(ParsedGraph {
+                id,
+                signature,
+                statements,
+            })
+        } else {
+            unreachable!()
+        }
+    } else {
+        Err(ParsingError::new_from_pos(
+            src,
+            ErrorVariant::CustomError {
+                message: format!("Expected graph definition\nGot {:?}", inp.as_rule()),
+            },
+            inp.as_span().start_pos(),
+        )
+        .into())
+    }
+}
+
+pub fn parse_script(path: &Path, known_graphs: &mut BTreeMap<String, ParsedGraph>) -> Result<()> {
+    let mut f = File::open(path).unwrap();
+    let mut src = String::new();
+    f.read_to_string(&mut src).unwrap();
+
+    let mut papr = PaprParser::parse(Rule::main, &src)
+        .map_err(|e| ParsingError::from_source_and_pest_error(&src, e))?
+        .next()
+        .unwrap()
+        .into_inner();
+    if let Some(peek) = papr.peek() {
+        if peek.as_rule() == Rule::import_stmt {
+            while let Ok(imp) = parse_import(&src, papr.peek().unwrap()) {
+                let mut new_path = path.parent().unwrap().to_path_buf();
+                new_path.push(imp);
+                parse_script(&new_path, known_graphs)?;
+                papr.next();
+            }
+        }
+    }
+
+    for graph_def in papr {
+        if graph_def.as_rule() == Rule::graph_def {
+            let graph = parse_graph_def(&src, graph_def)?;
+            known_graphs.insert(graph.id.0.to_string(), graph.clone());
+        }
+    }
+
+    Ok(())
+}
+
+pub fn parse_main_script(path: &Path) -> Result<(Graph, Graph)> {
+    let mut known_graphs = BTreeMap::default();
+
+    parse_script(path, &mut known_graphs)?;
+    let main = known_graphs
+        .get("Main")
+        .ok_or(miette!("Failed to find `Main` graph"))?
+        .clone();
+
+    solve_graph(&main, &mut known_graphs)
+}
 
 use petgraph::prelude::*;
-
-use self::builtins::BuiltinNode;
 
 struct SolvedExpr {
     rate: ParsedSignalRate,
@@ -674,9 +687,9 @@ fn solve_expr(
     expr: &ParsedExpr,
     super_ag: &mut Graph,
     super_cg: &mut Graph,
-    known_graphs: &mut HashMap<String, ParsedGraph>,
+    known_graphs: &mut BTreeMap<String, ParsedGraph>,
     lhs_ident: Option<&ParsedIdent>,
-) -> Result<SolvedExpr, String> {
+) -> Result<SolvedExpr> {
     match expr {
         ParsedExpr::Constant(value) => {
             let rate = graph_id.1.unwrap_or(ParsedSignalRate::Control);
@@ -703,14 +716,15 @@ fn solve_expr(
         ParsedExpr::Ident(id) => {
             #[allow(clippy::if_same_then_else)]
             let rate = id.1.or(graph_id.1).ok_or_else(|| {
-                format!(
+                miette!(
                     "Parsing error (graph `{}`): couldn't determine signal rate of identifier `{}`",
-                    &graph_id.0, &id.0
+                    &graph_id.0,
+                    &id.0
                 )
             })?;
             match rate {
                 ParsedSignalRate::Audio => {
-                    let ag_idx = super_ag.node_id_by_name(&id.0).ok_or(format!("Parsing error (graph `{}`): while parsing expr: audio graph has no node named `{}`", &graph_id.0, &id.0))?;
+                    let ag_idx = super_ag.node_id_by_name(&id.0).ok_or(miette!("Parsing error (graph `{}`): while parsing expr: audio graph has no node named `{}`", &graph_id.0, &id.0))?;
                     Ok(SolvedExpr {
                         rate,
                         ag_idx: Some((ag_idx, vec![0])), // todo: probably don't assume first output here
@@ -718,7 +732,7 @@ fn solve_expr(
                     })
                 }
                 ParsedSignalRate::Control => {
-                    let cg_idx = super_cg.node_id_by_name(&id.0).ok_or(format!("Parsing error (graph `{}`): while parsing expr: control graph has no node named `{}`", &graph_id.0, &id.0))?;
+                    let cg_idx = super_cg.node_id_by_name(&id.0).ok_or(miette!("Parsing error (graph `{}`): while parsing expr: control graph has no node named `{}`", &graph_id.0, &id.0))?;
                     Ok(SolvedExpr {
                         rate,
                         ag_idx: None,
@@ -727,7 +741,7 @@ fn solve_expr(
                 }
             }
         }
-        ParsedExpr::Infix(InfixExpr { lhs, infix_op, rhs }) => {
+        ParsedExpr::Infix(ParsedInfixExpr { lhs, infix_op, rhs }) => {
             let lhs = solve_expr(graph_id, lhs, super_ag, super_cg, known_graphs, None)?;
             let rhs = solve_expr(graph_id, rhs, super_ag, super_cg, known_graphs, None)?;
             // todo: give these nodes actual names
@@ -902,7 +916,7 @@ fn solve_expr(
             let (called_an, called_cn) = match callee {
                 ParsedCallee::ScriptDefined(ident) => {
                     known_rate = ident.1;
-                    let mut graph = known_graphs.get(&ident.0).ok_or(format!(
+                    let mut graph = known_graphs.get(&ident.0).ok_or(miette!(
                         "Parsing error (graph `{}`): while parsing expr: undefined reference to graph `{}`",
                         &graph_id.0, &ident.0
                     ))?.clone();
@@ -915,7 +929,7 @@ fn solve_expr(
                     // todo: don't abuse Debug/format here
                     known_rate = rate.or(graph_id.1);
                     let lhs_ident = lhs_ident
-                        .map(|id| id.0.clone())
+                        .map(|id| id.0.to_owned())
                         .unwrap_or(format!("{:?}", builtin));
                     let an = builtin.create_node(&lhs_ident, creation_args);
                     let cn = builtin.create_node(&lhs_ident, creation_args);
@@ -958,7 +972,7 @@ fn solve_expr(
                             let c2a_cn = super_cg.add_node(c2a_cn);
                             let (arg_cg_idx, cg_from_outs) = arg.cg_idx.unwrap();
                             if cg_from_outs.len() != 1 {
-                                return Err(format!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, cg_from_outs.len()));
+                                return Err(miette!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, cg_from_outs.len()));
                             }
                             super_cg.add_edge(
                                 arg_cg_idx,
@@ -990,7 +1004,7 @@ fn solve_expr(
                             let a2c_cn = super_cg.add_node(a2c_cn);
                             let (arg_ag_idx, ag_from_outs) = arg.ag_idx.unwrap();
                             if ag_from_outs.len() != 1 {
-                                return Err(format!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, ag_from_outs.len()));
+                                return Err(miette!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, ag_from_outs.len()));
                             }
                             super_ag.add_edge(
                                 arg_ag_idx,
@@ -1025,7 +1039,7 @@ fn solve_expr(
                 );
                 if let Some((ag_from_idx, ag_from_outs)) = arg.ag_idx {
                     if ag_from_outs.len() != 1 {
-                        return Err(format!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, ag_from_outs.len()));
+                        return Err(miette!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, ag_from_outs.len()));
                     }
                     super_ag.add_edge(
                         ag_from_idx,
@@ -1039,7 +1053,7 @@ fn solve_expr(
                 }
                 if let Some((cg_from_idx, cg_from_outs)) = arg.cg_idx {
                     if cg_from_outs.len() != 1 {
-                        return Err(format!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, cg_from_outs.len()));
+                        return Err(miette!("Parsing error (graph `{}`): expected expression to have a single output (has {})", &graph_id.0, cg_from_outs.len()));
                     }
                     super_cg.add_edge(
                         cg_from_idx,
@@ -1055,7 +1069,7 @@ fn solve_expr(
             }
 
             let known_rate = known_rate.ok_or_else(|| {
-                format!(
+                miette!(
                     "Parsing error (graph `{}`): couldn't determine signal rate of expr",
                     &graph_id.0
                 )
@@ -1083,8 +1097,8 @@ fn solve_expr(
 
 fn solve_graph(
     graph: &ParsedGraph,
-    known_graphs: &mut HashMap<String, ParsedGraph>,
-) -> Result<(Graph, Graph), String> {
+    known_graphs: &mut BTreeMap<String, ParsedGraph>,
+) -> Result<(Graph, Graph)> {
     let ParsedGraph {
         signature: ParsedSignature { inputs, outputs },
         statements,
@@ -1098,7 +1112,7 @@ fn solve_graph(
 
     for inp in inputs.iter() {
         let input = Input {
-            name: inp.id.0.clone(),
+            name: inp.id.0.to_owned(),
             minimum: inp.minimum.map(Signal::new),
             maximum: inp.maximum.map(Signal::new),
             default: inp.default.map(Signal::new),
@@ -1115,7 +1129,7 @@ fn solve_graph(
                     Some(ParsedSignalRate::Audio) => audio_inputs.push(input),
                     Some(ParsedSignalRate::Control) => control_inputs.push(input),
                     None => {
-                        return Err(format!(
+                        return Err(miette!(
                             "Parsing error (graph `{}`): couldn't determine signal rate of input `{}`",
                             &id.0, &inp.id.0
                         ));
@@ -1136,9 +1150,10 @@ fn solve_graph(
                 Some(ParsedSignalRate::Audio) => audio_outputs.push(output),
                 Some(ParsedSignalRate::Control) => control_outputs.push(output),
                 None => {
-                    return Err(format!(
+                    return Err(miette!(
                         "Parsing error (graph `{}`): couldn't determine signal rate of output `{}`",
-                        &id.0, &out.0
+                        &id.0,
+                        &out.0
                     ));
                 }
             },
@@ -1155,7 +1170,7 @@ fn solve_graph(
                 for to in stmt.lhs.iter() {
                     let rate =
                         to.1.or(graph.id.1)
-                            .ok_or_else(|| format!("Parsing error: (graph `{}`): in `let` statement, couldn't determine rate of lhs ident `{}`", &graph.id.0, &to.0))?;
+                            .ok_or_else(|| miette!("Parsing error: (graph `{}`): in `let` statement, couldn't determine rate of lhs ident `{}`", &graph.id.0, &to.0))?;
                     let node = LetBinding::create_node(&to.0, 0.0);
                     let idx = match rate {
                         ParsedSignalRate::Audio => ag.add_node(node),
@@ -1176,7 +1191,7 @@ fn solve_graph(
 
                 if let Some((ag_from_idx, ag_from_outs)) = rhs.ag_idx {
                     if ag_from_outs.len() != stmt.lhs.len() {
-                        return Err(format!("Parsing error (graph `{}`): in `let` statement, expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), ag_from_outs.len()));
+                        return Err(miette!("Parsing error (graph `{}`): in `let` statement, expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), ag_from_outs.len()));
                     }
                     for (to_idx, ag_from_out) in lhs_nodes.iter().zip(ag_from_outs.iter()) {
                         // todo: don't assume it's the first input, probably
@@ -1192,7 +1207,7 @@ fn solve_graph(
                 }
                 if let Some((cg_from_idx, cg_from_outs)) = rhs.cg_idx {
                     if cg_from_outs.len() != stmt.lhs.len() {
-                        return Err(format!("Parsing error (graph `{}`): in `let` statement, expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), cg_from_outs.len()));
+                        return Err(miette!("Parsing error (graph `{}`): in `let` statement, expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, stmt.lhs.len(), cg_from_outs.len()));
                     }
                     for (to_idx, cg_from_out) in lhs_nodes.iter().zip(cg_from_outs.iter()) {
                         // todo: don't assume it's the first input, probably
@@ -1215,12 +1230,13 @@ fn solve_graph(
                 );
                 if let Some((ag_from_idx, ag_from_outs)) = rhs.ag_idx {
                     if ag_from_outs.len() != conn.lhs.len() {
-                        return Err(format!("Parsing error (graph `{}`): expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, conn.lhs.len(), ag_from_outs.len()));
+                        return Err(miette!("Parsing error (graph `{}`): expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, conn.lhs.len(), ag_from_outs.len()));
                     }
                     for (to, ag_from_out) in conn.lhs.iter().zip(ag_from_outs.iter()) {
-                        let to_idx = ag.node_id_by_name(&to.0).ok_or(format!(
+                        let to_idx = ag.node_id_by_name(&to.0).ok_or(miette!(
                             "Parsing error (graph `{}`): audio graph has no node named `{}`",
-                            &id.0, &to.0
+                            &id.0,
+                            &to.0
                         ))?;
                         // todo: don't assume it's the first input, probably
                         ag.add_edge(
@@ -1235,12 +1251,13 @@ fn solve_graph(
                 }
                 if let Some((cg_from_idx, cg_from_outs)) = rhs.cg_idx {
                     if cg_from_outs.len() != conn.lhs.len() {
-                        return Err(format!("Parsing error (graph `{}`): expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, conn.lhs.len(), cg_from_outs.len()));
+                        return Err(miette!("Parsing error (graph `{}`): expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, conn.lhs.len(), cg_from_outs.len()));
                     }
                     for (to, cg_from_out) in conn.lhs.iter().zip(cg_from_outs.iter()) {
-                        let to_idx = cg.node_id_by_name(&to.0).ok_or(format!(
+                        let to_idx = cg.node_id_by_name(&to.0).ok_or(miette!(
                             "Parsing error (graph `{}`): control graph has no node named `{}`",
-                            &id.0, &to.0
+                            &id.0,
+                            &to.0
                         ))?;
                         // todo: don't assume it's the first input, probably
                         cg.add_edge(
@@ -1262,89 +1279,3 @@ fn solve_graph(
 
     Ok((ag, cg))
 }
-
-pub fn parse_imported_script(
-    script: ParsedImport,
-    cwd: &impl AsRef<Path>,
-    known_graphs: &mut HashMap<String, ParsedGraph>,
-) -> Result<(), String> {
-    let ParsedImport(path) = script;
-    let mut path_buf = cwd.as_ref().to_path_buf();
-    path_buf.push(path);
-    let mut file = File::open(&path_buf)
-        .unwrap_or_else(|_| panic!("Error importing {}", path_buf.to_string_lossy()));
-    let mut script = String::new();
-    file.read_to_string(&mut script)
-        .map_err(|e| format!("Parsing error: {:?}", e))?;
-    drop(file);
-
-    let (garbage, tokens) = Token::many1(&script).map_err(|e| format!("Parsing error: {:?}", e))?;
-    if !garbage.is_empty() {
-        return Err(format!("Parsing error: unexpected garbage:\n{garbage}"));
-    }
-    let tokens = Tokens { tokens: &tokens };
-
-    let (tokens, imports) =
-        many0(import_stmt)(tokens).map_err(|e| format!("Parsing error: {:?}", e))?;
-    for imp in imports {
-        parse_imported_script(imp, cwd, known_graphs)?;
-    }
-
-    let (garbage, graphs) = many1(graph)(tokens).map_err(|e| format!("Parsing error: {:?}", e))?;
-    if !garbage.tokens.is_empty() {
-        return Err(format!(
-            "Parsing error: unexpected garbage:\n{:?}",
-            garbage.tokens
-        ));
-    }
-
-    for graph in graphs {
-        if !known_graphs.contains_key(&graph.id.0) {
-            known_graphs.insert(graph.id.0.to_owned(), graph);
-        }
-    }
-
-    Ok(())
-}
-
-/// Main parsing fn
-pub fn parse_main_script(inp: &str, cwd: &impl AsRef<Path>) -> Result<(Graph, Graph), String> {
-    if inp.is_empty() {
-        return Err("Parsing error: empty script".into());
-    }
-    let tokens: Result<Vec<Token>, ErrorTree<&str>> =
-        final_parser(Token::many1)(inp);
-    // let tokens = tokens.map_err(|e| format!("{}", <nom::error::Error<&str> as ExtractContext<&str, nom::error::Error<&str>>>::extract_context(e, inp)))?;
-    let tokens = tokens.unwrap();
-    let tokens = Tokens { tokens: &tokens };
-
-    let (tokens, imports) =
-        many0(import_stmt)(tokens).map_err(|e| format!("Parsing error: {:?}", e))?;
-
-    let mut known_graphs = HashMap::default();
-    for script in imports {
-        parse_imported_script(script, cwd, &mut known_graphs)?;
-    }
-
-    let graphs: Result<Vec<ParsedGraph>, ErrorTree<Tokens>> = final_parser(many1(graph))(tokens);
-    let graphs = graphs.unwrap();
-
-    for graph in graphs {
-        if !known_graphs.contains_key(&graph.id.0) {
-            known_graphs.insert(graph.id.0.to_owned(), graph);
-        }
-    }
-
-    // dbg!(&graphs);
-
-    let main_graph = known_graphs
-        .get("Main")
-        .ok_or("Parsing error: `Main` graph not found".to_owned())?
-        .clone();
-    solve_graph(&main_graph, &mut known_graphs)
-}
-
-/*
- ===================================================================================
- Error related stuff
-*/

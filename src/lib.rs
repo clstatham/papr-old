@@ -5,6 +5,7 @@ pub mod graph;
 pub mod app;
 pub mod io;
 pub mod parser2;
+pub mod parser3;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "double")] {

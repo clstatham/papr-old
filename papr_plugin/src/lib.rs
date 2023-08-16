@@ -80,7 +80,7 @@ impl Papr {
             };
         }
         if let Some(rt) = self.rt.as_mut() {
-            status_error!(rt.create_graphs(&self.script_text.read().unwrap()));
+            status_error!(rt.create_graphs(self.script_path.read().unwrap().as_ref().unwrap()));
             self.control_node_refs.clear();
             let mut control_graph = rt.control_graph.take().unwrap();
             self.control_node_refs = control_graph

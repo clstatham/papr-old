@@ -16,7 +16,7 @@ use cpal::{
 
 use eframe::{
     egui::{
-        Button, CentralPanel, Context, Key, Layout, RichText, SidePanel, TextEdit, TopBottomPanel,
+        Button, CentralPanel, Context, Layout, RichText, SidePanel, TextEdit, TopBottomPanel,
         Window,
     },
     epaint::{text::LayoutJob, Color32, Stroke},
@@ -140,9 +140,12 @@ impl PaprRuntime {
         }
     }
 
-    pub fn create_graphs(&mut self, script_text: &str) -> Result<(), String> {
-        let (audio, control) =
-            crate::parser2::parse_main_script(script_text, &current_dir().unwrap().as_path())?;
+    pub fn create_graphs(&mut self, script_path: &Path) -> Result<(), String> {
+        let (audio, control) = crate::parser3::parse_main_script(script_path).map_err(|e| {
+            eprintln!("{:?}", e);
+            self.status_text = format!("{}", e);
+            self.status_text.clone()
+        })?;
 
         for c_in_idx in control.digraph.node_indices() {
             let c_in = &control.digraph[c_in_idx];
@@ -187,10 +190,10 @@ impl PaprRuntime {
 
     pub fn spawn(
         &mut self,
-        script_text: &str,
+        script_path: &Path,
         mut audio_cx: Option<AudioContext>,
     ) -> Result<Option<AudioContext>, String> {
-        self.create_graphs(script_text)?;
+        self.create_graphs(script_path)?;
 
         let mut audio_graph = self
             .audio_graph
@@ -323,7 +326,7 @@ impl PaprRuntime {
 
     pub fn reload(
         &mut self,
-        script_text: &str,
+        script_path: &Path,
         audio_cx: Option<AudioContext>,
     ) -> Result<Option<AudioContext>, String> {
         if let Some(tx) = self.control_thread_shutdown.take() {
@@ -334,7 +337,7 @@ impl PaprRuntime {
         self.control_node_refs.clear();
         self.init();
         // self.script_path = None;
-        self.spawn(script_text, audio_cx)
+        self.spawn(script_path, audio_cx)
     }
 
     pub fn panic(
@@ -363,6 +366,7 @@ pub struct PaprApp {
     pub audio_cx: Option<AudioContext>,
     pub script_path: Option<PathBuf>,
     pub script_text: String,
+    pub midi_cx: Option<MidiContext>,
 }
 
 impl PaprApp {
@@ -374,6 +378,7 @@ impl PaprApp {
             audio_cx: None,
             script_path: None,
             script_text: String::new(),
+            midi_cx: None,
         }
     }
 
@@ -384,11 +389,16 @@ impl PaprApp {
         ));
     }
 
+    pub fn init_midi(&mut self) {
+        self.midi_cx = Some(MidiContext::new("PAPR Midi In", None));
+    }
+
     pub fn load_script_file(&mut self, script_path: &PathBuf) -> Result<(), Box<dyn Error>> {
         // let path = self.script_path.as_ref()?;
         let mut file = File::open(script_path)?;
         self.script_text = String::new();
         file.read_to_string(&mut self.script_text)?;
+        self.script_path = Some(script_path.to_owned());
         Ok(())
     }
 
@@ -532,23 +542,28 @@ impl eframe::App for PaprApp {
                             std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
                         }
                         self.rt.control_node_refs.clear();
+                        self.init_audio(false);
+                        self.init_midi();
                         self.rt.init();
                         self.load_script_file(&path).unwrap_or_else(|e| {
                             self.rt.status_text = format!("Failed to load script: {e}");
                         });
-                        self.audio_cx = self
-                            .rt
-                            .spawn(&self.script_text, self.audio_cx.take())
-                            .unwrap_or_else(|e| {
-                                self.rt.status_text = format!("Failed to spawn: {e}");
-                                None
-                            });
+
+                        // self.audio_cx = Some(PaprRuntime::create_audio_context(false));
+
+                        self.audio_cx =
+                            self.rt
+                                .spawn(&path, self.audio_cx.take())
+                                .unwrap_or_else(|e| {
+                                    self.rt.status_text = format!("Failed to spawn: {e}");
+                                    None
+                                });
                     }
                 }
                 if ui.button("Reload").clicked() {
                     self.audio_cx = self
                         .rt
-                        .reload(&self.script_text, self.audio_cx.take())
+                        .reload(self.script_path.as_ref().unwrap(), self.audio_cx.take())
                         .unwrap_or_else(|e| {
                             self.rt.status_text = format!("Failed to reload: {e}");
                             None

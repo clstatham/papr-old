@@ -3,7 +3,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import logging
 import sys
 import subprocess
-import os
 import re
 import shutil
 
