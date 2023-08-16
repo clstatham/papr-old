@@ -155,7 +155,7 @@ impl PaprRuntime {
         Ok(())
     }
 
-    pub fn create_audio_context(force_alsa: bool) -> AudioContext {
+    pub fn create_audio_context(#[cfg(target_os = "linux")] force_alsa: bool) -> AudioContext {
         // if self.audio_cx.is_none() && self.out_file_name.is_none() {
         #[cfg(target_os = "linux")]
         let host = if force_alsa {
@@ -378,7 +378,10 @@ impl PaprApp {
     }
 
     pub fn init_audio(&mut self, #[cfg(target_os = "linux")] force_alsa: bool) {
-        self.audio_cx = Some(PaprRuntime::create_audio_context(force_alsa));
+        self.audio_cx = Some(PaprRuntime::create_audio_context(
+            #[cfg(target_os = "linux")]
+            force_alsa,
+        ));
     }
 
     pub fn load_script_file(&mut self, script_path: &PathBuf) -> Result<(), Box<dyn Error>> {

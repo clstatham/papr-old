@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             match many1_count(statement)(tokens) {
                 Ok((_garbage, count)) => reward += count as isize * 1000,
                 Err(e) => {
-                    dbg!(e);
+                    // dbg!(e);
                 }
             };
         }
