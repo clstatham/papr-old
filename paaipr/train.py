@@ -1,15 +1,8 @@
+import functools
+import re
+from datetime import datetime
 import numpy as np
-from collections import defaultdict, namedtuple
-from tensordict import TensorDict
-from tensordict.nn import *
-from tensordict.nn.distributions import *
-from torchrl.collectors import *
-from torchrl.objectives.value import *
-from torchrl.objectives import *
-from torchrl.modules import *
-from torchrl.envs.utils import *
-from torchrl.envs import *
-from torchrl.data import *
+from collections import namedtuple
 from torch import nn
 from torch.nn import functional as F
 import torch
@@ -21,42 +14,39 @@ import os
 import shutil
 from torch.utils.tensorboard import SummaryWriter
 from torch.distributions import Categorical
+from parsec import *
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='')
 
-MAX_OBS_LEN = 200
-BATCH_SIZE = 16
+MAX_OBS_LEN = 100
+# BATCH_SIZE = 16
 
-minibatch_size = 8
 successful_renders = 0
 
-checkpoint = "Salesforce/codegen2-1B"
-
 os.makedirs("training", exist_ok=True)
-os.makedirs("training_tokenizer", exist_ok=True)
 
 all_tokens = []
 
 builtin_tokens = [
-    "Sin",
-    "Cos",
-    "Exp",
+    # "Sin",
+    # "Cos",
+    # "Exp",
     "Tanh",
     "Abs",
     "SineFm",
     "SineOsc",
     "SawOsc",
     "SquareOsc",
-    "Clock",
-    "Delay",
-    "Redge",
-    "Fedge",
-    "Var",
+    # "Clock",
+    # "Delay",
+    # "Redge",
+    # "Fedge",
+    # "Var",
     "Max",
     "Min",
-    "Clip",
-    "If",
-    "Not",
+    # "Clip",
+    # "If",
+    # "Not",
 ]
 audio_tokens = ["@" + tok for tok in builtin_tokens]
 control_tokens = ["#" + tok for tok in builtin_tokens]
@@ -65,16 +55,17 @@ all_tokens += builtin_tokens
 SOT_TOKEN = "<|START|>"
 EOT_TOKEN = "<|END|>"
 operator_tokens = [  # "=", ";",
-    #    "{", "}", "[", "]", "<", ">", "(", ")",
+    "<", ">",
     "+", "-", "*", "/",
                    "&", "|", "^",
                    "==", "!="]
+paren_tokens = ["(", ")",]
 keyword_tokens = []
 
-all_tokens += keyword_tokens + operator_tokens
+all_tokens += keyword_tokens + operator_tokens + paren_tokens
 
 MAX_VARS = 3
-MAX_GRAPHS = 1
+# MAX_GRAPHS = 1
 
 var_tokens = ["@var" + str(i) for i in range(MAX_VARS)]
 var_tokens += ["#var" + str(i) for i in range(MAX_VARS, MAX_VARS * 2)]
@@ -91,58 +82,120 @@ all_tokens += var_tokens
 #     f.write(' '.join(keyword_tokens))
 # with open("var_tokens.txt", "w") as f:
 #     f.write(' '.join(var_tokens))
-valid_after_assign_tokens = var_tokens + builtin_tokens
-valid_after_var_tokens = ["="]
-valid_after_graph_tokens = ["("]
 
-valid_token_storage = {
-    "valid_after_var_tokens": valid_after_var_tokens,
-    "valid_after_assign_tokens": valid_after_assign_tokens,
-}
+# valid_next_tokens = {
+#     # valid after SOT token
+#     SOT_TOKEN: var_tokens,
+#     # valid after a var token
+#     **{v: ["="] + var_tokens + operator_tokens for v in var_tokens},
+#     # valid after a = token
+#     "=": var_tokens + builtin_tokens + ["("],
+#     # valid after an operator token
+#     **{o: var_tokens for o in operator_tokens},
+#     # valid after a builtin token
+#     **{b: ["("] for b in builtin_tokens},
+#     # valid after a ( token
+#     "(": [")"] + var_tokens,
+#     # valid after a ")" token
+#     ")": [";"] + var_tokens,
+#     # valid after a ";" token
+#     ";": [EOT_TOKEN] + var_tokens,
+#     EOT_TOKEN: None,
+# }
+# print(valid_next_tokens)
 
-valid_next_tokens = {
-    # valid after SOT token
-    SOT_TOKEN: var_tokens,
-    # valid after a var token
-    **{v: ["="] + var_tokens + operator_tokens for v in var_tokens},
-    # valid after a = token
-    "=": var_tokens + builtin_tokens + ["("],
-    # valid after an operator token
-    **{o: var_tokens for o in operator_tokens},
-    # valid after a builtin token
-    **{b: ["("] for b in builtin_tokens},
-    # valid after a ( token
-    "(": [")"] + var_tokens,
-    # valid after a ")" token
-    ")": [";"] + var_tokens,
-    # valid after a ";" token
-    ";": [EOT_TOKEN] + var_tokens,
-    EOT_TOKEN: None,
-}
-print(valid_next_tokens)
+ALL_TOKENS = [SOT_TOKEN] + all_tokens + [EOT_TOKEN]
+assert ALL_TOKENS[0] == SOT_TOKEN
 
-all_tokens = [SOT_TOKEN] + all_tokens + [EOT_TOKEN]
-assert all_tokens[0] == SOT_TOKEN
+whitespace = regex(r'\s*', re.MULTILINE)
+def lexeme(p): return p << whitespace
+
+
+def to_parser(tokens): return functools.reduce(
+    lambda x, y: x | y, map(lambda x: lexeme(string(x)), tokens))
+
+
+sot = lexeme(string(SOT_TOKEN))
+eot = lexeme(string(EOT_TOKEN))
+
+equals = lexeme(string('='))
+opparen = lexeme(string('('))
+clparen = lexeme(string(')'))
+semi = lexeme(string(';'))
+var = to_parser(var_tokens)
+op = to_parser(operator_tokens)
+builtin = to_parser(builtin_tokens)
+
+
+def parser(script):
+    def inc_if_ok(inp, x, p: Parser):
+        try:
+            _, inp = p.parse_partial(inp)
+            return True, inp, x + 1
+        except ParseError:
+            return False, inp, x
+
+    def infix_op(inp, depth):
+        go, inp, depth = inc_if_ok(inp, depth, opparen)
+        if not go:
+            return False, inp, depth
+        go, inp, depth = expr(inp, depth)
+        if not go:
+            return False, inp, depth
+        go, inp, depth = inc_if_ok(inp, depth, op)
+        if not go:
+            return False, inp, depth
+        go, inp, depth = expr(inp, depth)
+        if not go:
+            return False, inp, depth
+        return inc_if_ok(inp, depth, clparen)
+
+    def graphcall(inp, depth):
+        go, inp, depth = inc_if_ok(inp, depth, builtin)
+        if not go:
+            return False, inp, depth
+        go, inp, depth = inc_if_ok(inp, depth, opparen)
+        if not go:
+            return False, inp, depth
+        while True:
+            go, inp, depth = expr(inp, depth)
+            if not go:
+                break
+        return inc_if_ok(inp, depth, clparen)
+
+    def expr(inp, depth):
+        go, inp, depth = inc_if_ok(inp, depth, var)
+        if go:
+            return True, inp, depth
+        go, inp, depth = infix_op(inp, depth)
+        if go:
+            return True, inp, depth
+        return graphcall(inp, depth)
+
+    def statement(inp, depth):
+        go, inp, depth = inc_if_ok(inp, depth, var)
+        if not go:
+            return False, inp, depth
+        go, inp, depth = inc_if_ok(inp, depth, equals)
+        if not go:
+            return False, inp, depth
+        go, inp, depth = expr(inp, depth)
+        if not go:
+            return False, inp, depth
+        return inc_if_ok(inp, depth, semi)
+
+    depth = 0
+    while True:
+        go, script, depth = statement(script, depth)
+        if not go:
+            return depth
 
 
 def encode(tokens):
-    toks = [torch.tensor(all_tokens.index(
+    toks = [torch.tensor(ALL_TOKENS.index(
         token), dtype=torch.int64) for token in tokens]
-    toks = [F.one_hot(token, num_classes=len(all_tokens)) for token in toks]
+    toks = [F.one_hot(token, num_classes=len(ALL_TOKENS)) for token in toks]
     return torch.stack(toks).to(torch.float32)
-
-
-def decode(last_token: str, logits: torch.Tensor):
-    logits = logits.softmax(-1)
-    valid_next = valid_next_tokens[last_token]
-    valid_next_indices = [all_tokens.index(v) for v in valid_next]
-    am = logits.argmax().item()
-    i = 1
-    while am not in valid_next_indices:
-        i += 1
-        am = torch.topk(logits, i).indices[-1].item()
-    token = all_tokens[am]
-    return token, i
 
 
 class PaaiprEnv(object):
@@ -151,14 +204,14 @@ class PaaiprEnv(object):
         return encode(self.script)
 
     def step(self, action, penalty):
-        token = all_tokens[action.squeeze(-1).item()]
+        token = ALL_TOKENS[action.squeeze(-1).item()]
         terminated = token == EOT_TOKEN
         self.script += [token]
-        # if len(self.script) > MAX_OBS_LEN:
-        #     terminated = True
+        if len(self.script) > MAX_OBS_LEN:
+            terminated = True
         reward = self.get_reward(token, terminated)
         reward = torch.tensor(reward).to(self.device)
-        reward -= penalty / len(all_tokens)
+        reward -= penalty / len(ALL_TOKENS)
         # terminated = torch.full_like(
         #     reward, terminated, dtype=torch.bool).to(self.device)
 
@@ -181,99 +234,115 @@ class PaaiprEnv(object):
         #     str(result_tokens.stdout.strip(), encoding="utf-8"))
         # if finish:
         script = list(filter(lambda x: x not in [
-                      SOT_TOKEN, EOT_TOKEN], self.script))
-        reward -= len(self.script) - len(script)
-        if len(script) > 0:
-            full_program = ' '.join(script)
-            full_program = f"""
-            graph Main {{
-                |{' '.join(var_tokens)}| -> |@dac0|
-                ~ {{
-                    {full_program}
-                }}
-            }}
-            """
-            # print("Predicted program:")
-            # print(full_program)
-            with open(f"training/full_program.papr", "w", encoding="utf-8") as f:
-                f.write(full_program)
+                      SOT_TOKEN, EOT_TOKEN], self.script[1:-1]))
+        reward -= len(self.script[1:-1]) - len(script)
+        parser_reward = parser(' '.join(script))
+        # if parser_reward > 0:
+        #     print(parser_reward)
+        reward += parser_reward
 
-            result_tokens = subprocess.run(
-                ["../target/release/papr-tokenizer", f"training/full_program.papr"], capture_output=True)
-            reward += int(
-                str(result_tokens.stdout.strip(), encoding="utf-8"))
-            reward -= len(var_tokens)
+        # if new_token in valid_next_tokens[self.script[-2]]:
+        #     reward += 1
+        # else:
+        #     reward -= 1
 
-            if finish:
-                result_full = subprocess.run([
-                    "../target/release/papr",
-                    f"training/full_program.papr",
-                    "--headless",
-                    "--run-for",
-                    "1000",
-                    "--out-path",
-                    f"training/full_program.wav",
-                ], capture_output=True)
+        # if len(script) > 0:
+        #     if finish:
+        #         full_program = ' '.join(script)
+        #         full_program = f"""
+        #         graph Main {{
+        #             |{' '.join(var_tokens)}| -> |@dac0|
+        #             ~ {{
+        #                 {full_program}
+        #             }}
+        #         }}
+        #         """
+        #         # print("Predicted program:")
+        #         # print(full_program)
+        with open(f"training/out.papr", "w", encoding="utf-8") as f:
+            f.write(' '.join(script))
 
-                if result_full.returncode == 0:
-                    reward += 100
-                    shutil.copyfile(
-                        f"training/full_program.wav", f"training/success_{successful_renders}.wav")
-                    shutil.copyfile(
-                        f"training/full_program.papr", f"training/success_{successful_renders}.papr")
-                    successful_renders += 1
+        #         result_tokens = subprocess.run(
+        #             ["../target/release/papr-tokenizer", f"training/full_program.papr"], capture_output=True)
+        #         reward += int(
+        #             str(result_tokens.stdout.strip(), encoding="utf-8"))
+        #         reward -= len(var_tokens)
+        #         result_full = subprocess.run([
+        #             "../target/release/papr",
+        #             f"training/full_program.papr",
+        #             "--headless",
+        #             "--run-for",
+        #             "1000",
+        #             "--out-path",
+        #             f"training/full_program.wav",
+        #         ], capture_output=True)
 
-            # print("Reward:", reward)
-        reward /= MAX_OBS_LEN
+        #         if result_full.returncode == 0:
+        #             reward += 100
+        #             shutil.copyfile(
+        #                 f"training/full_program.wav", f"training/success_{successful_renders}.wav")
+        #             shutil.copyfile(
+        #                 f"training/full_program.papr", f"training/success_{successful_renders}.papr")
+        #             successful_renders += 1
+        #         else:
+        #             reward -= 100
+
+        # print("Reward:", reward)
+        # reward /= MAX_OBS_LEN
         return reward
 
 
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 if __name__ == "__main__":
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    outdir = f"training/{timestamp}"
+    os.makedirs(outdir, exist_ok=True)
     print("All Tokens:")
-    print(all_tokens)
+    print(ALL_TOKENS)
 
     device = "cuda" if torch.has_cuda else "cpu"
     num_cells = 1024
-    lr = 3e-4
+    lr = 3e-5
+    eps = float(np.finfo(np.float32).eps)
 
     env = PaaiprEnv(device=device)
 
     class Policy(nn.Module):
         def __init__(self, *args, **kwargs) -> None:
             super().__init__(*args, **kwargs)
-            self.lstm1 = nn.LSTM(len(all_tokens), num_cells,
-                                 batch_first=True, num_layers=2)
-            self.action_head = nn.Linear(num_cells, len(all_tokens))
-            self.value_head = nn.Linear(num_cells, 1)
+            self.lstm1 = nn.LSTM(len(ALL_TOKENS), num_cells,
+                                 batch_first=True, num_layers=2, device=device)
+            self.atn = nn.MultiheadAttention(
+                num_cells, 2, batch_first=True, device=device)
+            self.action_head = nn.Linear(
+                num_cells, len(ALL_TOKENS), device=device)
+            self.value_head = nn.Linear(num_cells, 1, device=device)
 
             self.saved_actions = []
             self.rewards = []
 
         def forward(self, x):
-            x = x.unsqueeze(0)
+            x = x.unsqueeze(0).to(device)
             x, _ = self.lstm1(x)
-            x = x[..., -1, :]
+            x, _ = self.atn(x, key=x, value=x)
             action_prob = self.action_head(x)
             action_prob_softmax = F.softmax(action_prob, dim=-1)
             state_values = self.value_head(x)
-            return action_prob_softmax.squeeze(0), state_values.squeeze(0)
+            return action_prob_softmax.squeeze(0)[..., -1, :], state_values.squeeze(0)[..., -1, :]
 
     model = Policy()
     optim = torch.optim.Adam(model.parameters(), lr=lr)
 
-    # collector = SyncDataCollector(
-    #     env, policy, frames_per_batch=50, total_frames=1_000_000)
-    # rb = TensorDictReplayBuffer(storage=ListStorage(
-    #     10_000), batch_size=BATCH_SIZE, prefetch=10)
-
-    writer = SummaryWriter("./training")
+    writer = SummaryWriter(outdir)
+    running_reward = 0
     nepoch = 100000000
-    pbar = tqdm(total=nepoch)
+    pbar = tqdm()
+    i_episode = 0
     try:
-        for i_episode in range(nepoch):
+        while True:
             state = env.reset()
-            for t in range(MAX_OBS_LEN):
+            ep_rewards = []
+            while True:
                 probs, state_value = model(state)
                 m = Categorical(probs)
                 action = m.sample()
@@ -288,48 +357,53 @@ if __name__ == "__main__":
                     SavedAction(m.log_prob(action), state_value))
                 state, reward, done = env.step(action=action, penalty=penalty)
                 model.rewards.append(reward)
+                ep_rewards.append(reward.cpu().numpy())
                 if done:
                     break
-
+            ep_reward = np.mean(ep_rewards)
+            running_reward = 0.1 * ep_reward + 0.9 * running_reward
             R = 0
             returns = []
             for r in model.rewards[::-1]:
                 R = r + 0.99 * R
                 returns.insert(0, R)
             returns = torch.tensor(returns)
-            returns = (returns - returns.mean()) / (returns.std() + 1e-5)
+            old_returns = returns.clone()
+            returns = (returns - returns.mean()) / \
+                (returns.std(unbiased=False) + eps)
+            # print(old_returns.mean(), returns.mean())
             policy_losses = []
             value_losses = []
             for (log_prob, value), R in zip(model.saved_actions, returns):
                 advantage = R - value.item()
                 policy_losses.append(-log_prob * advantage)
-                value_losses.append(F.smooth_l1_loss(value, torch.tensor([R])))
+                value_losses.append(F.smooth_l1_loss(
+                    value, torch.tensor([R], device=device)))
             optim.zero_grad()
             loss = torch.stack(policy_losses).sum() + \
                 torch.stack(value_losses).sum()
-            loss.backward()
+            if torch.any(torch.isnan(loss)):
+                print(loss)
+            loss.to(device).backward()
             optim.step()
 
-            mean_reward = torch.stack(model.rewards).mean().item()
-            max_reward = torch.stack(model.rewards).max().item()
+            # mean_reward = torch.stack(model.rewards).mean().item()
+            # max_reward = torch.stack(model.rewards).max().item()
 
             del model.rewards[:]
             del model.saved_actions[:]
 
             pbar.set_description(
-                f"reward_mean: {mean_reward}, reward_max: {max_reward}, loss: {loss.item(): 4.4f}")
+                f"ep_reward: {ep_reward:4.4f}, avg_reward: {running_reward:4.4f}, loss: {loss.item():4.4f}")
             pbar.update()
 
-            writer.add_scalar("Reward/Mean", mean_reward, i_episode)
-            writer.add_scalar("Reward/Max", max_reward, i_episode)
+            writer.add_scalar("Reward/Episode", ep_reward, i_episode)
+            writer.add_scalar("Reward/RunningAvg", running_reward, i_episode)
             writer.add_scalar("Loss", loss.item(), i_episode)
 
-            # if i % 50 == 0:
-            #     with set_exploration_type(ExplorationType.MODE), torch.no_grad():
-            #         rollout = env.rollout(1000, stoch_policy)
-            #         print("\nNet reward:", rollout.get(
-            #             ("next", "reward")).sum().item())
+            i_episode += 1
     except KeyboardInterrupt:
         pass
-    torch.save(model.cpu(), "training/model.pt")
-    torch.save(optim, "training/optim.pt")
+    pbar.close()
+    torch.save(model.cpu(), f"{outdir}/model.pt")
+    torch.save(optim, f"{outdir}/optim.pt")
