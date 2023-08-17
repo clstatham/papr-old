@@ -7,7 +7,6 @@ use std::{
     sync::Arc,
 };
 
-
 use nom::{
     branch::*,
     bytes::complete::{take, take_until},
@@ -19,12 +18,7 @@ use nom::{
     InputIter, InputLength, InputTake,
 };
 
-use nom_supreme::{
-    error::{ErrorTree},
-    final_parser::final_parser,
-    tag::complete::tag,
-};
-
+use nom_supreme::{error::ErrorTree, final_parser::final_parser, tag::complete::tag};
 
 use crate::{
     dsp::{
@@ -375,7 +369,7 @@ pub enum ParsedSignalRate {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ParsedIdent(String, Option<ParsedSignalRate>);
+pub struct ParsedIdent(pub String, Option<ParsedSignalRate>);
 
 pub fn ident(tokens: Tokens) -> IResult<Tokens, ParsedIdent> {
     map(
@@ -1312,8 +1306,7 @@ pub fn parse_main_script(inp: &str, cwd: &impl AsRef<Path>) -> Result<(Graph, Gr
     if inp.is_empty() {
         return Err("Parsing error: empty script".into());
     }
-    let tokens: Result<Vec<Token>, ErrorTree<&str>> =
-        final_parser(Token::many1)(inp);
+    let tokens: Result<Vec<Token>, ErrorTree<&str>> = final_parser(Token::many1)(inp);
     // let tokens = tokens.map_err(|e| format!("{}", <nom::error::Error<&str> as ExtractContext<&str, nom::error::Error<&str>>>::extract_context(e, inp)))?;
     let tokens = tokens.unwrap();
     let tokens = Tokens { tokens: &tokens };

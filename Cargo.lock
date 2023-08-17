@@ -2764,6 +2764,7 @@ dependencies = [
  "clap",
  "nom",
  "papr",
+ "pest",
 ]
 
 [[package]]

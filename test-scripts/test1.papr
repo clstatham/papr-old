@@ -17,6 +17,5 @@ graph Main {
         let @s0 = @SineFm(0.1 #freq 1.0 @s1);
         let @res = (@s0 ^ @s1);
         @dac0 = (@res * @s0);
-		// let #tmp = #Debug(@s0);
     }
 }

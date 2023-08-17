@@ -66,7 +66,7 @@ pub enum ParsedSignalRate {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ParsedIdent(String, Option<ParsedSignalRate>);
+pub struct ParsedIdent(pub String, Option<ParsedSignalRate>);
 
 impl ParsedIdent {
     pub fn into_parsed_callee(self) -> ParsedCallee {

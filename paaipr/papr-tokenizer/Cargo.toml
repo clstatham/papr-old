@@ -9,3 +9,4 @@ edition = "2021"
 papr = { path = "../../" }
 nom = "*"
 clap = { version = "*", features = ["derive"] }
+pest = "*"

@@ -542,7 +542,10 @@ impl eframe::App for PaprApp {
                             std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
                         }
                         self.rt.control_node_refs.clear();
-                        self.init_audio(false);
+                        self.init_audio(
+                            #[cfg(target_os = "linux")]
+                            false, // todo
+                        );
                         self.init_midi();
                         self.rt.init();
                         self.load_script_file(&path).unwrap_or_else(|e| {
