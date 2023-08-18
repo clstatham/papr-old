@@ -9,9 +9,7 @@ import torch
 from tqdm import tqdm
 import logging
 import sys
-import subprocess
 import os
-import shutil
 from torch.utils.tensorboard import SummaryWriter
 from torch.distributions import Categorical
 from parsec import *
@@ -22,12 +20,13 @@ timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 outdir = f"training/{timestamp}"
 os.makedirs(outdir, exist_ok=True)
 
-MAX_OBS_LEN = 100
+MAX_OBS_LEN = 1000
 # BATCH_SIZE = 16
 
 successful_renders = 0
 
 ALL_TOKENS = []
+
 
 builtin_tokens = {
     # "Sin",
@@ -79,6 +78,12 @@ var_tokens += ["#var" + str(i) for i in range(MAX_VARS, MAX_VARS * 2)]
 var_tokens += ["@dac0"]
 ALL_TOKENS += var_tokens
 
+# ALL_TOKENS += [chr(x) for x in range(32, 127)]
+ALL_TOKENS += [' ']
+ALL_TOKENS += ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+SOT_TOKEN = "\x02"
+EOT_TOKEN = "\x03"
+
 ALL_TOKENS = [SOT_TOKEN] + ALL_TOKENS + [EOT_TOKEN]
 assert ALL_TOKENS[0] == SOT_TOKEN
 
@@ -97,18 +102,57 @@ equals = lexeme(string('='))
 opparen = lexeme(string('('))
 clparen = lexeme(string(')'))
 semi = lexeme(string(';'))
-var = to_parser(var_tokens)
-op = to_parser(operator_tokens)
-builtin = to_parser(builtin_tokens.keys())
+capital = one_of(''.join([chr(x)
+                          for x in range(ord('A'), ord('Z') + 1)]))
+lowercase = one_of(''.join([chr(x)
+                            for x in range(ord('a'), ord('z') + 1)]))
+digit = one_of('1234567890')
+underscore = string('_')
+signalrate = one_of("@#")
+op = lexeme(one_of("+-*/"))
 
 
 def parser(script):
     def inc_if_ok(inp, x, p: Parser):
         try:
-            _, inp = p.parse_partial(inp)
-            return True, inp, x + 1
+            _, inp2 = p.parse_partial(inp)
+            return True, inp2, x + 1
         except ParseError:
             return False, inp, x
+
+    def number(inp, reward):
+        go, inp, reward = inc_if_ok(inp, reward, many1(
+            digit).parsecmap(lambda l: ''.join(l)))
+        if not go:
+            return False, inp, reward
+        _, inp, reward = inc_if_ok(inp, reward, string('.'))
+        _, inp, reward = inc_if_ok(inp, reward, many1(
+            digit).parsecmap(lambda l: ''.join(l)))
+        return True, inp.strip(), reward
+
+    def builtin(inp, reward):
+        go, inp, reward = inc_if_ok(inp, reward, signalrate)
+        if not go:
+            return False, inp, reward
+        go, inp, reward = inc_if_ok(inp, reward, capital)
+        if not go:
+            return False, inp, reward
+        while go:
+            go, inp, reward = inc_if_ok(
+                inp, reward, underscore ^ capital ^ lowercase ^ digit)
+        return True, inp.strip(), reward + 1
+
+    def var(inp, reward):
+        go, inp, reward = inc_if_ok(inp, reward, signalrate)
+        if not go:
+            return False, inp, reward
+        go, inp, reward = inc_if_ok(inp, reward, underscore ^ lowercase)
+        if not go:
+            return False, inp, reward
+        while go:
+            go, inp, reward = inc_if_ok(
+                inp, reward, underscore ^ lowercase ^ digit)
+        return True, inp.strip(), reward + 1
 
     def infix_op(inp, reward):
         go, inp, reward = inc_if_ok(inp, reward, opparen)
@@ -126,40 +170,40 @@ def parser(script):
         go, inp, reward = inc_if_ok(inp, reward, clparen)
         if not go:
             return False, inp, reward
-        return True, inp, reward + 3
+        return True, inp.strip(), reward + 3
 
     def graphcall(inp, reward):
-        try:
-            graphname, inp = builtin.parse_partial(inp)
-            reward += 1
-        except ParseError:
+        go, inp, reward = builtin(inp, reward)
+        if not go:
             return False, inp, reward
         go, inp, reward = inc_if_ok(inp, reward, opparen)
         if not go:
             return False, inp, reward
-        for _ in range(builtin_tokens[graphname]):
+        while go:
             go, inp, reward = expr(inp, reward)
-            if not go:
-                return False, inp, reward
         go, inp, reward = inc_if_ok(inp, reward, clparen)
         if not go:
             return False, inp, reward
-        return True, inp, reward + 3
+        return True, inp.strip(), reward + 3
 
     def expr(inp, reward):
-        go, inp, reward = inc_if_ok(inp, reward, var)
+        go, inp2, reward = var(inp, reward)
         if go:
-            return True, inp, reward
+            return True, inp2, reward
+        go, inp2, reward = graphcall(inp, reward)
+        if go:
+            return True, inp2, reward
         go, inp, reward = infix_op(inp, reward)
         if go:
             return True, inp, reward
-        go, inp, reward = graphcall(inp, reward)
+        go, inp, reward = number(inp, reward)
         if not go:
             return False, inp, reward
-        return True, inp, reward + 1
+
+        return True, inp.strip(), reward + 3
 
     def statement(inp, reward):
-        go, inp, reward = inc_if_ok(inp, reward, var)
+        go, inp, reward = var(inp, reward)
         if not go:
             return False, inp, reward
         go, inp, reward = inc_if_ok(inp, reward, equals)
@@ -171,7 +215,7 @@ def parser(script):
         go, inp, reward = inc_if_ok(inp, reward, semi)
         if not go:
             return False, inp, reward
-        return True, inp, reward + 5
+        return True, inp.strip(), reward + 5
 
     def statements(inp, reward):
         go, inp, reward = statement(inp, reward)
@@ -184,17 +228,16 @@ def parser(script):
         go, inp, reward = inc_if_ok(inp, reward, eot)
         if not go:
             return False, inp, reward
-        return True, inp, reward + 10
+        return True, inp.strip(), reward + 10
 
     reward = 0
-    _, script, reward = statements(script, reward)
+    _, script, reward = statements(script.strip(), reward)
     return reward
 
 
 def encode(tokens):
     toks = [torch.tensor(ALL_TOKENS.index(
         token), dtype=torch.int64) for token in tokens]
-    # toks = [F.one_hot(token, num_classes=len(ALL_TOKENS)) for token in toks]
     return torch.stack(toks).to(torch.int64)
 
 
@@ -208,9 +251,9 @@ class PaaiprEnv(object):
         reward = 0.0
         token = ALL_TOKENS[action.squeeze(-1).item()]
         terminated = token == EOT_TOKEN
-        if token == self.script[-1]:
-            # punish repeating the same token over and over (particularly open paren)
-            reward -= 2.0
+        # if token == self.script[-1]:
+        #     # punish repeating the same token over and over (particularly open paren)
+        #     reward -= 2.0
         self.script += [token]
 
         global successful_renders
@@ -218,7 +261,7 @@ class PaaiprEnv(object):
         if len(self.script) > MAX_OBS_LEN:
             terminated = True
 
-        parser_reward = parser(' '.join(self.script[1:]))
+        parser_reward = parser(''.join(self.script[1:]))
         if parser_reward > self.last_parse_score:
             reward += 1.0
             # reward += 1.0
@@ -255,6 +298,7 @@ if __name__ == "__main__":
     print(ALL_TOKENS)
 
     device = "cuda" if torch.has_cuda else "cpu"
+    # device = "cpu"
     num_cells = 1024
     lr = 1e-4
 
@@ -368,7 +412,10 @@ if __name__ == "__main__":
             if running_reward > best:
                 best = running_reward
                 with open(f"{outdir}/out_{best:.4f}_{i_episode}.papr", "w", encoding="utf-8") as f:
-                    f.write(' '.join(env.script[1:-1]))
+                    script = env.script[1:-1]  \
+                        if env.script[-1] == EOT_TOKEN \
+                        else env.script[1:]
+                    f.write(''.join(script))
                 torch.save(
                     model.cpu(), f"{outdir}/model_best.pt")
                 torch.save(
