@@ -110,70 +110,85 @@ def parser(script):
         except ParseError:
             return False, inp, x
 
-    def infix_op(inp, depth):
-        go, inp, depth = inc_if_ok(inp, depth, opparen)
+    def infix_op(inp, reward):
+        go, inp, reward = inc_if_ok(inp, reward, opparen)
         if not go:
-            return False, inp, depth
-        go, inp, depth = expr(inp, depth)
+            return False, inp, reward
+        go, inp, reward = expr(inp, reward)
         if not go:
-            return False, inp, depth
-        go, inp, depth = inc_if_ok(inp, depth, op)
+            return False, inp, reward
+        go, inp, reward = inc_if_ok(inp, reward, op)
         if not go:
-            return False, inp, depth
-        go, inp, depth = expr(inp, depth)
+            return False, inp, reward
+        go, inp, reward = expr(inp, reward)
         if not go:
-            return False, inp, depth
-        return inc_if_ok(inp, depth, clparen)
+            return False, inp, reward
+        go, inp, reward = inc_if_ok(inp, reward, clparen)
+        if not go:
+            return False, inp, reward
+        return True, inp, reward + 3
 
-    def graphcall(inp, depth):
+    def graphcall(inp, reward):
         try:
             graphname, inp = builtin.parse_partial(inp)
-            depth += 1
+            reward += 1
         except ParseError:
-            return False, inp, depth
-        go, inp, depth = inc_if_ok(inp, depth, opparen)
+            return False, inp, reward
+        go, inp, reward = inc_if_ok(inp, reward, opparen)
         if not go:
-            return False, inp, depth
+            return False, inp, reward
         for _ in range(builtin_tokens[graphname]):
-            go, inp, depth = expr(inp, depth)
+            go, inp, reward = expr(inp, reward)
             if not go:
-                return False, inp, depth
-        return inc_if_ok(inp, depth, clparen)
+                return False, inp, reward
+        go, inp, reward = inc_if_ok(inp, reward, clparen)
+        if not go:
+            return False, inp, reward
+        return True, inp, reward + 3
 
-    def expr(inp, depth):
-        go, inp, depth = inc_if_ok(inp, depth, var)
+    def expr(inp, reward):
+        go, inp, reward = inc_if_ok(inp, reward, var)
         if go:
-            return True, inp, depth
-        go, inp, depth = infix_op(inp, depth)
+            return True, inp, reward
+        go, inp, reward = infix_op(inp, reward)
         if go:
-            return True, inp, depth
-        return graphcall(inp, depth)
+            return True, inp, reward
+        go, inp, reward = graphcall(inp, reward)
+        if not go:
+            return False, inp, reward
+        return True, inp, reward + 1
 
-    def statement(inp, depth):
-        go, inp, depth = inc_if_ok(inp, depth, var)
+    def statement(inp, reward):
+        go, inp, reward = inc_if_ok(inp, reward, var)
         if not go:
-            return False, inp, depth
-        go, inp, depth = inc_if_ok(inp, depth, equals)
+            return False, inp, reward
+        go, inp, reward = inc_if_ok(inp, reward, equals)
         if not go:
-            return False, inp, depth
-        go, inp, depth = expr(inp, depth)
+            return False, inp, reward
+        go, inp, reward = expr(inp, reward)
         if not go:
-            return False, inp, depth
-        return inc_if_ok(inp, depth, semi)
+            return False, inp, reward
+        go, inp, reward = inc_if_ok(inp, reward, semi)
+        if not go:
+            return False, inp, reward
+        return True, inp, reward + 5
 
-    def statements(inp, depth):
-        go, inp, depth = statement(inp, depth)
+    def statements(inp, reward):
+        go, inp, reward = statement(inp, reward)
         if not go:
-            return False, inp, depth
+            return False, inp, reward
         while True:
-            go, inp, depth = statement(inp, depth)
+            go, inp, reward = statement(inp, reward)
             if not go:
                 break
-        return inc_if_ok(inp, depth, eot)
+        go, inp, reward = inc_if_ok(inp, reward, eot)
+        if not go:
+            return False, inp, reward
+        return True, inp, reward + 10
 
-    depth = 0
-    go, script, depth = statements(script, depth)
-    return depth
+    reward = 0
+    _, script, reward = statements(script, reward)
+    return reward
 
 
 def encode(tokens):
@@ -193,6 +208,9 @@ class PaaiprEnv(object):
         reward = 0.0
         token = ALL_TOKENS[action.squeeze(-1).item()]
         terminated = token == EOT_TOKEN
+        if token == self.script[-1]:
+            # punish repeating the same token over and over (particularly open paren)
+            reward -= 2.0
         self.script += [token]
 
         global successful_renders
@@ -202,10 +220,10 @@ class PaaiprEnv(object):
 
         parser_reward = parser(' '.join(self.script[1:]))
         if parser_reward > self.last_parse_score:
-            reward = 1.0
+            reward += 1.0
             # reward += 1.0
         elif len(self.script) > 1:
-            reward = parser_reward
+            reward += parser_reward
             terminated = True
             # punish unmatched parentheses
             paren_count = 0
@@ -347,8 +365,8 @@ if __name__ == "__main__":
             writer.add_scalar("Loss", loss.item(), i_episode)
             writer.add_scalar("Epsilon", epsilon, i_episode)
 
-            if ep_reward > best:
-                best = ep_reward
+            if running_reward > best:
+                best = running_reward
                 with open(f"{outdir}/out_{best:.4f}_{i_episode}.papr", "w", encoding="utf-8") as f:
                     f.write(' '.join(env.script[1:-1]))
                 torch.save(
@@ -356,7 +374,7 @@ if __name__ == "__main__":
                 torch.save(
                     optim, f"{outdir}/optim_best.pt")
                 model.to(device)
-            if running_reward > MAX_OBS_LEN * 0.9:
+            if running_reward >= MAX_OBS_LEN:
                 print("Running reward reached threshold, stopping training")
                 break
             i_episode += 1
