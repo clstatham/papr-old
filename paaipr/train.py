@@ -27,35 +27,33 @@ MAX_OBS_LEN = 100
 
 successful_renders = 0
 
-os.makedirs("training", exist_ok=True)
-
 ALL_TOKENS = []
 
-builtin_tokens = [
+builtin_tokens = {
     # "Sin",
     # "Cos",
     # "Exp",
-    "Tanh",
-    "Abs",
-    "SineFm",
-    "SineOsc",
-    "SawOsc",
-    "SquareOsc",
+    "Tanh": 1,
+    "Abs": 1,
+    "SineFm": 4,
+    "SineOsc": 2,
+    "SawOsc": 2,
+    "SquareOsc": 2,
     # "Clock",
     # "Delay",
     # "Redge",
     # "Fedge",
     # "Var",
-    "Max",
-    "Min",
+    "Max": 2,
+    "Min": 2,
     # "Clip",
     # "If",
     # "Not",
-]
-audio_tokens = ["@" + tok for tok in builtin_tokens]
-control_tokens = ["#" + tok for tok in builtin_tokens]
-builtin_tokens = audio_tokens + control_tokens
-ALL_TOKENS += builtin_tokens
+}
+audio_tokens = {"@" + tok: val for tok, val in builtin_tokens.items()}
+control_tokens = {"#" + tok: val for tok, val in builtin_tokens.items()}
+builtin_tokens = {**audio_tokens, **control_tokens}
+ALL_TOKENS += list(builtin_tokens.keys())
 SOT_TOKEN = "<|START|>"
 EOT_TOKEN = "<|END|>"
 operator_tokens = [
@@ -101,7 +99,7 @@ clparen = lexeme(string(')'))
 semi = lexeme(string(';'))
 var = to_parser(var_tokens)
 op = to_parser(operator_tokens)
-builtin = to_parser(builtin_tokens)
+builtin = to_parser(builtin_tokens.keys())
 
 
 def parser(script):
@@ -128,16 +126,18 @@ def parser(script):
         return inc_if_ok(inp, depth, clparen)
 
     def graphcall(inp, depth):
-        go, inp, depth = inc_if_ok(inp, depth, builtin)
-        if not go:
+        try:
+            graphname, inp = builtin.parse_partial(inp)
+            depth += 1
+        except ParseError:
             return False, inp, depth
         go, inp, depth = inc_if_ok(inp, depth, opparen)
         if not go:
             return False, inp, depth
-        while True:
+        for _ in range(builtin_tokens[graphname]):
             go, inp, depth = expr(inp, depth)
             if not go:
-                break
+                return False, inp, depth
         return inc_if_ok(inp, depth, clparen)
 
     def expr(inp, depth):
@@ -170,6 +170,7 @@ def parser(script):
             if not go:
                 break
         return inc_if_ok(inp, depth, eot)
+
     depth = 0
     go, script, depth = statements(script, depth)
     return depth
@@ -206,6 +207,14 @@ class PaaiprEnv(object):
         elif len(self.script) > 1:
             reward = parser_reward
             terminated = True
+            # punish unmatched parentheses
+            paren_count = 0
+            for t in self.script:
+                if t == "(":
+                    paren_count += 1
+                elif t == ")":
+                    paren_count -= 1
+            reward -= abs(paren_count)
         self.last_parse_score = parser_reward
 
         # momentum for long chains of correct tokens
@@ -340,13 +349,12 @@ if __name__ == "__main__":
 
             if ep_reward > best:
                 best = ep_reward
-
                 with open(f"{outdir}/out_{best:.4f}_{i_episode}.papr", "w", encoding="utf-8") as f:
-                    f.write(' '.join(env.script[1:]))
+                    f.write(' '.join(env.script[1:-1]))
                 torch.save(
-                    model.cpu(), f"{outdir}/model_{best:.4f}_{i_episode}.pt")
+                    model.cpu(), f"{outdir}/model_best.pt")
                 torch.save(
-                    optim, f"{outdir}/optim_{best:.4f}_{i_episode}.pt")
+                    optim, f"{outdir}/optim_best.pt")
                 model.to(device)
             if running_reward > MAX_OBS_LEN * 0.9:
                 print("Running reward reached threshold, stopping training")
