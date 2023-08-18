@@ -1,3 +1,4 @@
+import random
 import functools
 import re
 from datetime import datetime
@@ -50,16 +51,16 @@ builtin_tokens = {
     # "Not",
 }
 audio_tokens = {"@" + tok: val for tok, val in builtin_tokens.items()}
-control_tokens = {"#" + tok: val for tok, val in builtin_tokens.items()}
-builtin_tokens = {**audio_tokens, **control_tokens}
+# control_tokens = {"#" + tok: val for tok, val in builtin_tokens.items()}
+builtin_tokens = {**audio_tokens}  # , **control_tokens
 ALL_TOKENS += list(builtin_tokens.keys())
-SOT_TOKEN = "<|START|>"
+# SOT_TOKEN = "<|START|>"
 EOT_TOKEN = "<|END|>"
 operator_tokens = [
-    "<", ">",
-    "+", "-", "*", "/",
-    "&", "|", "^",
-    "!=",
+    # "<", ">",
+    # "+", "-", "*", "/",
+    # "&", "|", "^",
+    # "!=",
 ]
 paren_tokens = ["(", ")"]
 keyword_tokens = []
@@ -68,11 +69,11 @@ misc_tokens = [";", "="]
 
 ALL_TOKENS += misc_tokens + keyword_tokens + operator_tokens + paren_tokens
 
-MAX_VARS = 3
+MAX_VARS = 5
 # MAX_GRAPHS = 1
 
 var_tokens = ["@var" + str(i) for i in range(MAX_VARS)]
-var_tokens += ["#var" + str(i) for i in range(MAX_VARS, MAX_VARS * 2)]
+# var_tokens += ["#var" + str(i) for i in range(MAX_VARS, MAX_VARS * 2)]
 # graph_tokens = ["#Graph" + str(i) for i in range(MAX_GRAPHS)]
 # graph_tokens += ["@Graph" + str(i) for i in range(MAX_GRAPHS)]
 var_tokens += ["@dac0"]
@@ -81,21 +82,18 @@ ALL_TOKENS += var_tokens
 # ALL_TOKENS += [chr(x) for x in range(32, 127)]
 ALL_TOKENS += [' ']
 ALL_TOKENS += ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
-SOT_TOKEN = "\x02"
-EOT_TOKEN = "\x03"
 
-ALL_TOKENS = [SOT_TOKEN] + ALL_TOKENS + [EOT_TOKEN]
-assert ALL_TOKENS[0] == SOT_TOKEN
+ALL_TOKENS = ALL_TOKENS + [EOT_TOKEN]
 
-whitespace = regex(r'\s*', re.MULTILINE)
-def lexeme(p): return p << whitespace
+whitespace0 = regex(r'\s*', re.MULTILINE)
+whitespace1 = regex(r'\s+', re.MULTILINE)
+def lexeme(p): return p << whitespace0
 
 
 def to_parser(tokens): return functools.reduce(
     lambda x, y: x ^ y, [lexeme(string(x)) for x in tokens])
 
 
-sot = lexeme(string(SOT_TOKEN))
 eot = lexeme(string(EOT_TOKEN))
 
 equals = lexeme(string('='))
@@ -109,7 +107,21 @@ lowercase = one_of(''.join([chr(x)
 digit = one_of('1234567890')
 underscore = string('_')
 signalrate = one_of("@#")
-op = lexeme(one_of("+-*/"))
+var = to_parser(var_tokens)
+# op = to_parser(operator_tokens)
+builtin = to_parser(builtin_tokens.keys())
+
+TOKEN_CATEGORIES = {
+    # "special": [EOT_TOKEN],
+    "whitespace": [" "],
+    "equals": ["="],
+    "opparen": ["("],
+    "clparen": [")"],
+    "semi": [";"],
+    "underscore": ["_"],
+    "var": var_tokens,
+    "builtin": list(builtin_tokens.keys()),
+}
 
 
 def parser(script):
@@ -128,82 +140,65 @@ def parser(script):
         _, inp, reward = inc_if_ok(inp, reward, string('.'))
         _, inp, reward = inc_if_ok(inp, reward, many1(
             digit).parsecmap(lambda l: ''.join(l)))
-        return True, inp.strip(), reward
+        return True, inp, reward
 
-    def builtin(inp, reward):
-        go, inp, reward = inc_if_ok(inp, reward, signalrate)
-        if not go:
-            return False, inp, reward
-        go, inp, reward = inc_if_ok(inp, reward, capital)
-        if not go:
-            return False, inp, reward
-        while go:
-            go, inp, reward = inc_if_ok(
-                inp, reward, underscore ^ capital ^ lowercase ^ digit)
-        return True, inp.strip(), reward + 1
-
-    def var(inp, reward):
-        go, inp, reward = inc_if_ok(inp, reward, signalrate)
-        if not go:
-            return False, inp, reward
-        go, inp, reward = inc_if_ok(inp, reward, underscore ^ lowercase)
-        if not go:
-            return False, inp, reward
-        while go:
-            go, inp, reward = inc_if_ok(
-                inp, reward, underscore ^ lowercase ^ digit)
-        return True, inp.strip(), reward + 1
-
-    def infix_op(inp, reward):
-        go, inp, reward = inc_if_ok(inp, reward, opparen)
-        if not go:
-            return False, inp, reward
-        go, inp, reward = expr(inp, reward)
-        if not go:
-            return False, inp, reward
-        go, inp, reward = inc_if_ok(inp, reward, op)
-        if not go:
-            return False, inp, reward
-        go, inp, reward = expr(inp, reward)
-        if not go:
-            return False, inp, reward
-        go, inp, reward = inc_if_ok(inp, reward, clparen)
-        if not go:
-            return False, inp, reward
-        return True, inp.strip(), reward + 3
+    # def infix_op(inp, reward):
+    #     # go, inp, reward = inc_if_ok(inp, reward, opparen)
+    #     # if not go:
+    #     #     return False, inp, reward
+    #     go, inp, reward = expr(inp, reward)
+    #     if not go:
+    #         return False, inp, reward
+    #     go, inp, reward = inc_if_ok(inp, reward, op)
+    #     if not go:
+    #         return False, inp, reward
+    #     go, inp, reward = expr(inp, reward)
+    #     if not go:
+    #         return False, inp, reward
+    #     # go, inp, reward = inc_if_ok(inp, reward, clparen)
+    #     # if not go:
+    #     #     return False, inp, reward
+    #     return True, inp.strip(), reward + 3
 
     def graphcall(inp, reward):
-        go, inp, reward = builtin(inp, reward)
-        if not go:
+        try:
+            graphname, inp = builtin.parse_partial(inp)
+            reward += 1
+        except ParseError:
             return False, inp, reward
         go, inp, reward = inc_if_ok(inp, reward, opparen)
         if not go:
             return False, inp, reward
-        while go:
+        for _ in range(builtin_tokens[graphname]):
             go, inp, reward = expr(inp, reward)
+            if not go:
+                return False, inp, reward
+            go, inp, reward = inc_if_ok(inp, reward, string(' '))
+            if not go and builtin_tokens[graphname] > 1:
+                return False, inp, reward
         go, inp, reward = inc_if_ok(inp, reward, clparen)
         if not go:
             return False, inp, reward
-        return True, inp.strip(), reward + 3
+        return True, inp, reward + 3
 
     def expr(inp, reward):
-        go, inp2, reward = var(inp, reward)
+        go, inp2, reward = inc_if_ok(inp, reward, var)
         if go:
             return True, inp2, reward
         go, inp2, reward = graphcall(inp, reward)
         if go:
             return True, inp2, reward
-        go, inp, reward = infix_op(inp, reward)
-        if go:
-            return True, inp, reward
+        # go, inp, reward = infix_op(inp, reward)
+        # if go:
+        #     return True, inp, reward
         go, inp, reward = number(inp, reward)
         if not go:
             return False, inp, reward
 
-        return True, inp.strip(), reward + 3
+        return True, inp, reward + 3
 
     def statement(inp, reward):
-        go, inp, reward = var(inp, reward)
+        go, inp, reward = inc_if_ok(inp, reward, var)
         if not go:
             return False, inp, reward
         go, inp, reward = inc_if_ok(inp, reward, equals)
@@ -215,7 +210,7 @@ def parser(script):
         go, inp, reward = inc_if_ok(inp, reward, semi)
         if not go:
             return False, inp, reward
-        return True, inp.strip(), reward + 5
+        return True, inp, reward + 5
 
     def statements(inp, reward):
         go, inp, reward = statement(inp, reward)
@@ -228,11 +223,33 @@ def parser(script):
         go, inp, reward = inc_if_ok(inp, reward, eot)
         if not go:
             return False, inp, reward
-        return True, inp.strip(), reward + 10
+        return True, inp, reward + 10
 
     reward = 0
-    _, script, reward = statements(script.strip(), reward)
+    _, script, reward = statements(script, reward)
     return reward
+
+
+def random_valid_tokens(n):
+    # kinda monte-carlo
+    def next_token(total):
+        last_reward = parser(''.join(total))
+        for _ in range(100):
+            cat = random.choice(list(TOKEN_CATEGORIES.values()))
+            nx = random.choice(cat)
+            tmp_total = total + [nx]
+            tmp_reward = parser(''.join(tmp_total))
+            if tmp_reward > last_reward:
+                return nx
+        return None
+    total = []
+    for _ in range(n):
+        nx = next_token(total)
+        if nx is None:
+            return total
+        else:
+            total = total + [nx]
+    return total
 
 
 def encode(tokens):
@@ -243,8 +260,9 @@ def encode(tokens):
 
 class PaaiprEnv(object):
     def reset(self):
-        self.script = [SOT_TOKEN]
-        self.last_parse_score = 0
+        self.script = random_valid_tokens(10)
+        self.last_parse_score = parser(''.join(self.script))
+        self.initial_parse_score = self.last_parse_score
         return encode(self.script)
 
     def step(self, action):
@@ -261,12 +279,12 @@ class PaaiprEnv(object):
         if len(self.script) > MAX_OBS_LEN:
             terminated = True
 
-        parser_reward = parser(''.join(self.script[1:]))
+        parser_reward = parser(''.join(self.script))
         if parser_reward > self.last_parse_score:
             reward += 1.0
             # reward += 1.0
         elif len(self.script) > 1:
-            reward += parser_reward
+            reward += parser_reward - self.initial_parse_score
             terminated = True
             # punish unmatched parentheses
             paren_count = 0
@@ -278,29 +296,25 @@ class PaaiprEnv(object):
             reward -= abs(paren_count)
         self.last_parse_score = parser_reward
 
-        # momentum for long chains of correct tokens
-        # reward += 1.01 ** parser_reward - 1.0
-
         reward = torch.tensor(reward, dtype=torch.float32).to(self.device)
 
         return encode(self.script), reward, terminated
 
     def __init__(self, device="cpu"):
-        self.script = list()
+        # self.script = random_valid_tokens(50)
         self.device = device
-        self.last_parse_score = 0
+        # self.last_parse_score = parser(''.join(self.script))
+        # self.initial_parse_score = self.last_parse_score
 
 
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 if __name__ == "__main__":
-
     print("All Tokens:")
     print(ALL_TOKENS)
 
     device = "cuda" if torch.has_cuda else "cpu"
-    # device = "cpu"
     num_cells = 1024
-    lr = 1e-4
+    lr = 1e-3
 
     env = PaaiprEnv(device=device)
 
@@ -368,17 +382,15 @@ if __name__ == "__main__":
                 if done:
                     break
             ep_reward = np.sum(ep_rewards)
-            running_reward = 0.1 * ep_reward + 0.9 * running_reward
+            running_reward = 0.4 * ep_reward + 0.6 * running_reward
             R = 0
             returns = []
             for r in model.rewards[::-1]:
                 R = r + 0.99 * R
                 returns.insert(0, R)
             returns = torch.tensor(returns)
-            old_returns = returns.clone()
             returns = (returns - returns.mean()) / \
                 (returns.std(unbiased=False) + float(np.finfo(np.float32).eps))
-            # print(old_returns.mean(), returns.mean())
             policy_losses = []
             value_losses = []
             for (log_prob, value), R in zip(model.saved_actions, returns):
@@ -411,11 +423,8 @@ if __name__ == "__main__":
 
             if running_reward > best:
                 best = running_reward
-                with open(f"{outdir}/out_{best:.4f}_{i_episode}.papr", "w", encoding="utf-8") as f:
-                    script = env.script[1:-1]  \
-                        if env.script[-1] == EOT_TOKEN \
-                        else env.script[1:]
-                    f.write(''.join(script))
+                with open(f"{outdir}/out_best.papr", "w", encoding="utf-8") as f:
+                    f.write(''.join(env.script[:-1]))
                 torch.save(
                     model.cpu(), f"{outdir}/model_best.pt")
                 torch.save(
