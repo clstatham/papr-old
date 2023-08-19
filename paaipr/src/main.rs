@@ -1,25 +1,33 @@
 #![feature(generic_const_exprs)]
 
 use chrono::prelude::*;
-use dfdx::{optim::Adam, prelude::*};
-use papr_lib::{dsp::*, graph::Connection, parser3::builtins::BuiltinNode};
+use dfdx::{
+    optim::{Adam, Sgd},
+    prelude::*,
+};
+use papr_lib::{
+    dsp::*,
+    graph::{Connection, Input, Output},
+    parser3::builtins::BuiltinNode,
+};
 use petgraph::{dot::Dot, prelude::DiGraph};
 use rv::{
+    misc::ln_pflip,
     prelude::Categorical,
     traits::{Entropy, Rv},
 };
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     fs::File,
     ops::{Mul, Sub},
-    time::SystemTime,
 };
 use tensorboard_rs::summary_writer::SummaryWriter;
 
 pub type NodeIndex = usize;
 // pub type FTensor<S> = Tensor<S, f32, Cpu>;
 
-pub const MAX_NODES: usize = 10;
+pub const MIN_VAR_INS: usize = 2;
+pub const MAX_NODES: usize = 16;
 pub const MAX_NODE_INS: usize = 2;
 pub const MAX_NODE_OUTS: usize = 2;
 
@@ -63,6 +71,11 @@ impl NumInputs for BuiltinNode {
             BuiltinNode::Led => 1,
             BuiltinNode::Constant => 0,
             BuiltinNode::Dac0 => 1,
+            BuiltinNode::Add => 2,
+            BuiltinNode::Sub => 2,
+            BuiltinNode::Mul => 2,
+            BuiltinNode::Div => 2,
+            BuiltinNode::VariableInput => 0,
         }
     }
 }
@@ -99,6 +112,11 @@ impl NumOutputs for BuiltinNode {
             BuiltinNode::Led => 0,
             BuiltinNode::Constant => 1,
             BuiltinNode::Dac0 => 0,
+            BuiltinNode::Add => 1,
+            BuiltinNode::Sub => 1,
+            BuiltinNode::Mul => 1,
+            BuiltinNode::Div => 1,
+            BuiltinNode::VariableInput => 1,
         }
     }
 }
@@ -116,6 +134,10 @@ include_nodes!(
     Cosine
     Tanh
     Exp
+    Add
+    Sub
+    Mul
+    Div
     // FmSineOsc
     SineOsc
     BlSawOsc
@@ -131,6 +153,7 @@ include_nodes!(
     // If
     // Not
     // Slider
+    VariableInput
     // Button
     // Toggle
     // Led
@@ -143,7 +166,7 @@ lazy_static::lazy_static! {
 }
 
 pub type AdjMatrix =
-    Tensor<Rank5<MAX_NODE_OUTS, MAX_NODE_INS, MAX_NODES, MAX_NODES, NUM_NODE_TYPES>, f32, Cpu>;
+    Tensor<Rank5<NUM_NODE_TYPES, MAX_NODE_OUTS, MAX_NODE_INS, MAX_NODES, MAX_NODES>, f32, Cpu>;
 
 #[derive(Clone)]
 pub struct Graph {
@@ -181,11 +204,11 @@ impl Graph {
         }
 
         self.adj_matrix[[
+            NODE_INDICES[&self.nodes[from]],
             conn.source_output,
             conn.sink_input,
             from,
             to,
-            NODE_INDICES[&self.nodes[from]],
             // NODE_INDICES[&self.nodes[to]],
         ]] = 1.0;
 
@@ -194,11 +217,11 @@ impl Graph {
 
     pub fn remove_edge(&mut self, from: NodeIndex, to: NodeIndex, conn: Connection) {
         self.adj_matrix[[
+            NODE_INDICES[&self.nodes[from]],
             conn.source_output,
             conn.sink_input,
             from,
             to,
-            NODE_INDICES[&self.nodes[from]],
             // NODE_INDICES[&self.nodes[to]],
         ]] = 0.0;
     }
@@ -208,11 +231,11 @@ impl Graph {
             (0..MAX_NODE_OUTS).flat_map(move |b| {
                 (0..MAX_NODE_INS).flat_map(move |c| {
                     if self.adj_matrix[[
+                        NODE_INDICES[&self.nodes[a]],
                         b,
                         c,
                         a,
                         node,
-                        NODE_INDICES[&self.nodes[a]],
                         // NODE_INDICES[&self.nodes[node]],
                     ]] > 0.0
                     {
@@ -229,11 +252,11 @@ impl Graph {
             (0..MAX_NODE_OUTS).flat_map(move |b| {
                 (0..MAX_NODE_INS).flat_map(move |c| {
                     if self.adj_matrix[[
+                        NODE_INDICES[&self.nodes[node]],
                         b,
                         c,
                         node,
                         a,
-                        NODE_INDICES[&self.nodes[node]],
                         // NODE_INDICES[&self.nodes[a]],
                     ]] > 0.0
                     {
@@ -253,7 +276,7 @@ impl Graph {
                     (0..MAX_NODE_INS).flat_map(move |d| {
                         (0..NUM_NODE_TYPES).flat_map(move |e| {
                             // (0..NUM_NODE_TYPES).flat_map(move |f| {
-                            if self.adj_matrix[[c, d, a, b, e]] > 0.0 {
+                            if self.adj_matrix[[e, c, d, a, b]] > 0.0 {
                                 Some((
                                     a,
                                     b,
@@ -281,13 +304,22 @@ impl Graph {
 
         true
     }
-    pub fn as_petgraph(&self) -> DiGraph<BuiltinNode, Connection, usize> {
+    pub fn as_petgraph(&self) -> DiGraph<BuiltinNode, Connection> {
         let mut out = DiGraph::default();
-        for node in self.nodes.iter() {
-            out.add_node(*node);
+        let mut mine_to_theirs = BTreeMap::new();
+        for (i, node) in self.nodes.iter().enumerate().filter_map(|(i, node)| {
+            if self.node_inputs(i).count() > 0 || self.node_outputs(i).count() > 0 {
+                Some((i, node))
+            } else {
+                None
+            }
+        }) {
+            mine_to_theirs.insert(i, out.add_node(*node));
         }
         for (from, to, conn) in self.all_edges() {
-            out.add_edge(from.into(), to.into(), conn);
+            if let (Some(from), Some(to)) = (mine_to_theirs.get(&from), mine_to_theirs.get(&to)) {
+                out.add_edge(*from, *to, conn);
+            }
         }
         out
     }
@@ -296,6 +328,63 @@ impl Graph {
         dev: &Cuda,
     ) -> Tensor<Rank3<FLAT_IO, MAX_NODES, MAX_NODES>, f32, Cuda> {
         self.adj_matrix.to_device(dev).reshape()
+    }
+    pub fn build(&self, name: Option<&str>) -> papr_lib::graph::Graph {
+        let pg = self.as_petgraph();
+        let mut n_ins = 0;
+        let mut my_ins = vec![];
+        let inputs = pg
+            .node_indices()
+            .filter(|node| matches!(pg[*node], BuiltinNode::VariableInput))
+            .map(|node| {
+                let inp = Input::new(&format!("in{n_ins}"), Some(Signal::new(0.0)));
+                my_ins.push(node);
+                n_ins += 1;
+                inp
+            })
+            .collect();
+        let mut n_outs = 0;
+        let mut my_outs = vec![];
+        let outputs = pg
+            .externals(petgraph::Direction::Outgoing)
+            .map(|node| {
+                let out = Output {
+                    name: format!("{:?}{n_outs}", pg[node]),
+                };
+                my_outs.push(node);
+                n_outs += 1;
+                out
+            })
+            .collect();
+        let mut out = papr_lib::graph::Graph::new(name.map(Into::into), inputs, outputs);
+        let mut my_node_to_out_node = BTreeMap::default();
+        for (their_inp, my_inp) in out.input_node_indices.iter().zip(my_ins.iter()) {
+            my_node_to_out_node.insert(*my_inp, *their_inp);
+        }
+        for (their_out, my_out) in out.output_node_indices.iter().zip(my_outs.iter()) {
+            my_node_to_out_node.insert(*my_out, *their_out);
+        }
+        for my_i in pg.node_indices() {
+            #[allow(clippy::map_entry)]
+            if !my_node_to_out_node.contains_key(&my_i) {
+                my_node_to_out_node.insert(
+                    my_i,
+                    out.add_node(pg[my_i].create_node(
+                        &format!("{:?}{}", pg[my_i], my_node_to_out_node.len()),
+                        pg[my_i].default_creation_args(),
+                    )),
+                );
+            }
+        }
+        for edge in pg.raw_edges() {
+            out.add_edge(
+                my_node_to_out_node[&edge.source()],
+                my_node_to_out_node[&edge.target()],
+                edge.weight.clone(),
+            );
+        }
+
+        out
     }
 }
 
@@ -336,7 +425,10 @@ fn main() {
 
     fn new_graph(dev: &Cpu) -> Graph {
         let mut g = Graph::new(dev);
-        for _ in 0..MAX_NODES {
+        for _ in 0..MIN_VAR_INS {
+            g.add_node(BuiltinNode::VariableInput);
+        }
+        for _ in 0..MAX_NODES - MIN_VAR_INS {
             let a = dev.random_u64() as usize % NUM_NODE_TYPES;
             g.add_node(NODE_TYPES[a]);
         }
@@ -345,46 +437,48 @@ fn main() {
 
     #[rustfmt::skip]
     type Actor = (
-        (Conv2D<FLAT_IO, 32, 3, 1, 1>, ReLU),
-        (Conv2D<32, 64, 3, 1, 1>, ReLU),
-        (Conv2D<64, 32, 3, 1, 1>, ReLU),
-        (Conv2D<32, FLAT_IO, 3, 1, 1>,),
+        Flatten2D,
+        (Linear<{FLAT_IO * MAX_NODES * MAX_NODES}, 512>, ReLU),
+        (Linear<512, 512>, ReLU),
+        (Linear<512, {MAX_NODE_INS * MAX_NODE_OUTS * MAX_NODES * MAX_NODES}>,),
     );
     #[rustfmt::skip]
     type Critic = (
-        (Conv2D<FLAT_IO, 32, 3, 1, 1>, ReLU),
-        (Conv2D<32, 64, 3, 1, 1>, ReLU),
-        (Conv2D<64, 32, 3, 1, 1>, ReLU),
-        (Conv2D<32, 1, 3, 1, 1>, ReLU),
         Flatten2D,
-        Linear<100, 1>,
+        (Linear<{FLAT_IO * MAX_NODES * MAX_NODES}, 512>, ReLU),
+        (Linear<512, 512>, ReLU),
+        (Linear<512, 1>,),
     );
 
-    let mut actor = dev.build_module::<Actor, f32>();
-    let mut critic = dev.build_module::<Critic, f32>();
-    let mut actor_old = actor.clone();
-    let mut critic_old = critic.clone();
+    type ActorCritic = SplitInto<(Actor, Critic)>;
 
-    let mut actor_grads = actor.alloc_grads();
-    let mut critic_grads = critic.alloc_grads();
-    let mut actor_opt = Adam::<_, f32, AutoDevice>::new(
-        &actor,
+    let mut model = dev.build_module::<ActorCritic, f32>();
+    dbg!(model.num_trainable_params());
+    // let mut critic = dev.build_module::<Critic, f32>();
+    let mut model_old = model.clone();
+
+    let mut grads = model.alloc_grads();
+    let mut opt = Adam::<_, f32, AutoDevice>::new(
+        &model,
         AdamConfig {
-            lr: 1e-4,
-            ..Default::default()
-        },
-    );
-    let mut critic_opt = Adam::<_, f32, AutoDevice>::new(
-        &critic,
-        AdamConfig {
-            lr: 1e-4,
+            lr: 1e-3,
             ..Default::default()
         },
     );
 
-    const EPSILON: f32 = 0.1;
+    const EPSILON: f32 = 0.2;
 
     let mut buffer = RolloutBuffer::default();
+
+    fn ln_softmax<S: Shape, Ax: Axes, T: Shape, Tp: Tape<f32, AutoDevice>>(
+        t: Tensor<S, f32, AutoDevice, Tp>,
+    ) -> Tensor<S, f32, AutoDevice, Tp>
+    where
+        S: ReduceShapeTo<T, Ax>,
+    {
+        let s = *t.shape();
+        t.retaped::<Tp>() - t.exp().sum::<T, Ax>().ln().broadcast_like(&s)
+    }
 
     let mut best_reward = 0.0;
     let mut i = 0;
@@ -392,68 +486,72 @@ fn main() {
         let mut g = new_graph(&cpu);
         let mut total_reward = vec![];
 
-        for _ in 0..1000 {
+        for j in 0..1000 {
             let state = g.to_embedding(&dev);
-            let action_probs = actor_old.forward(state.clone()); // .trace(actor_grads)
-            let dist = Categorical::new(
-                action_probs
-                    .clone()
-                    .softmax::<Axes3<0, 1, 2>>()
+            let (action_logits, state_values) = model_old.forward(state.clone());
+            let action_logits =
+                action_logits
+                    .reshape::<Rank3<{ MAX_NODE_INS * MAX_NODE_OUTS }, MAX_NODES, MAX_NODES>>();
+            let action_probs = ln_softmax::<_, Axes3<0, 1, 2>, _, _>(action_logits.clone());
+            let action_idx = ln_pflip(
+                &action_probs
                     .as_vec()
                     .into_iter()
                     .map(|i| i as f64)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .unwrap();
-            let action_idx: usize = dist.sample(1, &mut rand::thread_rng())[0];
+                    .collect::<Vec<_>>(),
+                1,
+                true,
+                &mut rand::thread_rng(),
+            )[0];
             let action = dev.tensor(action_idx);
             let action_logprob = action_probs
                 .clone()
-                .log_softmax::<Axes3<0, 1, 2>>()
-                .reshape_like(&(state.as_vec().len(),))
+                .reshape_like(&(state.as_vec().len() / NUM_NODE_TYPES,))
                 .select(action.clone());
-            let state_values = critic_old.forward(state.clone());
 
             let mut reward = 0.0;
-            let mut terminal = i == 99;
+            let mut terminal = j == 999;
 
             let g_old = g.adj_matrix.clone();
             let mut g_new = g.clone();
             let [_sa, sb, sc, sd, se] = g.adj_matrix.shape().concrete();
-            let a = action_idx / (sb * sc * sd * se);
+            // let a = action_idx / (sb * sc * sd * se);
             let b = (action_idx / (sc * sd * se)) % sb;
             let c = (action_idx / (sd * se)) % sc;
             let d = (action_idx / (se)) % sd;
-            // let e = action_idx % se;
-            if slice(
-                g_new.adj_matrix.clone(),
-                (a..=a, b..=b, c..=c, d..=d, 0..se),
-            )
-            .as_vec()
-            .iter()
-            .any(|f| *f == 1.0)
+            let e = action_idx % se;
+            if slice(g_new.adj_matrix.clone(), (0.., b..=b, c..=c, d..=d, e..=e))
+                .as_vec()
+                .iter()
+                .any(|f| *f == 1.0)
             {
                 reward -= 1.0;
                 terminal = true;
             } else if g_new
                 .add_edge(
-                    c,
                     d,
+                    e,
                     Connection {
-                        source_output: a,
-                        sink_input: b,
+                        source_output: b,
+                        sink_input: c,
                     },
                 )
                 .is_some()
             {
                 reward += 1.0;
-                if g_new.node_inputs(d).count() == g_new.nodes[d].num_inputs() {
+                if g_new.node_inputs(e).count() == g_new.nodes[e].num_inputs() {
                     reward += 1.0;
                 }
-                if g_new.node_outputs(c).count() >= g_new.nodes[c].num_outputs() {
+                if g_new.node_outputs(d).count() >= g_new.nodes[d].num_outputs() {
                     reward += 1.0;
                 }
+                let pg = g_new.as_petgraph();
+                reward -= pg
+                    .externals(petgraph::Direction::Incoming)
+                    .filter(|x| !matches!(pg[*x], BuiltinNode::VariableInput))
+                    .count() as f32;
+                let gg = g_new.build(Some("g_new"));
+                reward *= gg.partitions.len() as f32;
             } else {
                 g_new.adj_matrix = g_old;
                 reward -= 1.0;
@@ -470,7 +568,7 @@ fn main() {
             buffer.state_values.push(state_values.array()[0]);
             buffer.terminals.push(terminal);
 
-            if i % 100 == 0 {
+            if i % 3000 == 0 {
                 let mut rewards = VecDeque::new();
                 let mut discounted_reward = 0.0;
                 for (reward, terminal) in buffer
@@ -497,29 +595,33 @@ fn main() {
 
                 let advantages = rewards.clone().sub(old_state_values.clone());
                 let mut total_loss = vec![];
-                for _ in 0..100 {
-                    let action_probs = actor.forward(old_states.trace(actor_grads)); // .trace(actor_grads)
-                    let dist = Categorical::new(
-                        action_probs
-                            .with_empty_tape()
-                            .softmax::<Axes3<0, 1, 2>>()
-                            .as_vec()
-                            .into_iter()
-                            .map(|i| i as f64)
-                            .collect::<Vec<_>>()
-                            .as_slice(),
-                    )
-                    .unwrap();
+                for _ in 0..80 {
+                    let (action_logits, state_values) = model.forward(old_states.trace(grads));
+                    let action_logits = action_logits.reshape_like(&(
+                        buffer.states.len(),
+                        MAX_NODE_INS * MAX_NODE_OUTS,
+                        MAX_NODES,
+                        MAX_NODES,
+                    ));
+                    let action_probs = ln_softmax::<_, Axes3<0, 1, 2>, _, _>(action_logits);
+                    // let action_idx = ln_pflip(
+                    //     &action_probs
+                    //         .as_vec()
+                    //         .into_iter()
+                    //         .map(|i| i as f64)
+                    //         .collect::<Vec<_>>(),
+                    //     1,
+                    //     true,
+                    //     &mut rand::thread_rng(),
+                    // )[0];
                     let action_logprob = action_probs
-                        .log_softmax::<Axes3<1, 2, 3>>()
                         .reshape_like(&(
                             buffer.states.len(),
-                            old_states.as_vec().len() / buffer.states.len(),
+                            old_states.as_vec().len() / buffer.states.len() / NUM_NODE_TYPES,
                         ))
                         .select(old_actions.clone());
 
-                    let dist_entropy = dist.entropy() as f32;
-                    let state_values = critic.forward(old_states.clone().trace(critic_grads));
+                    // let dist_entropy = dist.entropy() as f32;
 
                     let ratios = (action_logprob - old_logprobs.clone()).exp();
 
@@ -529,27 +631,24 @@ fn main() {
                         .mul(advantages.clone());
                     let actor_loss = -surr2.minimum(surr1).mean();
                     let s = *state_values.shape();
-                    let critic_loss = mse_loss(state_values, rewards.clone().broadcast_like(&s))
-                        .mul(0.5)
-                        .sub(dist_entropy * 0.01);
+                    let critic_loss =
+                        mse_loss(state_values, rewards.clone().broadcast_like(&s)).mul(0.5);
+                    // .sub(dist_entropy * 0.01);
 
-                    let loss = actor_loss.to_device(&cpu)[[]] + critic_loss.to_device(&cpu)[[]];
-                    total_loss.push(loss);
-                    actor_grads = actor_loss.backward();
-                    critic_grads = critic_loss.backward();
-                    actor_opt.update(&mut actor, &actor_grads).unwrap();
-                    critic_opt.update(&mut critic, &critic_grads).unwrap();
-                    actor.zero_grads(&mut actor_grads);
-                    critic.zero_grads(&mut critic_grads);
+                    let loss = actor_loss + critic_loss;
+                    total_loss.push(loss.to_device(&cpu)[[]]);
+
+                    grads = loss.backward();
+                    opt.update(&mut model, &grads).unwrap();
+                    model.zero_grads(&mut grads);
                 }
                 let loss = total_loss.iter().sum::<f32>() / total_loss.len() as f32;
                 writer.add_scalar("Loss", loss, episode);
-                println!("Loss: {loss:#.4}");
+                println!("Ep {episode} Loss: {loss:#.4}");
 
                 buffer.clear();
 
-                actor_old.clone_from(&actor);
-                critic_old.clone_from(&critic);
+                model_old.clone_from(&model);
             }
 
             i += 1;
@@ -560,20 +659,21 @@ fn main() {
         }
 
         let reward = total_reward.iter().sum::<f32>();
-        println!("Episode {} reward = {:#4.4}", episode, reward);
+        // println!("Episode {} reward = {:#4.4}", episode, reward);
 
         writer.add_scalar("Reward", reward, episode);
         if reward > best_reward {
+            best_reward = reward;
+
             let mut f = File::create(format!("{outdir}/best_{reward:#4.4}_{episode}.dot")).unwrap();
             use std::io::Write;
             write!(f, "{:?}", Dot::new(&g.as_petgraph())).unwrap();
-            best_reward = reward;
 
-            actor
-                .save_safetensors(format!("{outdir}/actor.safetensors"))
-                .unwrap();
-            critic
-                .save_safetensors(format!("{outdir}/critic.safetensors"))
+            let gg = g.build(Some("best"));
+            gg.write_dot(&format!("{outdir}/best_built_{reward:#4.4}_{episode}.dot"));
+
+            model
+                .save_safetensors(format!("{outdir}/model.safetensors"))
                 .unwrap();
         }
         // if episode % 1000 == 0 {

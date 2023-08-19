@@ -45,6 +45,11 @@ pub enum BuiltinNode {
     // not actually creatable nodes
     Constant,
     Dac0,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    VariableInput,
 }
 
 impl BuiltinNode {
@@ -80,6 +85,20 @@ impl BuiltinNode {
             "Toggle" => Some(BuiltinNode::Toggle),
             "Led" => Some(BuiltinNode::Led),
             _ => None,
+        }
+    }
+
+    pub fn default_creation_args(&self) -> &[ParsedCreationArg] {
+        match self {
+            Self::Sample => unimplemented!(),
+            Self::Slider => &[
+                ParsedCreationArg::Scalar(0.0),
+                ParsedCreationArg::Scalar(1.0),
+            ],
+            Self::Button => &[ParsedCreationArg::Scalar(0.0)],
+            Self::Toggle => &[ParsedCreationArg::Scalar(0.0)],
+            Self::Constant => unimplemented!(),
+            _ => &[],
         }
     }
 
@@ -151,17 +170,19 @@ impl BuiltinNode {
                 UiInputWidget::Toggle,
             ),
 
-            Self::Led => crate::dsp::basic::UiOutput::create_node(
-                name,
-                UiOutputWidget::Led {
-                    value: *creation_args[0].unwrap_scalar(),
-                },
-            ),
+            Self::Led => {
+                crate::dsp::basic::UiOutput::create_node(name, UiOutputWidget::Led { value: 0.0 })
+            }
 
             Self::Constant => {
                 crate::dsp::basic::Constant::create_node(name, *creation_args[0].unwrap_scalar())
             }
             Self::Dac0 => unimplemented!(),
+            Self::Add => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
+            Self::Sub => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
+            Self::Mul => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
+            Self::Div => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
+            Self::VariableInput => unimplemented!(),
         }
     }
 }

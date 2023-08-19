@@ -253,7 +253,7 @@ where
     node_indices_by_name: BTreeMap<String, NodeIndex>,
     pub input_node_indices: Vec<NodeIndex>,
     pub output_node_indices: Vec<NodeIndex>,
-    partitions: Vec<Vec<NodeIndex>>,
+    pub partitions: Vec<Vec<NodeIndex>>,
 }
 
 impl Graph {
