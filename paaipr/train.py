@@ -21,7 +21,7 @@ timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 outdir = f"training/{timestamp}"
 os.makedirs(outdir, exist_ok=True)
 
-MAX_OBS_LEN = 1000
+MAX_OBS_LEN = 100
 # BATCH_SIZE = 16
 
 successful_renders = 0
@@ -260,7 +260,7 @@ def encode(tokens):
 
 class PaaiprEnv(object):
     def reset(self):
-        self.script = random_valid_tokens(10)
+        self.script = [random.choice(var_tokens)]
         self.last_parse_score = parser(''.join(self.script))
         self.initial_parse_score = self.last_parse_score
         return encode(self.script)
@@ -307,78 +307,101 @@ class PaaiprEnv(object):
         # self.initial_parse_score = self.last_parse_score
 
 
-SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
+class PositionalEncoding(nn.Module):
+    def __init__(self, width, device):
+        super().__init__()
+        self.device = device
+        self.dropout = nn.Dropout(p=0.1)
+        position = torch.arange(MAX_OBS_LEN).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, width, 2) *
+                             (-np.log(10000.0) / width))
+        pe = torch.zeros(MAX_OBS_LEN, 1, width).to(device)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), 0]
+        return self.dropout(x)
+
+
+class Policy(nn.Module):
+    def __init__(self, width, device, nhead, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.device = device
+        self.width = width
+        self.pe = PositionalEncoding(width, device=device)
+        encoder_layers = nn.TransformerEncoderLayer(
+            width, nhead, device=device)
+        self.encoder = nn.TransformerEncoder(encoder_layers, 3).to(device)
+        self.embed = nn.Embedding(len(ALL_TOKENS), width, device=device)
+        self.action_head = nn.Linear(width, len(ALL_TOKENS), device=device)
+        # self.value_head = nn.Linear(num_cells, 1, device=device)
+
+        self.saved_actions = []
+        self.rewards = []
+
+        self.init_weights()
+
+    def forward(self, x):
+        x = self.embed(x) * np.sqrt(self.width)
+        x = self.pe(x)
+        x = self.encoder(x)
+        action_prob = self.action_head(x)
+        action_prob_softmax = F.softmax(action_prob, dim=-1)
+        # state_values = self.value_head(x)
+        return action_prob_softmax[..., -1, :]
+
+    def init_weights(self):
+        initrange = 0.1
+        self.embed.weight.data.uniform_(-initrange, initrange)
+        self.action_head.weight.data.uniform_(-initrange, initrange)
+        self.action_head.bias.data.zero_()
+
+
+SavedAction = namedtuple('SavedAction', ['log_prob'])
 if __name__ == "__main__":
     print("All Tokens:")
     print(ALL_TOKENS)
 
     device = "cuda" if torch.has_cuda else "cpu"
-    num_cells = 1024
-    lr = 1e-3
+    width = 1024
+    lr = 1e-5
 
     env = PaaiprEnv(device=device)
 
-    class Policy(nn.Module):
-        def __init__(self, *args, **kwargs) -> None:
-            super().__init__(*args, **kwargs)
-            self.embed = nn.Embedding(
-                len(ALL_TOKENS), num_cells, device=device)
-            self.lstm1 = nn.LSTM(num_cells, num_cells,
-                                 batch_first=True, num_layers=1, device=device)
-            self.atn2 = nn.MultiheadAttention(
-                num_cells, 2, batch_first=True, device=device)
-            self.action_head = nn.Sequential(
-                nn.Linear(num_cells, num_cells, device=device),
-                nn.Tanh(),
-                nn.Linear(num_cells, len(ALL_TOKENS), device=device))
-            self.value_head = nn.Linear(num_cells, 1, device=device)
-
-            self.saved_actions = []
-            self.rewards = []
-
-        def forward(self, x):
-            x = self.embed(x)
-            x = x.unsqueeze(0).to(device)
-            x, _ = self.lstm1(x)
-            x, _ = self.atn2(x, key=x, value=x)
-            x = x[..., -1, :]
-            action_prob = self.action_head(x)
-            action_prob_softmax = F.softmax(action_prob, dim=-1)
-            state_values = self.value_head(x)
-            return action_prob_softmax.squeeze(0), state_values.squeeze(0)
-
-    model = Policy()
+    model = Policy(width, nhead=2, device=device)
     optim = torch.optim.Adam(model.parameters(), lr=lr)
 
     writer = SummaryWriter(outdir)
     running_reward = 0
     pbar = tqdm()
     i_episode = 0
-    epsilon = 0.2
-    decay = 0.99999
+    # epsilon = 0.2
+    # decay = 0.99999
     best = 0.0
     try:
         while True:
             state = env.reset().to(device)
             ep_rewards = []
             while True:
-                probs, state_value = model(state)
+                probs = model(state)
                 m = Categorical(probs)
-                if np.random.rand() < epsilon:
-                    action = torch.tensor(
-                        np.random.choice(range(len(ALL_TOKENS)))).to(device)
-                else:
-                    action = m.sample()
+                # if np.random.rand() < epsilon:
+                #     action = torch.tensor(
+                #         np.random.choice(range(len(ALL_TOKENS)))).to(device)
+                # else:
+                action = m.sample()
 
                 # probs = torch.argsort(probs, -1, descending=True)
                 # action = probs[..., 0]
                 model.saved_actions.append(
-                    SavedAction(m.log_prob(action), state_value))
+                    SavedAction(m.log_prob(action)))
                 state, reward, done = env.step(action=action)
                 state = state.to(device)
                 model.rewards.append(reward)
                 ep_rewards.append(reward.cpu().numpy())
-                epsilon *= decay
+                # epsilon *= decay
                 if done:
                     break
             ep_reward = np.sum(ep_rewards)
@@ -392,17 +415,15 @@ if __name__ == "__main__":
             returns = (returns - returns.mean()) / \
                 (returns.std(unbiased=False) + float(np.finfo(np.float32).eps))
             policy_losses = []
-            value_losses = []
-            for (log_prob, value), R in zip(model.saved_actions, returns):
-                advantage = R - value.item()
-                policy_losses.append(-log_prob * advantage)
-                value_losses.append(F.smooth_l1_loss(
-                    value, torch.tensor([R], device=device)))
+            # value_losses = []
+            for (log_prob,), R in zip(model.saved_actions, returns):
+                # advantage = R - value.item()
+                policy_losses.append(-log_prob * R)
+                # value_losses.append(F.smooth_l1_loss(
+                #     value, torch.tensor([R], device=device)))
             optim.zero_grad()
-            loss = torch.stack(policy_losses).sum() + \
-                torch.stack(value_losses).sum()
-            if torch.any(torch.isnan(loss)):
-                print(loss)
+            loss = torch.stack(policy_losses).sum()
+            # torch.stack(value_losses).sum()
             loss.to(device).backward()
             optim.step()
 
@@ -419,8 +440,10 @@ if __name__ == "__main__":
             writer.add_scalar("Reward/Episode", ep_reward, i_episode)
             writer.add_scalar("Reward/RunningAvg", running_reward, i_episode)
             writer.add_scalar("Loss", loss.item(), i_episode)
-            writer.add_scalar("Epsilon", epsilon, i_episode)
+            # writer.add_scalar("Epsilon", epsilon, i_episode)
 
+            with open(f"{outdir}/out.papr", "w", encoding="utf-8") as f:
+                f.write(''.join(env.script[:-1]))
             if running_reward > best:
                 best = running_reward
                 with open(f"{outdir}/out_best.papr", "w", encoding="utf-8") as f:

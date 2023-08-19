@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["papr-proc-macro", "paaipr/papr-tokenizer", "papr_plugin"]
+members = ["papr-proc-macro", "paaipr", "papr_plugin"]
 exclude = []
 
 
@@ -52,6 +52,7 @@ miette = { version = "5.10.0", features = ["fancy"] }
 thiserror = "1.0.46"
 pest = "2.7.2"
 pest_derive = { version = "2.7.2", features = ["grammar-extras"] }
+
 
 [profile.release]
 # debug = true

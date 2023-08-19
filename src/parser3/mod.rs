@@ -1,10 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fs::File,
-    io::Read,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, fs::File, io::Read, path::Path, sync::Arc};
 
 use miette::{miette, Diagnostic, Result, SourceOffset};
 use pest::{error::ErrorVariant, Parser, Position};

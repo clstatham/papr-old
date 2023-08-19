@@ -10,7 +10,7 @@ use crate::{
 
 use super::{ParsedCreationArg, ParsedIdent};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinNode {
     Sine,
     Cosine,
@@ -41,6 +41,10 @@ pub enum BuiltinNode {
     Button,
     Toggle,
     Led,
+
+    // not actually creatable nodes
+    Constant,
+    Dac0,
 }
 
 impl BuiltinNode {
@@ -153,6 +157,11 @@ impl BuiltinNode {
                     value: *creation_args[0].unwrap_scalar(),
                 },
             ),
+
+            Self::Constant => {
+                crate::dsp::basic::Constant::create_node(name, *creation_args[0].unwrap_scalar())
+            }
+            Self::Dac0 => unimplemented!(),
         }
     }
 }
