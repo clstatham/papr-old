@@ -11,11 +11,7 @@ use papr_lib::{
     parser3::builtins::BuiltinNode,
 };
 use petgraph::{dot::Dot, prelude::DiGraph};
-use rv::{
-    misc::ln_pflip,
-    prelude::Categorical,
-    traits::{Entropy, Rv},
-};
+use rv::misc::ln_pflip;
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     fs::File,
@@ -190,7 +186,6 @@ impl Graph {
     #[must_use = "Adding an edge can fail if the target node has no more inputs available"]
     pub fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, conn: Connection) -> Option<()> {
         if from == to {
-            // acyclic graphs only for now
             return None;
         }
         if conn.source_output >= self.nodes[from].num_outputs() {
@@ -454,7 +449,6 @@ fn main() {
 
     let mut model = dev.build_module::<ActorCritic, f32>();
     dbg!(model.num_trainable_params());
-    // let mut critic = dev.build_module::<Critic, f32>();
     let mut model_old = model.clone();
 
     let mut grads = model.alloc_grads();
@@ -604,24 +598,12 @@ fn main() {
                         MAX_NODES,
                     ));
                     let action_probs = ln_softmax::<_, Axes3<0, 1, 2>, _, _>(action_logits);
-                    // let action_idx = ln_pflip(
-                    //     &action_probs
-                    //         .as_vec()
-                    //         .into_iter()
-                    //         .map(|i| i as f64)
-                    //         .collect::<Vec<_>>(),
-                    //     1,
-                    //     true,
-                    //     &mut rand::thread_rng(),
-                    // )[0];
                     let action_logprob = action_probs
                         .reshape_like(&(
                             buffer.states.len(),
                             old_states.as_vec().len() / buffer.states.len() / NUM_NODE_TYPES,
                         ))
                         .select(old_actions.clone());
-
-                    // let dist_entropy = dist.entropy() as f32;
 
                     let ratios = (action_logprob - old_logprobs.clone()).exp();
 
