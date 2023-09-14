@@ -1,8 +1,9 @@
 use crate::{Scalar, PI, TAU};
 
+use miette::Result;
 use papr_proc_macro::node_constructor;
 
-use super::{Processor, Signal, SignalRate};
+use super::{DspError, Processor, Signal, SignalRate};
 
 node_constructor! {
     pub struct FmSineOsc;
@@ -17,20 +18,21 @@ impl Processor for FmSineOsc {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         let amp = inputs[0];
         let freq = inputs[1];
         let fm_amt = inputs[2];
-        let t = inputs[Self::input_idx("t").unwrap()].value();
+        let t = inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].value();
         let fm = inputs[3];
 
         if freq.value() <= 0.0 {
-            return;
+            return Ok(());
         }
 
         outputs[0] = Signal::new(
             Scalar::sin(t * TAU * freq.value() + fm.value() * TAU * fm_amt.value()) * amp.value(),
         );
+        Ok(())
     }
 }
 
@@ -47,16 +49,17 @@ impl Processor for SineOsc {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         let amp = inputs[0];
         let freq = inputs[1];
 
         if freq.value() <= 0.0 {
-            return;
+            return Ok(());
         }
 
-        let t = inputs[Self::input_idx("t").unwrap()].value();
+        let t = inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].value();
         outputs[0] = Signal::new(Scalar::sin(t * TAU * freq.value()) * amp.value());
+        Ok(())
     }
 }
 
@@ -78,12 +81,12 @@ impl Processor for BlSawOsc {
         signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         let amp = inputs[0];
         let freq = inputs[1];
 
         if freq.value() <= 0.0 {
-            return;
+            return Ok(());
         }
 
         // algorithm courtesy of https://www.musicdsp.org/en/latest/Synthesis/12-bandlimited-waveforms.html
@@ -106,6 +109,7 @@ impl Processor for BlSawOsc {
         self.saw = 0.995 * self.saw + dc + x.sin() / x;
 
         outputs[0] = Signal::new(self.saw * amp.value());
+        Ok(())
     }
 }
 
@@ -126,15 +130,15 @@ impl Processor for BlSquareOsc {
         signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
-        let t = inputs[Self::input_idx("t").unwrap()].value();
+    ) -> Result<()> {
+        let t = inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].value();
         let amp = inputs[0].value();
         let freq = inputs[1].value();
         let d = inputs[2].value();
         let sr = signal_rate.rate();
 
         if freq <= 0.0 {
-            return;
+            return Ok(());
         }
 
         let n_harm = (sr / (freq * 4.0)) as usize;
@@ -152,5 +156,6 @@ impl Processor for BlSquareOsc {
                 .map(|(i, coeff)| coeff * Scalar::cos(i as Scalar * theta)))
             .sum::<Scalar>(),
         );
+        Ok(())
     }
 }

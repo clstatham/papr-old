@@ -2,7 +2,9 @@ use std::sync::{Arc, RwLock};
 
 use midir::{MidiInput, MidiInputConnection};
 use midly::live::LiveEvent;
+use miette::{Diagnostic, Result};
 use spin::Once;
+use thiserror::Error;
 
 use crate::{
     dsp::{Processor, Signal, SignalRate},
@@ -14,13 +16,27 @@ pub static MIDI_CHAN: Once<crossbeam_channel::Receiver<Vec<u8>>> = Once::INIT;
 
 const POLYPHONY: usize = 1;
 
+#[derive(Debug, Error, Diagnostic)]
+pub enum MidiError {
+    #[error("MIDI error: {0}")]
+    Connect(#[from] midir::ConnectError<MidiInput>),
+    #[error("MIDI error: {0}")]
+    Init(#[from] midir::InitError),
+    #[error("MIDI error: MIDI channel not initialized")]
+    NotInitialized,
+    #[error("MIDI error: {0}")]
+    Crossbeam(#[from] crossbeam_channel::RecvError),
+    #[error("MIDI error: {0}")]
+    Midly(#[from] midly::Error),
+}
+
 pub struct MidiContext {
     _conn_in: MidiInputConnection<()>,
 }
 
 impl MidiContext {
-    pub fn new(name: &str, port: Option<usize>) -> Self {
-        let mut midi_in = MidiInput::new(name).unwrap();
+    pub fn new(name: &str, port: Option<usize>) -> Result<Self> {
+        let mut midi_in = MidiInput::new(name).map_err(MidiError::Init)?;
         midi_in.ignore(midir::Ignore::None);
         let in_ports = midi_in.ports();
         println!("Available MIDI ports:");
@@ -40,13 +56,15 @@ impl MidiContext {
                 port,
                 name,
                 move |_, message, _| {
+                    // the midi callback is allowed to panic
+                    #[allow(clippy::unwrap_used)]
                     tx.send(message.to_vec()).unwrap();
                 },
                 (),
             )
-            .unwrap();
+            .map_err(MidiError::Connect)?;
         MIDI_CHAN.call_once(|| rx);
-        Self { _conn_in }
+        Ok(Self { _conn_in })
     }
 }
 
@@ -61,9 +79,9 @@ impl Processor for NoteIn {
         _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
-        if let Ok(msg) = MIDI_CHAN.get().unwrap().try_recv() {
-            let msg = LiveEvent::parse(&msg).unwrap();
+    ) -> Result<()> {
+        if let Ok(msg) = MIDI_CHAN.get().ok_or(MidiError::NotInitialized)?.try_recv() {
+            let msg = LiveEvent::parse(&msg).map_err(MidiError::Midly)?;
             if let LiveEvent::Midi {
                 channel: _,
                 message,
@@ -101,6 +119,7 @@ impl Processor for NoteIn {
             outputs[i] = Signal::new(key as Scalar);
             outputs[i + POLYPHONY] = Signal::new(vel as Scalar / 127.0);
         }
+        Ok(())
     }
 }
 

@@ -3,13 +3,27 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use miette::{Diagnostic, Result};
 use petgraph::{dot::Dot, prelude::*};
 use std::collections::{BTreeMap, BTreeSet};
+use thiserror::Error;
 
 use crate::dsp::{
     graph_util::{GraphInput, GraphOutput},
     Processor, Signal, SignalRate,
 };
+
+#[derive(Debug, Error, Diagnostic)]
+pub enum GraphError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("DSP error: {0}")]
+    Dsp(#[from] crate::dsp::DspError),
+    #[error("Node not found: {name}")]
+    NodeNotFound { name: String },
+    #[error("Couldn't acquire processor mutex lock")]
+    MutexLock,
+}
 
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, derive_more::Display, derive_more::Into, PartialOrd, Ord,
@@ -117,19 +131,17 @@ where
         signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         match self {
-            Self::Builtin(p) => {
-                p.write()
-                    .unwrap()
-                    .process_sample(buffer_idx, signal_rate, inputs, outputs)
-            }
-            Self::Subgraph(p) => {
-                p.write()
-                    .unwrap()
-                    .process_sample(buffer_idx, signal_rate, inputs, outputs)
-            }
-            Self::None => {}
+            Self::Builtin(p) => p
+                .write()
+                .map_err(|_| GraphError::MutexLock)?
+                .process_sample(buffer_idx, signal_rate, inputs, outputs),
+            Self::Subgraph(p) => p
+                .write()
+                .map_err(|_| GraphError::MutexLock)?
+                .process_sample(buffer_idx, signal_rate, inputs, outputs),
+            Self::None => Ok(()),
         }
     }
 
@@ -138,20 +150,22 @@ where
         signal_rate: SignalRate,
         inputs: &[Vec<Signal>],
         outputs: &mut [Vec<Signal>],
-    ) {
+    ) -> Result<()> {
         match self {
             Self::Builtin(p) => p
                 .write()
-                .unwrap()
+                .map_err(|_| GraphError::MutexLock)?
                 .process_buffer(signal_rate, inputs, outputs),
             Self::Subgraph(p) => p
                 .write()
-                .unwrap()
+                .map_err(|_| GraphError::MutexLock)?
                 .process_buffer(signal_rate, inputs, outputs),
-            Self::None => {}
+            Self::None => Ok(()),
         }
     }
 
+    // ui_update is called from App::update which is allowed to panic
+    #[allow(clippy::unwrap_used)]
     pub fn ui_update(&self, ui: &mut eframe::egui::Ui) {
         match self {
             Self::Builtin(p) => p.write().unwrap().ui_update(ui),
@@ -298,12 +312,11 @@ where
     Self: Processor,
     Signal: std::fmt::Debug,
 {
-    pub fn write_dot(&self, name: &str) {
+    pub fn write_dot(&self, name: &str) -> Result<()> {
         use std::io::Write;
-        let mut f = std::fs::File::create(name).unwrap();
-        // dbg!(&self.name, &self.partitions);
-        // println!();
-        write!(f, "{:?}", Dot::with_config(&self.digraph, &[])).unwrap();
+        let mut f = std::fs::File::create(name).map_err(GraphError::Io)?;
+        write!(f, "{:?}", Dot::with_config(&self.digraph, &[])).map_err(GraphError::Io)?;
+        Ok(())
     }
 
     pub fn add_node(&mut self, node: Arc<Node>) -> NodeIndex {
@@ -331,7 +344,7 @@ where
         let starts = self.digraph.externals(Direction::Incoming);
         let mut bfs_stack: VecDeque<NodeIndex> = VecDeque::new();
         let mut bfs_visited = BTreeSet::default();
-        if let Some(id) = self.node_id_by_name("t") {
+        if let Ok(id) = self.node_id_by_name("t") {
             bfs_stack.push_back(id);
         }
         for node in starts {
@@ -355,10 +368,6 @@ where
                     for edge in self.digraph.edges_directed(node, Direction::Outgoing) {
                         if !next_layer.contains(&edge.target())
                             && !bfs_visited.contains(&edge.target())
-                        // && self
-                        //     .digraph
-                        //     .edges_directed(edge.target(), Direction::Incoming)
-                        //     .all(|next_incoming| bfs_visited.contains(&next_incoming.source()))
                         {
                             next_layer.push(edge.target());
                         }
@@ -373,8 +382,15 @@ where
         }
     }
 
-    pub fn node_id_by_name(&self, name: &str) -> Option<NodeIndex> {
-        self.node_indices_by_name.get(name).copied()
+    pub fn node_id_by_name(&self, name: &str) -> Result<NodeIndex> {
+        let id = self
+            .node_indices_by_name
+            .get(name)
+            .copied()
+            .ok_or_else(|| GraphError::NodeNotFound {
+                name: name.to_owned(),
+            })?;
+        Ok(id)
     }
 
     pub fn process_graph(
@@ -382,7 +398,7 @@ where
         signal_rate: SignalRate,
         inputs: &BTreeMap<NodeIndex, &Vec<Signal>>,
         outputs: &mut BTreeMap<NodeIndex, &mut Vec<Signal>>,
-    ) {
+    ) -> Result<()> {
         macro_rules! assign {
             ($a:expr, $b:expr) => {
                 $a[..$b.len()].copy_from_slice($b)
@@ -391,7 +407,7 @@ where
 
         // early check for empty graph (nothing to do)
         if self.digraph.node_count() == 0 {
-            return;
+            return Ok(());
         }
 
         let mut inputs_cache = BTreeMap::default();
@@ -409,7 +425,7 @@ where
 
         // walk the BFS...
         for layer in self.partitions.clone().iter() {
-            layer.iter().copied().for_each(|node_id| {
+            for node_id in layer.iter().copied() {
                 // for each incoming connection into the visited node:
                 // - grab the cached outputs from earlier in the graph
                 // - copy them to the input cache of the currently visited node
@@ -453,8 +469,12 @@ where
 
                 // manually copy over `t` since it's implicit
                 assign!(
-                    inps[self.digraph[node_id].input_named("t").unwrap()],
-                    inputs[&self.node_id_by_name("t").unwrap()]
+                    inps[self.digraph[node_id]
+                        .input_named("t")
+                        .ok_or(GraphError::Dsp(crate::dsp::DspError::NoInputNamed(
+                            "t".into()
+                        )))?],
+                    inputs[&self.node_id_by_name("t")?]
                 );
 
                 // let out_cache = { self.digraph[node_id].outputs_cache.read().unwrap().clone() };
@@ -470,19 +490,15 @@ where
                 // run the processing logic for this node, which will store its results directly in our output cache
                 self.digraph[node_id]
                     .processor
-                    .process_buffer(signal_rate, inps, outs);
-
-                // let out_cache = outputs_cache.get_mut(&node_id).unwrap();
-                // for (i, out) in outs.into_iter().enumerate() {
-                //     out_cache[i].copy_from_slice(&out);
-                // }
-            });
+                    .process_buffer(signal_rate, inps, outs)?;
+            }
         }
 
         // copy the cached (and now updated) output values into the mutable passed outputs
         for (out_name, out) in outputs.iter_mut() {
             out.copy_from_slice(&outputs_cache[out_name][0]);
         }
+        Ok(())
     }
 
     pub fn into_node(self) -> Node {
@@ -497,7 +513,7 @@ impl Processor for Graph {
         _signal_rate: SignalRate,
         _inputs: &[Signal],
         _outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         unimplemented!()
     }
     fn process_buffer(
@@ -505,7 +521,7 @@ impl Processor for Graph {
         signal_rate: SignalRate,
         inputs: &[Vec<Signal>],
         outputs: &mut [Vec<Signal>],
-    ) {
+    ) -> Result<()> {
         let inputs = BTreeMap::from_iter(
             inputs
                 .iter()
@@ -518,7 +534,7 @@ impl Processor for Graph {
                 .enumerate()
                 .map(|(i, out)| (self.output_node_indices[i], out)),
         );
-        self.process_graph(signal_rate, &inputs, &mut outputs);
+        self.process_graph(signal_rate, &inputs, &mut outputs)
     }
 }
 

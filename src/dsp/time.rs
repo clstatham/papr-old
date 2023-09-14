@@ -1,3 +1,4 @@
+use miette::Result;
 use papr_proc_macro::node_constructor;
 
 use crate::Scalar;
@@ -17,8 +18,8 @@ impl Processor for Clock {
         _signal_rate: SignalRate,
         inputs: &[super::Signal],
         outputs: &mut [super::Signal],
-    ) {
-        let t = inputs[Self::input_idx("t").unwrap()];
+    ) -> Result<()> {
+        let t = inputs[Self::input_idx("t").ok_or(super::DspError::NoInputNamed("t".into()))?];
         let period = inputs[0];
         let width = inputs[1];
         if period.value() == 0.0 {
@@ -28,6 +29,7 @@ impl Processor for Clock {
         } else {
             outputs[0] = Signal::new(0.0);
         }
+        Ok(())
     }
 }
 
@@ -49,7 +51,7 @@ impl Processor for Delay {
         signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         // kinda a port of:
         // https://github.com/qbroquetas/IV-XDelay/blob/master/IvxDelay/Source/DelayProcessor.cpp
 
@@ -85,5 +87,6 @@ impl Processor for Delay {
         if self.read_head < 0.0 {
             self.read_head += self.buf.len() as Scalar;
         }
+        Ok(())
     }
 }

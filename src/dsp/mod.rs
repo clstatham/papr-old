@@ -1,4 +1,6 @@
 use eframe::egui::Ui;
+use miette::{Diagnostic, Result};
+use thiserror::Error;
 
 use crate::{Scalar, TAU};
 
@@ -9,6 +11,20 @@ pub mod graph_util;
 pub mod midi;
 pub mod samplers;
 pub mod time;
+
+#[derive(Debug, Error, Diagnostic)]
+pub enum DspError {
+    #[error("Decoder error: {0}")]
+    Creak(#[from] creak::DecoderError),
+    #[error("Processing error: {0}")]
+    Processing(String),
+    #[error("Channel disconnected")]
+    ChannelDisconnected,
+    #[error("No input named {0}")]
+    NoInputNamed(String),
+    #[error("No output named {0}")]
+    NoOutputNamed(String),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SignalRate {
@@ -100,7 +116,8 @@ pub trait Processor {
         signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
+        Ok(())
     }
 
     fn process_buffer(
@@ -108,12 +125,18 @@ pub trait Processor {
         signal_rate: SignalRate,
         inputs: &[Vec<Signal>],
         outputs: &mut [Vec<Signal>],
-    ) {
-        let mut audio_buffer_len = inputs
+    ) -> Result<()> {
+        let mut audio_buffer_len = if let Some(len) = inputs
             .iter()
             .next()
-            .unwrap_or_else(|| outputs.iter().next().unwrap())
-            .len();
+            .or_else(|| outputs.iter().next())
+            .map(|x| x.len())
+        {
+            len
+        } else {
+            // no inputs/outputs
+            return Ok(());
+        };
         assert!(inputs.iter().all(|inp| {
             let check = inp.len() == audio_buffer_len;
             audio_buffer_len = inp.len();
@@ -131,12 +154,15 @@ pub trait Processor {
                 *val = buf[i];
             }
 
-            self.process_sample(i, signal_rate, &inp, &mut out);
+            self.process_sample(i, signal_rate, &inp, &mut out)?;
 
             for (j, out_val) in out.iter().enumerate() {
-                outputs.get_mut(j).unwrap()[i] = *out_val;
+                outputs
+                    .get_mut(j)
+                    .ok_or(DspError::NoOutputNamed(j.to_string()))?[i] = *out_val;
             }
         }
+        Ok(())
     }
 
     #[allow(unused_variables)]

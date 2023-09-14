@@ -1,10 +1,12 @@
-// #![warn(clippy::unwrap_used)]
+#![warn(clippy::unwrap_used, clippy::expect_used)]
 #![allow(clippy::result_large_err)]
-use std::{error::Error, path::PathBuf, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 use app::PaprApp;
 use clap::Parser;
 use eframe::{egui::Visuals, NativeOptions};
+use miette::{Diagnostic, Result};
+use thiserror::Error;
 
 use crate::app::PaprRuntime;
 
@@ -14,7 +16,6 @@ pub mod dsp;
 #[macro_use]
 pub mod graph;
 pub mod io;
-pub mod parser2;
 pub mod parser3;
 
 cfg_if::cfg_if! {
@@ -27,6 +28,22 @@ cfg_if::cfg_if! {
         pub const PI: f32 = std::f32::consts::PI;
         pub const TAU: f32 = std::f32::consts::TAU;
     }
+}
+
+#[derive(Debug, Error, Diagnostic)]
+pub enum PaprError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("DSP error: {0}")]
+    Dsp(#[from] dsp::DspError),
+    #[error("Parse error: {0}")]
+    Parse(#[from] parser3::ParseError),
+    #[error("MIDI error: {0}")]
+    Midi(#[from] io::midi::MidiError),
+    #[error("Graph error: {0}")]
+    Graph(#[from] graph::GraphError),
+    #[error("Runtime error: {0}")]
+    Runtime(#[from] app::RuntimeError),
 }
 
 #[derive(clap::Parser)]
@@ -63,14 +80,14 @@ struct Args {
     out_path: Option<PathBuf>,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     env_logger::init();
     log::trace!("Logger initialized.");
     let args = Args::parse();
     if args.headless {
         let script_path = args
             .script_path
-            .expect("A script path is required when running with --headless");
+            .ok_or(PaprError::Runtime(app::RuntimeError::ScriptPathRequired))?;
         let rt = PaprRuntime::new(
             args.sample_rate as Scalar,
             args.control_rate as Scalar,
@@ -78,13 +95,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             Some(args.run_for),
         );
         let mut app = PaprApp::new(rt);
-        app.init_midi();
+        app.init_midi()?;
         app.init_audio(
             #[cfg(target_os = "linux")]
             args.force_alsa,
-        );
+        )?;
         app.rt.init();
-        app.load_script_file(&script_path).unwrap();
+        app.load_script_file(&script_path).map_err(|e| {
+            log::error!("Error loading script: {}", e);
+            e
+        })?;
         app.rt.spawn(&script_path, app.audio_cx.take())?;
 
         if args.out_path.is_none() {
@@ -99,6 +119,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         Ok(())
     } else {
+        // the app constructor can't return a Result
+        #[allow(clippy::unwrap_used)]
         eframe::run_native(
             "PAPR",
             NativeOptions::default(),
@@ -113,11 +135,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 );
                 let mut app = PaprApp::new(rt);
                 if let Some(script_path) = args.script_path.as_ref() {
-                    app.init_midi();
+                    app.init_midi().unwrap();
                     app.init_audio(
                         #[cfg(target_os = "linux")]
                         args.force_alsa,
-                    );
+                    )
+                    .unwrap();
                     app.rt.init();
                     app.load_script_file(script_path).unwrap();
                 }

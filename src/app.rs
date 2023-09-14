@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
     env::current_dir,
-    error::Error,
     fs::File,
     io::Read,
     path::{Path, PathBuf},
@@ -22,14 +21,44 @@ use eframe::{
     epaint::{text::LayoutJob, Color32, Stroke},
 };
 
+use miette::{Diagnostic, Result};
 use syntect::parsing::SyntaxDefinition;
+use thiserror::Error;
 
 use crate::{
-    dsp::{Signal, SignalRate},
+    dsp::{DspError, Signal, SignalRate},
     graph::{Graph, Node},
     io::midi::MidiContext,
     Scalar,
 };
+
+#[derive(Debug, Error, Diagnostic)]
+pub enum RuntimeError {
+    #[error("Invalid configuration: {0}")]
+    InvalidConfig(String),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("DSP error: {0}")]
+    Dsp(#[from] DspError),
+    #[error("Graph error: {0}")]
+    Graph(#[from] crate::graph::GraphError),
+    #[error("Audio context not initialized")]
+    AudioContextNotInitialized,
+    #[error("Audio graph not initialized")]
+    AudioGraphNotInitialized,
+    #[error("Control graph not initialized")]
+    ControlGraphNotInitialized,
+    #[error("Error on CPAL stream: {0}")]
+    Cpal(#[from] cpal::PlayStreamError),
+    #[error("Error building CPAL stream: {0}")]
+    CpalBuild(#[from] cpal::BuildStreamError),
+    #[error("Host unavailable: {0}")]
+    HostUnavailable(#[from] cpal::HostUnavailable),
+    #[error("Error shutting down control thread")]
+    CannotShutdownControlThread,
+    #[error("Script path required")]
+    ScriptPathRequired,
+}
 
 pub struct AudioContext {
     out_device: cpal::Device,
@@ -37,6 +66,8 @@ pub struct AudioContext {
 }
 
 impl AudioContext {
+    // audio thread is allowed to panic
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
     fn write_data<T>(
         sample_rate: Scalar,
         graph: &mut Graph,
@@ -58,15 +89,18 @@ impl AudioContext {
         let ts = (0usize..buffer_len)
             .map(|frame_idx| Signal::new(t as Scalar + frame_idx as Scalar / sample_rate))
             .collect::<Vec<_>>();
+
         let ins = BTreeMap::from_iter([(graph.node_id_by_name("t").unwrap(), &ts)]);
-        graph.process_graph(
-            SignalRate::Audio {
-                sample_rate,
-                buffer_len,
-            },
-            &ins,
-            &mut out,
-        );
+        graph
+            .process_graph(
+                SignalRate::Audio {
+                    sample_rate,
+                    buffer_len,
+                },
+                &ins,
+                &mut out,
+            )
+            .unwrap();
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
             for (_c, sample) in frame.iter_mut().enumerate() {
                 *sample = T::from_sample(out[&dac0][frame_idx].value());
@@ -74,7 +108,7 @@ impl AudioContext {
         }
     }
 
-    pub fn run<T>(&mut self, mut graph: Graph, config: cpal::StreamConfig) -> Result<(), String>
+    pub fn run<T>(&mut self, mut graph: Graph, config: cpal::StreamConfig) -> Result<()>
     where
         T: SizedSample + FromSample<Scalar>,
     {
@@ -100,8 +134,8 @@ impl AudioContext {
                 err_fn,
                 None,
             )
-            .map_err(|e| format!("{:?}", e))?;
-        stream.play().map_err(|e| format!("{:?}", e))?;
+            .map_err(RuntimeError::CpalBuild)?;
+        stream.play().map_err(RuntimeError::Cpal)?;
         self.stream = Some(stream);
         Ok(())
     }
@@ -140,11 +174,11 @@ impl PaprRuntime {
         }
     }
 
-    pub fn create_graphs(&mut self, script_path: &Path) -> Result<(), String> {
+    pub fn create_graphs(&mut self, script_path: &Path) -> Result<()> {
         let (audio, control) = crate::parser3::parse_main_script(script_path).map_err(|e| {
             eprintln!("{:?}", e);
             self.status_text = format!("{}", e);
-            self.status_text.clone()
+            e
         })?;
 
         for c_in_idx in control.digraph.node_indices() {
@@ -158,7 +192,9 @@ impl PaprRuntime {
         Ok(())
     }
 
-    pub fn create_audio_context(#[cfg(target_os = "linux")] force_alsa: bool) -> AudioContext {
+    pub fn create_audio_context(
+        #[cfg(target_os = "linux")] force_alsa: bool,
+    ) -> Result<AudioContext> {
         // if self.audio_cx.is_none() && self.out_file_name.is_none() {
         #[cfg(target_os = "linux")]
         let host = if force_alsa {
@@ -170,16 +206,18 @@ impl PaprRuntime {
         };
 
         #[cfg(target_os = "windows")]
-        let host = cpal::host_from_id(cpal::HostId::Wasapi)
-            .expect("PaprApp::init(): no WASAPI host available");
+        let host =
+            cpal::host_from_id(cpal::HostId::Wasapi).map_err(RuntimeError::HostUnavailable)?;
 
         let out_device = host
             .default_output_device()
-            .expect("PaprApp::init(): failed to find output device");
-        AudioContext {
+            .ok_or(RuntimeError::InvalidConfig(
+                "No output device available".into(),
+            ))?;
+        Ok(AudioContext {
             out_device,
             stream: None,
-        }
+        })
         // self.audio_cx = Some(inner);
         // }
     }
@@ -192,25 +230,27 @@ impl PaprRuntime {
         &mut self,
         script_path: &Path,
         mut audio_cx: Option<AudioContext>,
-    ) -> Result<Option<AudioContext>, String> {
+    ) -> Result<Option<AudioContext>> {
         self.create_graphs(script_path)?;
 
         let mut audio_graph = self
             .audio_graph
             .take()
-            .expect("PaprApp::spawn(): audio graph not initialized");
+            .ok_or(RuntimeError::AudioGraphNotInitialized)?;
         let mut control_graph = self
             .control_graph
             .take()
-            .expect("PaprApp::spawn(): control graph not initialized");
+            .ok_or(RuntimeError::ControlGraphNotInitialized)?;
 
-        let t_idx: petgraph::stable_graph::NodeIndex = control_graph.node_id_by_name("t").unwrap();
+        let t_idx = control_graph.node_id_by_name("t")?;
         let control_rate = self.control_rate;
         let (tx, mut rx) = tokio::sync::oneshot::channel();
         self.control_thread_shutdown = Some(tx);
 
         if let Some(out_file_name) = self.out_file_name.as_ref() {
-            let run_for = self.run_for.unwrap();
+            let run_for = self
+                .run_for
+                .ok_or(RuntimeError::InvalidConfig("No run_for specified".into()))?;
             let run_for_secs = (run_for as f64) / 1000.0;
             let run_for_samples = (run_for_secs * self.sample_rate) as usize;
             let mut out_buf = vec![0.0; run_for_samples];
@@ -222,9 +262,7 @@ impl PaprRuntime {
                 let buffer_len = output.len() / channels;
                 let mut out = BTreeMap::new();
                 // for c in 0..channels {
-                let dac0 = audio_graph
-                    .node_id_by_name("dac0")
-                    .expect("Expected `Main` graph to have at least `dac0` for outputs");
+                let dac0 = audio_graph.node_id_by_name("dac0")?;
                 let mut dac0_vec = vec![Signal::new(0.0); buffer_len];
                 out.insert(dac0, &mut dac0_vec);
                 // }
@@ -233,7 +271,7 @@ impl PaprRuntime {
                         Signal::new(t as Scalar + frame_idx as Scalar / self.sample_rate)
                     })
                     .collect::<Vec<_>>();
-                let ins = BTreeMap::from_iter([(audio_graph.node_id_by_name("t").unwrap(), &ts)]);
+                let ins = BTreeMap::from_iter([(audio_graph.node_id_by_name("t")?, &ts)]);
                 audio_graph.process_graph(
                     SignalRate::Audio {
                         sample_rate: self.sample_rate,
@@ -241,7 +279,7 @@ impl PaprRuntime {
                     },
                     &ins,
                     &mut out,
-                );
+                )?;
                 control_graph.process_graph(
                     SignalRate::Control {
                         sample_rate: self.sample_rate,
@@ -249,7 +287,7 @@ impl PaprRuntime {
                     },
                     &ins,
                     &mut BTreeMap::new(),
-                );
+                )?;
                 for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
                     for (_c, sample) in frame.iter_mut().enumerate() {
                         *sample = out[&dac0][frame_idx].value() as f32;
@@ -260,17 +298,28 @@ impl PaprRuntime {
                 t += (buffer_len as Scalar) / self.sample_rate;
             }
             let out = &out_buf[..run_for_samples];
-            let mut out_file = File::create(out_file_name).unwrap();
+            let mut out_file = File::create(out_file_name).map_err(|e| {
+                self.status_text = format!("Failed to create output file: {}", e);
+                RuntimeError::Io(e)
+            })?;
             wav::write(
                 wav::Header::new(wav::WAV_FORMAT_IEEE_FLOAT, 1, self.sample_rate as u32, 32),
                 &wav::BitDepth::ThirtyTwoFloat(out.to_vec()),
                 &mut out_file,
             )
-            .unwrap();
+            .map_err(|e| {
+                self.status_text = format!("Failed to write output file: {}", e);
+                RuntimeError::Io(e)
+            })?;
         } else {
-            let mut audio_cx = audio_cx
-                .take()
-                .expect("PaprApp::spawn(): audio context not initialized");
+            let mut audio_cx = if let Some(audio_cx) = audio_cx.take() {
+                audio_cx
+            } else {
+                Self::create_audio_context(
+                    #[cfg(target_os = "linux")]
+                    false,
+                )?
+            };
 
             let config = cpal::StreamConfig {
                 channels: cpal::ChannelCount::from(1u16),
@@ -289,6 +338,8 @@ impl PaprRuntime {
 
             audio_cx.run::<f32>(audio_graph, config)?;
 
+            // the control rate thread is allowed to panic
+            #[allow(clippy::unwrap_used)]
             std::thread::Builder::new()
                 .name("PAPR Control".into())
                 .spawn(move || {
@@ -301,14 +352,20 @@ impl PaprRuntime {
                             break;
                         }
                         let tik = Instant::now();
-                        control_graph.process_graph(
-                            SignalRate::Control {
-                                sample_rate: control_rate,
-                                buffer_len: 1,
-                            },
-                            &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t); 1])]),
-                            &mut BTreeMap::default(),
-                        );
+                        control_graph
+                            .process_graph(
+                                SignalRate::Control {
+                                    sample_rate: control_rate,
+                                    buffer_len: 1,
+                                },
+                                &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t); 1])]),
+                                &mut BTreeMap::default(),
+                            )
+                            .map_err(|e| {
+                                eprintln!("Error while processing control graph: {}", e);
+                                e
+                            })
+                            .unwrap();
                         let time = Instant::now() - tik;
 
                         if clk.as_secs_f64() > time.as_secs_f64() {
@@ -317,7 +374,10 @@ impl PaprRuntime {
                         t += clk.as_secs_f64() as Scalar;
                     }
                 })
-                .expect("PaprApp::spawn(): error spawning control rate thread");
+                .map_err(|e| {
+                    self.status_text = format!("Failed to spawn control thread: {}", e);
+                    RuntimeError::Io(e)
+                })?;
         }
 
         self.status_text = "Runtime is running.".into();
@@ -328,10 +388,10 @@ impl PaprRuntime {
         &mut self,
         script_path: &Path,
         audio_cx: Option<AudioContext>,
-    ) -> Result<Option<AudioContext>, String> {
+    ) -> Result<Option<AudioContext>> {
         if let Some(tx) = self.control_thread_shutdown.take() {
             tx.send(())
-                .map_err(|_| "Error shutting down control rate thread".to_owned())?;
+                .map_err(|_| RuntimeError::CannotShutdownControlThread)?;
             std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
         }
         self.control_node_refs.clear();
@@ -382,30 +442,35 @@ impl PaprApp {
         }
     }
 
-    pub fn init_audio(&mut self, #[cfg(target_os = "linux")] force_alsa: bool) {
+    pub fn init_audio(&mut self, #[cfg(target_os = "linux")] force_alsa: bool) -> Result<()> {
         self.audio_cx = Some(PaprRuntime::create_audio_context(
             #[cfg(target_os = "linux")]
             force_alsa,
-        ));
+        )?);
+        Ok(())
     }
 
-    pub fn init_midi(&mut self) {
-        self.midi_cx = Some(MidiContext::new("PAPR Midi In", None));
+    pub fn init_midi(&mut self) -> Result<()> {
+        if self.midi_cx.is_none() {
+            self.midi_cx = Some(MidiContext::new("PAPR Midi In", None)?);
+        }
+        Ok(())
     }
 
-    pub fn load_script_file(&mut self, script_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+    pub fn load_script_file(&mut self, script_path: &PathBuf) -> Result<()> {
         // let path = self.script_path.as_ref()?;
-        let mut file = File::open(script_path)?;
+        let mut file = File::open(script_path).map_err(RuntimeError::Io)?;
         self.script_text = String::new();
-        file.read_to_string(&mut self.script_text)?;
+        file.read_to_string(&mut self.script_text)
+            .map_err(RuntimeError::Io)?;
         self.script_path = Some(script_path.to_owned());
         Ok(())
     }
 
-    pub fn save_script_file(&mut self, script_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+    pub fn save_script_file(&mut self, script_path: &PathBuf) -> Result<()> {
         use std::io::Write;
-        let mut file = File::create(script_path)?;
-        write!(file, "{}", &self.script_text)?;
+        let mut file = File::create(script_path).map_err(RuntimeError::Io)?;
+        write!(file, "{}", &self.script_text).map_err(RuntimeError::Io)?;
         Ok(())
     }
 }
@@ -416,6 +481,8 @@ impl eframe::App for PaprApp {
         self.allowed_to_close
     }
 
+    // this cannot return a Result as it's defined in eframe
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
         ctx.request_repaint();
         if self.show_close_confirmation {
@@ -434,10 +501,10 @@ impl eframe::App for PaprApp {
                         }
                         if ui.button("Yes").clicked() {
                             if let Some(script_path) = self.script_path.clone() {
-                                self.save_script_file(&script_path);
+                                self.save_script_file(&script_path).unwrap();
                             } else if let Some(path) = rfd::FileDialog::new().save_file() {
                                 self.script_path = Some(path.clone());
-                                self.save_script_file(&path);
+                                self.save_script_file(&path).unwrap();
                             }
                             self.allowed_to_close = true;
                             self.show_close_confirmation = false;
@@ -513,16 +580,16 @@ impl eframe::App for PaprApp {
             ui.with_layout(Layout::left_to_right(eframe::emath::Align::Min), |ui| {
                 if ui.button("Save").clicked() {
                     if let Some(script_path) = self.script_path.clone() {
-                        self.save_script_file(&script_path);
+                        self.save_script_file(&script_path).unwrap();
                     } else if let Some(path) = rfd::FileDialog::new().save_file() {
                         self.script_path = Some(path.clone());
-                        self.save_script_file(&path);
+                        self.save_script_file(&path).unwrap();
                     }
                 }
                 if ui.button("Save As...").clicked() {
                     if let Some(path) = rfd::FileDialog::new().save_file() {
                         self.script_path = Some(path.clone());
-                        self.save_script_file(&path);
+                        self.save_script_file(&path).unwrap();
                     }
                 }
                 if ui.button("Open...").clicked() {
@@ -545,8 +612,11 @@ impl eframe::App for PaprApp {
                         self.init_audio(
                             #[cfg(target_os = "linux")]
                             false, // todo
-                        );
-                        self.init_midi();
+                        )
+                        .unwrap_or_else(|e| {
+                            self.rt.status_text = format!("Failed to init audio: {}", e);
+                        });
+                        self.init_midi().unwrap();
                         self.rt.init();
                         self.load_script_file(&path).unwrap_or_else(|e| {
                             self.rt.status_text = format!("Failed to load script: {e}");
@@ -620,6 +690,7 @@ struct Highlighter {
 }
 
 impl Default for Highlighter {
+    #[allow(clippy::expect_used)]
     fn default() -> Self {
         let mut builder = syntect::parsing::SyntaxSetBuilder::new();
         builder.add(
@@ -635,6 +706,8 @@ impl Default for Highlighter {
 }
 
 impl Highlighter {
+    // this cannot return a Result as it's defined in eframe
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
     fn highlight(&self, code: &str) -> LayoutJob {
         use syntect::easy::HighlightLines;
         use syntect::highlighting::FontStyle;

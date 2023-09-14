@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fs::File, io::Read, path::Path, sync::Arc};
 
-use miette::{miette, Diagnostic, Result, SourceOffset};
+use miette::{miette, Context, Diagnostic, Result, SourceOffset};
 use pest::{error::ErrorVariant, Parser, Position};
 use pest_derive::Parser;
 use thiserror::Error;
@@ -22,21 +22,18 @@ pub mod builtins;
 mod tests;
 
 #[derive(Error, Diagnostic, Debug)]
-#[error("parsing error")]
-#[diagnostic()]
-pub struct ParsingError {
-    // inner: pest::error::Error<Rule>,
+#[error("parsing error: {msg}")]
+pub struct ParseError {
     #[source_code]
     src: String,
 
     #[label("here")]
     span: SourceOffset,
 
-    #[help]
     msg: String,
 }
 
-impl ParsingError {
+impl ParseError {
     pub fn new_from_pos(src: &str, variant: ErrorVariant<Rule>, pos: Position<'_>) -> Self {
         Self::from_source_and_pest_error(src, pest::error::Error::new_from_pos(variant, pos))
     }
@@ -196,7 +193,7 @@ pub fn parse_signal_rate(src: &str, inp: Pair<Rule>) -> Result<ParsedSignalRate>
             _ => unreachable!(),
         }
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: format!(
@@ -219,7 +216,7 @@ pub fn parse_ident(src: &str, inp: Pair<Rule>) -> Result<ParsedIdent> {
                     id.as_str().to_owned(),
                     Some(parse_signal_rate(src, rate)?),
                 )),
-                _ => Err(ParsingError::new_from_pos(
+                _ => Err(ParseError::new_from_pos(
                     src,
                     ErrorVariant::CustomError {
                         message: "Expected identifier after signal rate".to_owned(),
@@ -234,7 +231,7 @@ pub fn parse_ident(src: &str, inp: Pair<Rule>) -> Result<ParsedIdent> {
             _ => unreachable!("BUG: Internal parsing error: failed to parse ident"),
         }
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected identifier".to_owned(),
@@ -255,7 +252,7 @@ pub fn parse_graph_name(src: &str, inp: Pair<Rule>) -> Result<ParsedCallee> {
                     Some(parse_signal_rate(src, rate)?),
                 )
                 .into_parsed_callee()),
-                _ => Err(ParsingError::new_from_pos(
+                _ => Err(ParseError::new_from_pos(
                     src,
                     ErrorVariant::CustomError {
                         message: "Expected graph name after signal rate".to_owned(),
@@ -270,7 +267,7 @@ pub fn parse_graph_name(src: &str, inp: Pair<Rule>) -> Result<ParsedCallee> {
             _ => unreachable!("BUG: Internal parsing error: failed to parse graph name"),
         }
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected graph name".to_owned(),
@@ -289,7 +286,7 @@ pub fn parse_scalar(src: &str, inp: Pair<Rule>) -> Result<Scalar> {
             .expect("BUG: Internal parsing error: failed to parse scalar");
         Ok(val)
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected number".to_owned(),
@@ -303,9 +300,10 @@ pub fn parse_scalar(src: &str, inp: Pair<Rule>) -> Result<Scalar> {
 pub fn parse_string(src: &str, inp: Pair<Rule>) -> Result<String> {
     if inp.as_rule() == Rule::string {
         // trim the quotes
+        // todo: remove this panic
         Ok(inp.into_inner().next().unwrap().as_str().to_owned())
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected string".to_owned(),
@@ -320,7 +318,7 @@ pub fn parse_import(src: &str, inp: Pair<Rule>) -> Result<String> {
     if inp.as_rule() == Rule::import_stmt {
         Ok(parse_string(src, inp.into_inner().next().unwrap())?)
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected import statement".to_owned(),
@@ -358,7 +356,7 @@ pub fn parse_call(src: &str, inp: Pair<Rule>) -> Result<ParsedCall> {
             args,
         })
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected graph instantiation".to_owned(),
@@ -380,7 +378,7 @@ pub fn parse_expr(src: &str, inp: Pair<Rule>) -> Result<ParsedExpr> {
             _ => unreachable!("BUG: Internal parsing error: failed to parse expr"),
         }
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected expression".to_owned(),
@@ -403,7 +401,7 @@ pub fn parse_infix_expr(src: &str, inp: Pair<Rule>) -> Result<ParsedInfixExpr> {
             rhs: Box::new(rhs),
         })
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected infix expression".to_owned(),
@@ -432,7 +430,7 @@ pub fn parse_infix_op(src: &str, inp: Pair<Rule>) -> Result<ParsedInfixOp> {
             _ => unreachable!("BUG: Internal parsing error: failed to parse infix op"),
         }
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected infix operator".to_owned(),
@@ -451,7 +449,7 @@ pub fn parse_list(src: &str, inp: Pair<Rule>) -> Result<Vec<ParsedIdent>> {
         }
         Ok(list)
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected list of identifiers".to_owned(),
@@ -480,7 +478,7 @@ pub fn parse_connection(src: &str, inp: Pair<Rule>) -> Result<ParsedConnection> 
         let expr = parse_expr(src, expr)?;
         Ok(ParsedConnection { lhs, rhs: expr })
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: format!("Expected connection\nGot {:?}", inp.as_rule()),
@@ -507,7 +505,7 @@ pub fn parse_statement(src: &str, inp: Pair<Rule>) -> Result<ParsedStatement> {
             _ => unreachable!(),
         }
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected statement".to_owned(),
@@ -526,7 +524,7 @@ pub fn parse_statement_block(src: &str, inp: Pair<Rule>) -> Result<Vec<ParsedSta
         }
         Ok(stmts)
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected statement block (`~ { ... }`)".to_owned(),
@@ -550,7 +548,7 @@ pub fn parse_inputs(src: &str, inp: Pair<Rule>) -> Result<Vec<ParsedInput>> {
         }
         Ok(ins)
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected inputs".to_owned(),
@@ -569,7 +567,7 @@ pub fn parse_outputs(src: &str, inp: Pair<Rule>) -> Result<Vec<ParsedIdent>> {
         }
         Ok(ins)
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected outputs".to_owned(),
@@ -587,7 +585,7 @@ pub fn parse_signature(src: &str, inp: Pair<Rule>) -> Result<ParsedSignature> {
         let outputs = parse_outputs(src, inner.next().unwrap())?;
         Ok(ParsedSignature { inputs, outputs })
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected signature (`|...| -> |...|`)".to_owned(),
@@ -614,7 +612,7 @@ pub fn parse_graph_def(src: &str, inp: Pair<Rule>) -> Result<ParsedGraph> {
             unreachable!()
         }
     } else {
-        Err(ParsingError::new_from_pos(
+        Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: format!("Expected graph definition\nGot {:?}", inp.as_rule()),
@@ -631,7 +629,7 @@ pub fn parse_script(path: &Path, known_graphs: &mut BTreeMap<String, ParsedGraph
     f.read_to_string(&mut src).unwrap();
 
     let mut papr = PaprParser::parse(Rule::main, &src)
-        .map_err(|e| ParsingError::from_source_and_pest_error(&src, e))?
+        .map_err(|e| ParseError::from_source_and_pest_error(&src, e))?
         .next()
         .unwrap()
         .into_inner();
@@ -718,7 +716,9 @@ fn solve_expr(
             })?;
             match rate {
                 ParsedSignalRate::Audio => {
-                    let ag_idx = super_ag.node_id_by_name(&id.0).ok_or(miette!("Parsing error (graph `{}`): while parsing expr: audio graph has no node named `{}`", &graph_id.0, &id.0))?;
+                    let ag_idx = super_ag
+                        .node_id_by_name(&id.0)
+                        .context("while parsing expr")?;
                     Ok(SolvedExpr {
                         rate,
                         ag_idx: Some((ag_idx, vec![0])), // todo: probably don't assume first output here
@@ -726,7 +726,9 @@ fn solve_expr(
                     })
                 }
                 ParsedSignalRate::Control => {
-                    let cg_idx = super_cg.node_id_by_name(&id.0).ok_or(miette!("Parsing error (graph `{}`): while parsing expr: control graph has no node named `{}`", &graph_id.0, &id.0))?;
+                    let cg_idx = super_cg
+                        .node_id_by_name(&id.0)
+                        .context("while parsing expr")?;
                     Ok(SolvedExpr {
                         rate,
                         ag_idx: None,
@@ -925,8 +927,8 @@ fn solve_expr(
                     let lhs_ident = lhs_ident
                         .map(|id| id.0.to_owned())
                         .unwrap_or(format!("{:?}", builtin));
-                    let an = builtin.create_node(&lhs_ident, creation_args);
-                    let cn = builtin.create_node(&lhs_ident, creation_args);
+                    let an = builtin.create_node(&lhs_ident, creation_args)?;
+                    let cn = builtin.create_node(&lhs_ident, creation_args)?;
                     n_outs = match known_rate {
                         Some(ParsedSignalRate::Audio) => an.outputs.len(),
                         Some(ParsedSignalRate::Control) => cn.outputs.len(),
@@ -1227,11 +1229,7 @@ fn solve_graph(
                         return Err(miette!("Parsing error (graph `{}`): expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, conn.lhs.len(), ag_from_outs.len()));
                     }
                     for (to, ag_from_out) in conn.lhs.iter().zip(ag_from_outs.iter()) {
-                        let to_idx = ag.node_id_by_name(&to.0).ok_or(miette!(
-                            "Parsing error (graph `{}`): audio graph has no node named `{}`",
-                            &id.0,
-                            &to.0
-                        ))?;
+                        let to_idx = ag.node_id_by_name(&to.0)?;
                         // todo: don't assume it's the first input, probably
                         ag.add_edge(
                             ag_from_idx,
@@ -1248,11 +1246,7 @@ fn solve_graph(
                         return Err(miette!("Parsing error (graph `{}`): expected as many left-hand terms as the right-hand expression has outputs ({} vs {})", &id.0, conn.lhs.len(), cg_from_outs.len()));
                     }
                     for (to, cg_from_out) in conn.lhs.iter().zip(cg_from_outs.iter()) {
-                        let to_idx = cg.node_id_by_name(&to.0).ok_or(miette!(
-                            "Parsing error (graph `{}`): control graph has no node named `{}`",
-                            &id.0,
-                            &to.0
-                        ))?;
+                        let to_idx = cg.node_id_by_name(&to.0)?;
                         // todo: don't assume it's the first input, probably
                         cg.add_edge(
                             cg_from_idx,
@@ -1268,8 +1262,8 @@ fn solve_graph(
         }
     }
 
-    ag.write_dot(&format!("{}_audio.dot", &id.0));
-    cg.write_dot(&format!("{}_control.dot", &id.0));
+    ag.write_dot(&format!("{}_audio.dot", &id.0))?;
+    cg.write_dot(&format!("{}_control.dot", &id.0))?;
 
     Ok((ag, cg))
 }

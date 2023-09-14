@@ -4,6 +4,7 @@ use std::{
 };
 
 use eframe::egui::{Button, Checkbox, Slider, Ui};
+use miette::Result;
 use papr_proc_macro::node_constructor;
 
 use crate::{
@@ -12,7 +13,7 @@ use crate::{
     Scalar,
 };
 
-use super::{Processor, SignalRate};
+use super::{DspError, Processor, SignalRate};
 
 pub struct Dummy;
 
@@ -49,10 +50,11 @@ impl Processor for DebugNode {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         let t = inputs[1].value();
         println!("{} = {} (t={t})", self.name, inputs[0].value());
         outputs[0] = inputs[0];
+        Ok(())
     }
 }
 
@@ -76,8 +78,9 @@ impl Processor for UiInput {
         _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(self.value);
+        Ok(())
     }
 
     fn ui_update(&mut self, ui: &mut Ui) {
@@ -148,13 +151,14 @@ impl Processor for UiOutput {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         match &mut self.widget {
             UiOutputWidget::Led { value } => {
                 *value = inputs[0].value();
                 outputs[0] = Signal::new(*value);
             }
         }
+        Ok(())
     }
 
     fn ui_update(&mut self, ui: &mut Ui) {
@@ -217,8 +221,9 @@ impl Processor for Constant {
         _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(self.value);
+        Ok(())
     }
 }
 
@@ -237,9 +242,10 @@ macro_rules! impl_arith {
                 _signal_rate: SignalRate,
                 inputs: &[Signal],
                 outputs: &mut [Signal],
-            ) {
+            ) -> Result<()> {
                 use std::ops::$use;
                 outputs[0] = Signal::new(inputs[0].value().$op(inputs[1].value()));
+                Ok(())
             }
         }
     };
@@ -265,8 +271,9 @@ impl Processor for Max {
 
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(inputs[0].value().max(inputs[1].value()));
+        Ok(())
     }
 }
 
@@ -284,8 +291,9 @@ impl Processor for Min {
 
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(inputs[0].value().min(inputs[1].value()));
+        Ok(())
     }
 }
 
@@ -302,8 +310,9 @@ impl Processor for Abs {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(inputs[0].value().abs());
+        Ok(())
     }
 }
 
@@ -320,8 +329,9 @@ impl Processor for Exp {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(inputs[0].value().exp());
+        Ok(())
     }
 }
 
@@ -338,8 +348,9 @@ impl Processor for Cosine {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(inputs[0].value().cos());
+        Ok(())
     }
 }
 
@@ -356,8 +367,9 @@ impl Processor for Tanh {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(inputs[0].value().tanh());
+        Ok(())
     }
 }
 
@@ -375,8 +387,9 @@ impl Processor for Sine {
 
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(Scalar::sin(inputs[0].value()));
+        Ok(())
     }
 }
 
@@ -421,8 +434,12 @@ impl Processor for ControlToAudioTx {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         _outputs: &mut [Signal],
-    ) {
-        self.tx.as_ref().unwrap().send_replace(inputs[0].value());
+    ) -> Result<()> {
+        self.tx
+            .as_ref()
+            .ok_or(DspError::ChannelDisconnected)?
+            .send_replace(inputs[0].value());
+        Ok(())
     }
 }
 impl Processor for ControlToAudioRx {
@@ -432,9 +449,14 @@ impl Processor for ControlToAudioRx {
         _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
-        self.value = *self.rx.as_ref().unwrap().borrow();
+    ) -> Result<()> {
+        self.value = *self
+            .rx
+            .as_ref()
+            .ok_or(DspError::ChannelDisconnected)?
+            .borrow();
         outputs[0] = Signal::new(self.value);
+        Ok(())
     }
 }
 
@@ -479,8 +501,12 @@ impl Processor for AudioToControlTx {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         _outputs: &mut [Signal],
-    ) {
-        self.tx.as_ref().unwrap().send_replace(inputs[0].value());
+    ) -> Result<()> {
+        self.tx
+            .as_ref()
+            .ok_or(DspError::ChannelDisconnected)?
+            .send_replace(inputs[0].value());
+        Ok(())
     }
 }
 impl Processor for AudioToControlRx {
@@ -490,9 +516,14 @@ impl Processor for AudioToControlRx {
         _signal_rate: SignalRate,
         _inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
-        self.value = *self.rx.as_ref().unwrap().borrow();
+    ) -> Result<()> {
+        self.value = *self
+            .rx
+            .as_ref()
+            .ok_or(DspError::ChannelDisconnected)?
+            .borrow();
         outputs[0] = Signal::new(self.value);
+        Ok(())
     }
 }
 
@@ -512,13 +543,14 @@ impl Processor for RisingEdge {
 
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         if inputs[0].value() > self.c_last {
             outputs[0] = Signal::new(1.0);
         } else {
             outputs[0] = Signal::new(0.0);
         }
         self.c_last = inputs[0].value();
+        Ok(())
     }
 }
 
@@ -538,13 +570,14 @@ impl Processor for FallingEdge {
 
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         if inputs[0].value() < self.c_last {
             outputs[0] = Signal::new(1.0);
         } else {
             outputs[0] = Signal::new(0.0);
         }
         self.c_last = inputs[0].value();
+        Ok(())
     }
 }
 
@@ -562,13 +595,14 @@ impl Processor for Clip {
 
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = Signal::new(
             inputs[0]
                 .value()
                 .max(inputs[1].value())
                 .min(inputs[2].value()),
         );
+        Ok(())
     }
 }
 
@@ -585,12 +619,13 @@ impl Processor for If {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         if inputs[0].value() > 0.0 {
             outputs[0] = inputs[1];
         } else {
             outputs[0] = inputs[2];
         }
+        Ok(())
     }
 }
 
@@ -609,12 +644,13 @@ macro_rules! impl_cmp {
                 _signal_rate: SignalRate,
                 inputs: &[Signal],
                 outputs: &mut [Signal],
-            ) {
+            ) -> Result<()> {
                 if inputs[0].$op(&inputs[1]) {
                     outputs[0] = Signal::new(1.0);
                 } else {
                     outputs[0] = Signal::new(0.0);
                 }
+                Ok(())
             }
         }
     };
@@ -640,12 +676,13 @@ macro_rules! impl_boolean {
                 _signal_rate: SignalRate,
                 inputs: &[Signal],
                 outputs: &mut [Signal],
-            ) {
+            ) -> Result<()> {
                 if (inputs[0].value() > 0.0).$op(inputs[1].value() > 0.0) {
                     outputs[0] = Signal::new(1.0);
                 } else {
                     outputs[0] = Signal::new(0.0);
                 }
+                Ok(())
             }
         }
     };
@@ -668,11 +705,12 @@ impl Processor for Not {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         if inputs[0].value() > 0.0 {
             outputs[0] = Signal::new(0.0);
         } else {
             outputs[0] = Signal::new(1.0);
         }
+        Ok(())
     }
 }

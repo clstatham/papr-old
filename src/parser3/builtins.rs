@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use miette::Result;
+
 use crate::{
     dsp::{
         basic::{UiInputWidget, UiOutputWidget},
@@ -102,8 +104,12 @@ impl BuiltinNode {
         }
     }
 
-    pub fn create_node(&self, name: &str, creation_args: &[ParsedCreationArg]) -> Arc<Node> {
-        match self {
+    pub fn create_node(
+        &self,
+        name: &str,
+        creation_args: &[ParsedCreationArg],
+    ) -> Result<Arc<Node>> {
+        let node = match self {
             Self::Debug => crate::dsp::basic::DebugNode::create_node(name),
             Self::Sine => crate::dsp::basic::Sine::create_node(name, 0.0),
             Self::Cosine => crate::dsp::basic::Cosine::create_node(name, 0.0),
@@ -147,7 +153,7 @@ impl BuiltinNode {
             Self::Sample => crate::dsp::samplers::Sample::create_node(
                 name,
                 creation_args[0].unwrap_string().into(),
-            ),
+            )?,
 
             // UI nodes
             Self::Slider => crate::dsp::basic::UiInput::create_node(
@@ -183,6 +189,7 @@ impl BuiltinNode {
             Self::Mul => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
             Self::Div => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
             Self::VariableInput => unimplemented!(),
-        }
+        };
+        Ok(node)
     }
 }

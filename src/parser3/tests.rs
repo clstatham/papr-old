@@ -1,5 +1,3 @@
-use std::env::current_dir;
-
 use super::*;
 
 macro_rules! test_parse {
@@ -7,7 +5,7 @@ macro_rules! test_parse {
         $tester(
             $input,
             PaprParser::parse(Rule::$rule, $input)
-                .map_err(|e| ParsingError::from_source_and_pest_error($input, e))?
+                .map_err(|e| ParseError::from_source_and_pest_error($input, e))?
                 .next()
                 .unwrap(),
         )?

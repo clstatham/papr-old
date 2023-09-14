@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["papr-proc-macro", "paaipr", "papr_plugin"]
-exclude = []
+members = ["papr-proc-macro", "papr_plugin"]
+exclude = ["paaipr"]
 
 
 [[bin]]

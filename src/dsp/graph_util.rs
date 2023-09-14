@@ -5,6 +5,7 @@ use crate::{
     Scalar,
 };
 
+use miette::Result;
 use papr_proc_macro::node_constructor;
 
 use super::{Processor, Signal, SignalRate};
@@ -31,8 +32,9 @@ impl Processor for GraphInput {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = inputs[0];
+        Ok(())
     }
 }
 
@@ -49,8 +51,9 @@ impl Processor for GraphOutput {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = inputs[0];
+        Ok(())
     }
 }
 
@@ -67,8 +70,9 @@ impl Processor for LetBinding {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         outputs[0] = inputs[0];
+        Ok(())
     }
 }
 
@@ -87,10 +91,11 @@ impl Processor for Var {
         _signal_rate: SignalRate,
         inputs: &[Signal],
         outputs: &mut [Signal],
-    ) {
+    ) -> Result<()> {
         if inputs[1].value() > 0.0 {
             self.value = inputs[0].value();
         }
         outputs[0] = Signal::new(self.value);
+        Ok(())
     }
 }
