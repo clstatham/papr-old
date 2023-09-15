@@ -56,7 +56,7 @@ struct Args {
     control_rate: u64,
 
     /// The desired audio sample rate to request (in samples per second)
-    #[arg(short, long, default_value_t = 48000, value_name = "HERTZ")]
+    #[arg(short, long, default_value_t = 44100, value_name = "HERTZ")]
     sample_rate: u64,
 
     /// The MIDI input port id to use
@@ -81,7 +81,10 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+    simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Debug)
+        .init()
+        .unwrap();
     log::trace!("Logger initialized.");
     let args = Args::parse();
     if args.headless {
@@ -96,16 +99,12 @@ fn main() -> Result<()> {
         );
         let mut app = PaprApp::new(rt);
         app.init_midi()?;
-        app.init_audio(
-            #[cfg(target_os = "linux")]
-            args.force_alsa,
-        )?;
         app.rt.init();
         app.load_script_file(&script_path).map_err(|e| {
             log::error!("Error loading script: {}", e);
             e
         })?;
-        app.rt.spawn(&script_path, app.audio_cx.take())?;
+        app.rt.spawn(&script_path)?;
 
         if args.out_path.is_none() {
             if args.run_for > 0 {
@@ -136,18 +135,14 @@ fn main() -> Result<()> {
                 let mut app = PaprApp::new(rt);
                 if let Some(script_path) = args.script_path.as_ref() {
                     app.init_midi().unwrap();
-                    app.init_audio(
-                        #[cfg(target_os = "linux")]
-                        args.force_alsa,
-                    )
-                    .unwrap();
                     app.rt.init();
                     app.load_script_file(script_path).unwrap();
                 }
 
                 Box::new(app)
             }),
-        );
+        )
+        .unwrap();
         Ok(())
     }
 }

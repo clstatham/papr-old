@@ -1,7 +1,6 @@
 graph Main {
     || -> |@dac0|
     ~ {
-        let @s = @SquareOsc(0.1 440 0.5);
-        @dac0 = @s;
+        @dac0 = @SquareOsc(0.1 440 0.5);
     }
 }

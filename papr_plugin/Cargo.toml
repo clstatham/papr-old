@@ -21,6 +21,6 @@ nih_plug = { git = "https://github.com/robbert-vdh/nih-plug", features = [
 nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug" }
 crossbeam-channel = "0.5.8"
 tokio = { version = "*", features = ["sync"] }
-rfd = { version = "0.11.4", default-features = false, features = [
-    "xdg-portal",
-] }
+# rfd = { version = "0.11.4", default-features = false, features = [
+#     "xdg-portal",
+# ] }

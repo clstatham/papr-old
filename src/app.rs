@@ -52,6 +52,8 @@ pub enum RuntimeError {
     Cpal(#[from] cpal::PlayStreamError),
     #[error("Error building CPAL stream: {0}")]
     CpalBuild(#[from] cpal::BuildStreamError),
+    #[error("CPAL error: {0}")]
+    CpalConfig(#[from] cpal::DefaultStreamConfigError),
     #[error("Host unavailable: {0}")]
     HostUnavailable(#[from] cpal::HostUnavailable),
     #[error("Error shutting down control thread")]
@@ -113,7 +115,7 @@ impl AudioContext {
         T: SizedSample + FromSample<Scalar>,
     {
         let mut sample_clock = 0 as Scalar;
-        let err_fn = |err| eprintln!("Error occurred on stream: {err}");
+        let err_fn = |err| log::error!("Error occurred on stream: {err}");
 
         let channels = 1;
         let sample_rate = config.sample_rate.0 as Scalar;
@@ -122,7 +124,11 @@ impl AudioContext {
             .build_output_stream(
                 &config,
                 move |data: &mut [T], _info: &cpal::OutputCallbackInfo| {
+                    // println!("data.len(): {}", data.len());
+                    // println!("channels: {}", channels);
+                    // println!("sample_rate: {}", sample_rate);
                     sample_clock += (data.len() as Scalar / channels as Scalar) / sample_rate;
+                    // println!("sample_clock: {}", sample_clock);
                     Self::write_data(
                         sample_rate as Scalar,
                         &mut graph,
@@ -135,6 +141,7 @@ impl AudioContext {
                 None,
             )
             .map_err(RuntimeError::CpalBuild)?;
+
         stream.play().map_err(RuntimeError::Cpal)?;
         self.stream = Some(stream);
         Ok(())
@@ -148,13 +155,13 @@ pub struct PaprRuntime {
     sample_rate: Scalar,
     pub control_rate: Scalar,
     pub control_thread_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+    pub audio_thread_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
     status_text: String,
     out_file_name: Option<PathBuf>,
     run_for: Option<u64>,
 }
 
 impl PaprRuntime {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         sample_rate: Scalar,
         control_rate: Scalar,
@@ -168,6 +175,7 @@ impl PaprRuntime {
             control_rate,
             sample_rate,
             control_thread_shutdown: None,
+            audio_thread_shutdown: None,
             status_text: "Welcome to PAPR! Runtime is off.".into(),
             out_file_name,
             run_for,
@@ -176,7 +184,7 @@ impl PaprRuntime {
 
     pub fn create_graphs(&mut self, script_path: &Path) -> Result<()> {
         let (audio, control) = crate::parser3::parse_main_script(script_path).map_err(|e| {
-            eprintln!("{:?}", e);
+            log::error!("{:?}", e);
             self.status_text = format!("{}", e);
             e
         })?;
@@ -189,6 +197,7 @@ impl PaprRuntime {
         self.audio_graph = Some(audio);
         self.control_graph = Some(control);
         self.status_text = "Graph creation successful.".into();
+        log::info!("Graph creation successful.");
         Ok(())
     }
 
@@ -197,40 +206,63 @@ impl PaprRuntime {
     ) -> Result<AudioContext> {
         // if self.audio_cx.is_none() && self.out_file_name.is_none() {
         #[cfg(target_os = "linux")]
-        let host = if force_alsa {
-            println!("Initializing ALSA host.");
-            cpal::host_from_id(cpal::HostId::Alsa).expect("PaprApp::init(): no ALSA host available")
+        let out_device = if force_alsa {
+            log::info!("Initializing ALSA host.");
+            let host = cpal::host_from_id(cpal::HostId::Alsa)
+                .expect("PaprApp::init(): no ALSA host available");
+            host.default_output_device()
+                .ok_or(RuntimeError::InvalidConfig(
+                    "No output device available".into(),
+                ))?
         } else {
-            println!("Initializing JACK host.");
-            cpal::host_from_id(cpal::HostId::Jack).expect("PaprApp::init(): no JACK host available")
+            log::info!("Initializing JACK host.");
+            let host = cpal::host_from_id(cpal::HostId::Jack)
+                .expect("PaprApp::init(): no JACK host available");
+            host.default_output_device()
+                .ok_or(RuntimeError::InvalidConfig(
+                    "No output device available".into(),
+                ))?
         };
 
         #[cfg(target_os = "windows")]
-        let host =
-            cpal::host_from_id(cpal::HostId::Wasapi).map_err(RuntimeError::HostUnavailable)?;
+        let out_device = {
+            log::info!("Initializing ASIO host.");
+            let host =
+                cpal::host_from_id(cpal::HostId::Asio).map_err(RuntimeError::HostUnavailable)?;
 
-        let out_device = host
-            .default_output_device()
-            .ok_or(RuntimeError::InvalidConfig(
-                "No output device available".into(),
-            ))?;
+            println!("Available output devices:");
+            for device in host.output_devices().unwrap() {
+                println!(
+                    "  {}",
+                    device.name().unwrap_or_else(|_| "(unknown)".to_string())
+                );
+            }
+
+            host.output_devices()
+                .unwrap()
+                .find(|d| d.name().unwrap().contains("Jack"))
+                .or_else(|| host.default_output_device())
+                .ok_or(RuntimeError::InvalidConfig(
+                    "No output device available".into(),
+                ))?
+            // host.default_output_device()
+            //     .ok_or(RuntimeError::InvalidConfig(
+            //         "No output device available".into(),
+            //     ))?
+        };
+
         Ok(AudioContext {
             out_device,
             stream: None,
         })
-        // self.audio_cx = Some(inner);
-        // }
     }
 
     pub fn init(&mut self) {
         self.status_text = "Initialization successful.".into();
+        log::info!("Initialization successful.");
     }
 
-    pub fn spawn(
-        &mut self,
-        script_path: &Path,
-        mut audio_cx: Option<AudioContext>,
-    ) -> Result<Option<AudioContext>> {
+    pub fn spawn(&mut self, script_path: &Path) -> Result<()> {
         self.create_graphs(script_path)?;
 
         let mut audio_graph = self
@@ -244,8 +276,10 @@ impl PaprRuntime {
 
         let t_idx = control_graph.node_id_by_name("t")?;
         let control_rate = self.control_rate;
-        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        let (tx, mut crx) = tokio::sync::oneshot::channel();
         self.control_thread_shutdown = Some(tx);
+        let (tx, mut arx) = tokio::sync::oneshot::channel();
+        self.audio_thread_shutdown = Some(tx);
 
         if let Some(out_file_name) = self.out_file_name.as_ref() {
             let run_for = self
@@ -300,6 +334,7 @@ impl PaprRuntime {
             let out = &out_buf[..run_for_samples];
             let mut out_file = File::create(out_file_name).map_err(|e| {
                 self.status_text = format!("Failed to create output file: {}", e);
+                log::error!("Failed to create output file: {}", e);
                 RuntimeError::Io(e)
             })?;
             wav::write(
@@ -309,34 +344,58 @@ impl PaprRuntime {
             )
             .map_err(|e| {
                 self.status_text = format!("Failed to write output file: {}", e);
+                log::error!("Failed to write output file: {}", e);
                 RuntimeError::Io(e)
             })?;
         } else {
-            let mut audio_cx = if let Some(audio_cx) = audio_cx.take() {
-                audio_cx
-            } else {
-                Self::create_audio_context(
-                    #[cfg(target_os = "linux")]
-                    false,
-                )?
-            };
+            let sample_rate = self.sample_rate;
+            std::thread::Builder::new()
+                .name("PAPR Audio".into())
+                .spawn(move || {
+                    let mut audio_cx = Self::create_audio_context(
+                        #[cfg(target_os = "linux")]
+                        false,
+                    )
+                    .unwrap();
 
-            let config = cpal::StreamConfig {
-                channels: cpal::ChannelCount::from(1u16),
-                sample_rate: cpal::SampleRate(self.sample_rate as u32),
-                buffer_size: cpal::BufferSize::Default,
-            };
-            println!(
-                "Output device: {}",
-                audio_cx
-                    .out_device
-                    .name()
-                    .unwrap_or_else(|_| "(unknown)".to_string())
-            );
-            println!("Output config: {:?}", config);
-            println!("Control rate: {} Hz", self.control_rate);
+                    let config = cpal::StreamConfig {
+                        channels: cpal::ChannelCount::from(1u16),
+                        sample_rate: cpal::SampleRate(sample_rate as u32),
+                        buffer_size: cpal::BufferSize::Default,
+                    };
+                    // let config = audio_cx
+                    //     .out_device
+                    //     .default_output_config()
+                    //     .map_err(|e| {
+                    //         log::error!("Failed to get default output config: {}", e);
+                    //         RuntimeError::CpalConfig(e)
+                    //     })
+                    //     .unwrap()
+                    //     .config();
+                    log::info!(
+                        "Output device: {}",
+                        audio_cx
+                            .out_device
+                            .name()
+                            .unwrap_or_else(|_| "(unknown)".to_string())
+                    );
+                    log::info!("Output config: {:?}", config);
+                    audio_cx.run::<f32>(audio_graph, config).unwrap();
+                    loop {
+                        if arx.try_recv().is_ok() {
+                            log::info!("Shutting down audio thread.");
+                            if let Some(stream) = audio_cx.stream.take() {
+                                // stream.pause().unwrap();
+                                drop(stream);
+                            }
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                })
+                .unwrap();
 
-            audio_cx.run::<f32>(audio_graph, config)?;
+            log::info!("Control rate: {} Hz", self.control_rate);
 
             // the control rate thread is allowed to panic
             #[allow(clippy::unwrap_used)]
@@ -347,8 +406,8 @@ impl PaprRuntime {
                     let clk = std::time::Duration::from_secs_f64((control_rate as f64).recip());
                     let mut t = 0 as Scalar;
                     loop {
-                        if rx.try_recv().is_ok() {
-                            println!("Shutting down control rate thread.");
+                        if crx.try_recv().is_ok() {
+                            log::info!("Shutting down control rate thread.");
                             break;
                         }
                         let tik = Instant::now();
@@ -363,6 +422,7 @@ impl PaprRuntime {
                             )
                             .map_err(|e| {
                                 eprintln!("Error while processing control graph: {}", e);
+                                log::error!("Error while processing control graph: {}", e);
                                 e
                             })
                             .unwrap();
@@ -376,46 +436,43 @@ impl PaprRuntime {
                 })
                 .map_err(|e| {
                     self.status_text = format!("Failed to spawn control thread: {}", e);
+                    log::error!("Failed to spawn control thread: {}", e);
                     RuntimeError::Io(e)
                 })?;
         }
 
-        self.status_text = "Runtime is running.".into();
-        Ok(audio_cx)
+        // self.status_text = "Runtime is running.".into();
+        // log::info!("Runtime is running.");
+        Ok(())
     }
 
-    pub fn reload(
-        &mut self,
-        script_path: &Path,
-        audio_cx: Option<AudioContext>,
-    ) -> Result<Option<AudioContext>> {
+    pub fn reload(&mut self, script_path: &Path) -> Result<()> {
         if let Some(tx) = self.control_thread_shutdown.take() {
             tx.send(())
                 .map_err(|_| RuntimeError::CannotShutdownControlThread)?;
-            std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
         }
+        if let Some(rx) = self.audio_thread_shutdown.take() {
+            rx.send(()).unwrap();
+        }
+        std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
         self.control_node_refs.clear();
         self.init();
         // self.script_path = None;
-        self.spawn(script_path, audio_cx)
+        self.spawn(script_path)
     }
 
-    pub fn panic(
-        &mut self,
-        mut audio_cx: Option<AudioContext>,
-    ) -> Result<Option<AudioContext>, String> {
-        if let Some(mut cx) = audio_cx.take() {
-            if let Some(stream) = cx.stream.take() {
-                drop(stream); // immediately stop playback
-                audio_cx = Some(cx);
-            }
+    pub fn panic(&mut self) -> Result<(), String> {
+        if let Some(tx) = self.audio_thread_shutdown.take() {
+            tx.send(())
+                .map_err(|_| "Error shutting down audio rate thread".to_owned())?;
         }
         if let Some(tx) = self.control_thread_shutdown.take() {
             tx.send(())
                 .map_err(|_| "Error shutting down control rate thread".to_owned())?;
         }
         self.status_text = "Runtime stopped.".into();
-        Ok(audio_cx)
+        log::info!("Runtime stopped.");
+        Ok(())
     }
 }
 
@@ -423,7 +480,6 @@ pub struct PaprApp {
     pub rt: PaprRuntime,
     allowed_to_close: bool,
     show_close_confirmation: bool,
-    pub audio_cx: Option<AudioContext>,
     pub script_path: Option<PathBuf>,
     pub script_text: String,
     pub midi_cx: Option<MidiContext>,
@@ -435,19 +491,10 @@ impl PaprApp {
             rt,
             allowed_to_close: false,
             show_close_confirmation: false,
-            audio_cx: None,
             script_path: None,
             script_text: String::new(),
             midi_cx: None,
         }
-    }
-
-    pub fn init_audio(&mut self, #[cfg(target_os = "linux")] force_alsa: bool) -> Result<()> {
-        self.audio_cx = Some(PaprRuntime::create_audio_context(
-            #[cfg(target_os = "linux")]
-            force_alsa,
-        )?);
-        Ok(())
     }
 
     pub fn init_midi(&mut self) -> Result<()> {
@@ -458,7 +505,6 @@ impl PaprApp {
     }
 
     pub fn load_script_file(&mut self, script_path: &PathBuf) -> Result<()> {
-        // let path = self.script_path.as_ref()?;
         let mut file = File::open(script_path).map_err(RuntimeError::Io)?;
         self.script_text = String::new();
         file.read_to_string(&mut self.script_text)
@@ -568,10 +614,7 @@ impl eframe::App for PaprApp {
                     )
                     .clicked()
                 {
-                    self.audio_cx = self
-                        .rt
-                        .panic(self.audio_cx.take())
-                        .expect("Error while panicking");
+                    self.rt.panic().expect("Error while panicking");
                 }
                 ui.label(&self.rt.status_text);
             });
@@ -606,40 +649,35 @@ impl eframe::App for PaprApp {
                         self.script_path = Some(path.clone());
                         if let Some(tx) = self.rt.control_thread_shutdown.take() {
                             tx.send(()).unwrap();
-                            std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
                         }
+                        if let Some(rx) = self.rt.audio_thread_shutdown.take() {
+                            rx.send(()).unwrap();
+                        }
+                        std::thread::sleep(Duration::from_millis(10)); // paranoid sleep in between graph switches
                         self.rt.control_node_refs.clear();
-                        self.init_audio(
-                            #[cfg(target_os = "linux")]
-                            false, // todo
-                        )
-                        .unwrap_or_else(|e| {
-                            self.rt.status_text = format!("Failed to init audio: {}", e);
-                        });
                         self.init_midi().unwrap();
                         self.rt.init();
                         self.load_script_file(&path).unwrap_or_else(|e| {
                             self.rt.status_text = format!("Failed to load script: {e}");
+                            log::error!("Failed to load script: {}", e);
                         });
 
-                        // self.audio_cx = Some(PaprRuntime::create_audio_context(false));
-
-                        self.audio_cx =
-                            self.rt
-                                .spawn(&path, self.audio_cx.take())
-                                .unwrap_or_else(|e| {
-                                    self.rt.status_text = format!("Failed to spawn: {e}");
-                                    None
-                                });
+                        self.rt
+                            .spawn(&path)
+                            .map_err(|e| {
+                                self.rt.status_text = format!("Failed to spawn: {e}");
+                                log::error!("Failed to spawn: {}", e);
+                                e
+                            })
+                            .unwrap();
                     }
                 }
                 if ui.button("Reload").clicked() {
-                    self.audio_cx = self
-                        .rt
-                        .reload(self.script_path.as_ref().unwrap(), self.audio_cx.take())
+                    self.rt
+                        .reload(self.script_path.as_ref().unwrap())
                         .unwrap_or_else(|e| {
                             self.rt.status_text = format!("Failed to reload: {e}");
-                            None
+                            log::error!("Failed to reload: {}", e);
                         });
                 }
             });
@@ -654,7 +692,7 @@ impl eframe::App for PaprApp {
         CentralPanel::default().show(ctx, |ui| {
             let mut layouter = |ui: &eframe::egui::Ui, string: &str, _| {
                 let layout_job = highlight(ui.ctx(), string);
-                ui.fonts().layout_job(layout_job)
+                ui.fonts(|reader| reader.layout_job(layout_job))
             };
             ui.add_sized(
                 ui.available_size(),
@@ -681,7 +719,7 @@ pub fn highlight(ctx: &Context, code: &str) -> LayoutJob {
 
     type HighlightCache = eframe::egui::util::cache::FrameCache<LayoutJob, Highlighter>;
 
-    ctx.memory().caches.cache::<HighlightCache>().get(code)
+    ctx.memory_mut(|writer| writer.caches.cache::<HighlightCache>().get(code))
 }
 
 struct Highlighter {
@@ -737,7 +775,7 @@ impl Highlighter {
                 let underline = if underline {
                     eframe::egui::Stroke::new(1.0, text_color)
                 } else {
-                    eframe::egui::Stroke::none()
+                    eframe::egui::Stroke::NONE
                 };
                 job.sections.push(LayoutSection {
                     leading_space: 0.0,

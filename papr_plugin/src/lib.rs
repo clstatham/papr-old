@@ -1,5 +1,9 @@
 use nih_plug::prelude::*;
-use nih_plug_egui::{create_egui_editor, egui, EguiState};
+use nih_plug_egui::{
+    create_egui_editor,
+    egui::{self, DroppedFile, TextEdit},
+    EguiState,
+};
 use papr::{
     app::PaprRuntime,
     dsp::{Signal, SignalRate},
@@ -9,7 +13,6 @@ use papr::{
 use papr_lib as papr;
 use std::{
     collections::BTreeMap,
-    env::current_dir,
     fs::File,
     io::Read,
     path::PathBuf,
@@ -21,12 +24,6 @@ use std::{
 struct PaprParams {
     #[persist = "editor-state"]
     editor_state: Arc<EguiState>,
-    // #[id = "gain"]
-    // pub gain: FloatParam,
-    // #[id = "freq"]
-    // pub frequency: FloatParam,
-    // #[id = "usemidi"]
-    // pub use_midi: BoolParam,
 }
 
 impl Default for PaprParams {
@@ -43,6 +40,7 @@ pub struct Papr {
     control_node_refs: Vec<Arc<Node>>,
     script_path: Arc<RwLock<Option<PathBuf>>>,
     script_text: Arc<RwLock<String>>,
+
     status_text: Arc<RwLock<String>>,
     reset_switch: Option<crossbeam_channel::Receiver<()>>,
     save_file_rx: Option<crossbeam_channel::Receiver<PathBuf>>,
@@ -58,8 +56,8 @@ impl Default for Papr {
             rt: None,
             control_node_refs: Vec::new(),
             script_path: Arc::new(RwLock::new(None)),
-            script_text: Arc::new(RwLock::new(String::new())),
             status_text: Arc::new(RwLock::new(String::new())),
+            script_text: Arc::new(RwLock::new(String::new())),
             reset_switch: None,
             save_file_rx: None,
             load_file_rx: None,
@@ -153,7 +151,7 @@ impl Plugin for Papr {
 
     type SysExMessage = ();
 
-    type BackgroundTask = PaprBackgroundTask;
+    type BackgroundTask = ();
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -161,9 +159,9 @@ impl Plugin for Papr {
 
     fn initialize(
         &mut self,
-        audio_io_layout: &AudioIOLayout,
+        _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
-        context: &mut impl InitContext<Self>,
+        _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate as Scalar;
         let mut rt = PaprRuntime::new(buffer_config.sample_rate as Scalar, 1000.0, None, None);
@@ -178,7 +176,7 @@ impl Plugin for Papr {
 
     fn deactivate(&mut self) {
         if let Some(rt) = self.rt.as_mut() {
-            if let Err(e) = rt.panic(None) {
+            if let Err(e) = rt.panic() {
                 *self.status_text.write().unwrap() = e;
             }
         }
@@ -246,14 +244,16 @@ impl Plugin for Papr {
                     })
                     .collect::<Vec<_>>();
                 let ins = BTreeMap::from_iter([(graph.node_id_by_name("t").unwrap(), &ts)]);
-                graph.process_graph(
-                    SignalRate::Audio {
-                        sample_rate: self.sample_rate,
-                        buffer_len,
-                    },
-                    &ins,
-                    &mut out,
-                );
+                graph
+                    .process_graph(
+                        SignalRate::Audio {
+                            sample_rate: self.sample_rate,
+                            buffer_len,
+                        },
+                        &ins,
+                        &mut out,
+                    )
+                    .unwrap();
 
                 for (frame_idx, mut frame) in buffer.iter_samples().enumerate() {
                     *frame.get_mut(0).unwrap() = out[&dac0][frame_idx].scalar_value() as f32;
@@ -280,45 +280,34 @@ impl Plugin for Papr {
                 self.status_text.clone(),
                 self.control_node_refs.clone(),
             ),
-            |_, _| {},
+            |_ctx, _| {},
             move |ctx, _setter, state| {
                 let (script_path, script_text, status_text, control_node_refs) = state;
                 // ctx.request_repaint();
 
                 egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
                     ui.with_layout(egui::Layout::left_to_right(egui::emath::Align::Min), |ui| {
-                        if ui.button("Save").clicked() {
-                            if let Some(script_path) = script_path.read().unwrap().clone() {
-                                save_tx.send(script_path).unwrap();
-                            } else if let Some(path) = rfd::FileDialog::new().save_file() {
-                                // self.script_path = Some(path.clone());
-                                save_tx.send(path.clone()).unwrap();
-                            }
+                        let file = DroppedFile::default();
+                        if let Some(path) = file.path.as_ref() {
+                            script_path.write().unwrap().replace(path.clone());
                         }
-                        if ui.button("Save As...").clicked() {
-                            if let Some(path) = rfd::FileDialog::new().save_file() {
-                                save_tx.send(path).unwrap();
-                            }
-                        }
-                        if ui.button("Open...").clicked() {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("PAPR Scripts", &["papr"])
-                                .set_directory(
-                                    script_path
-                                        .read()
-                                        .unwrap()
-                                        .as_ref()
-                                        .and_then(|p| p.parent())
-                                        .unwrap_or(current_dir().unwrap().as_path()),
-                                )
-                                .pick_file()
-                            {
-                                // self.script_path = Some(path.clone());
-                                load_tx.send(path).unwrap();
-                            }
+                        let path = script_path
+                            .write()
+                            .unwrap()
+                            .clone()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        ui.add(TextEdit::singleline(&mut path.as_str()).hint_text("Script Path"));
+
+                        if ui.button("Load").clicked() {
+                            load_tx.send(PathBuf::from(&path)).unwrap();
                         }
                         if ui.button("Reload").clicked() {
                             reset_tx.try_send(()).unwrap();
+                        }
+                        if ui.button("Save").clicked() {
+                            save_tx.send(PathBuf::from(&path)).unwrap();
                         }
                     });
                 });
@@ -338,10 +327,6 @@ impl Plugin for Papr {
                 });
             },
         )
-    }
-
-    fn task_executor(&mut self) -> TaskExecutor<Self> {
-        Box::new(|task| match task {})
     }
 }
 

@@ -138,8 +138,8 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
 
         #[allow(unused_variables)]
         impl #struc_name {
-            pub const INPUTS: &[&'static str] = &[#input_names_list];
-            pub const OUTPUTS: &[&'static str] = &[#output_names_list];
+            pub const INPUTS: &'static [&'static str] = &[#input_names_list];
+            pub const OUTPUTS: &'static [&'static str] = &[#output_names_list];
 
             pub fn input_idx(name: &str) -> Option<usize> {
                 match name {
