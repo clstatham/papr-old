@@ -19,18 +19,21 @@ impl Processor for FmSineOsc {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        let amp = inputs[0];
-        let freq = inputs[1];
-        let fm_amt = inputs[2];
-        let t = inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].value();
-        let fm = inputs[3];
+        let amp = &inputs[0];
+        let freq = &inputs[1];
+        let fm_amt = &inputs[2];
+        let t =
+            inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].scalar_value();
+        let fm = &inputs[3];
 
-        if freq.value() <= 0.0 {
+        if freq.scalar_value() <= 0.0 {
             return Ok(());
         }
 
-        outputs[0] = Signal::new(
-            Scalar::sin(t * TAU * freq.value() + fm.value() * TAU * fm_amt.value()) * amp.value(),
+        outputs[0] = Signal::new_scalar(
+            Scalar::sin(
+                t * TAU * freq.scalar_value() + fm.scalar_value() * TAU * fm_amt.scalar_value(),
+            ) * amp.scalar_value(),
         );
         Ok(())
     }
@@ -50,15 +53,17 @@ impl Processor for SineOsc {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        let amp = inputs[0];
-        let freq = inputs[1];
+        let amp = &inputs[0];
+        let freq = &inputs[1];
 
-        if freq.value() <= 0.0 {
+        if freq.scalar_value() <= 0.0 {
             return Ok(());
         }
 
-        let t = inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].value();
-        outputs[0] = Signal::new(Scalar::sin(t * TAU * freq.value()) * amp.value());
+        let t =
+            inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].scalar_value();
+        outputs[0] =
+            Signal::new_scalar(Scalar::sin(t * TAU * freq.scalar_value()) * amp.scalar_value());
         Ok(())
     }
 }
@@ -82,16 +87,16 @@ impl Processor for BlSawOsc {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        let amp = inputs[0];
-        let freq = inputs[1];
+        let amp = &inputs[0];
+        let freq = &inputs[1];
 
-        if freq.value() <= 0.0 {
+        if freq.scalar_value() <= 0.0 {
             return Ok(());
         }
 
         // algorithm courtesy of https://www.musicdsp.org/en/latest/Synthesis/12-bandlimited-waveforms.html
 
-        let pmax = 0.5 * signal_rate.rate() / freq.value();
+        let pmax = 0.5 * signal_rate.rate() / freq.scalar_value();
         let dc = -0.498 / pmax;
 
         self.p += self.dp;
@@ -108,7 +113,7 @@ impl Processor for BlSawOsc {
         }
         self.saw = 0.995 * self.saw + dc + x.sin() / x;
 
-        outputs[0] = Signal::new(self.saw * amp.value());
+        outputs[0] = Signal::new_scalar(self.saw * amp.scalar_value());
         Ok(())
     }
 }
@@ -131,10 +136,11 @@ impl Processor for BlSquareOsc {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        let t = inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].value();
-        let amp = inputs[0].value();
-        let freq = inputs[1].value();
-        let d = inputs[2].value();
+        let t =
+            inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].scalar_value();
+        let amp = inputs[0].scalar_value();
+        let freq = inputs[1].scalar_value();
+        let d = inputs[2].scalar_value();
         let sr = signal_rate.rate();
 
         if freq <= 0.0 {
@@ -147,7 +153,7 @@ impl Processor for BlSquareOsc {
             self.coeff[i] = Scalar::sin(i as Scalar * d * PI) * 2.0 / (i as Scalar * PI);
         }
         let theta = t * TAU * freq;
-        outputs[0] = Signal::new(
+        outputs[0] = Signal::new_scalar(
             amp * (self
                 .coeff
                 .iter()

@@ -116,8 +116,8 @@ impl Processor for NoteIn {
         }
         for i in 0..POLYPHONY {
             let (key, vel) = self.notes[i].unwrap_or((0, 0));
-            outputs[i] = Signal::new(key as Scalar);
-            outputs[i + POLYPHONY] = Signal::new(vel as Scalar / 127.0);
+            outputs[i] = Signal::new_scalar(key as Scalar);
+            outputs[i + POLYPHONY] = Signal::new_scalar(vel as Scalar / 127.0);
         }
         Ok(())
     }

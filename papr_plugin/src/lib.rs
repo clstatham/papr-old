@@ -74,7 +74,7 @@ impl Papr {
         macro_rules! status_error {
             ($e:expr) => {
                 if let Err(err) = $e {
-                    *self.status_text.write().unwrap() = err;
+                    *self.status_text.write().unwrap() = err.to_string();
                     return;
                 }
             };
@@ -103,14 +103,16 @@ impl Papr {
                             break;
                         }
                         let tik = Instant::now();
-                        control_graph.process_graph(
-                            SignalRate::Control {
-                                sample_rate: control_rate,
-                                buffer_len: 1,
-                            },
-                            &BTreeMap::from_iter([(t_idx, &vec![Signal::new(t); 1])]),
-                            &mut BTreeMap::default(),
-                        );
+                        control_graph
+                            .process_graph(
+                                SignalRate::Control {
+                                    sample_rate: control_rate,
+                                    buffer_len: 1,
+                                },
+                                &BTreeMap::from_iter([(t_idx, &vec![Signal::new_scalar(t); 1])]),
+                                &mut BTreeMap::default(),
+                            )
+                            .unwrap();
                         let time = Instant::now() - tik;
 
                         if clk.as_secs_f64() > time.as_secs_f64() {
@@ -228,7 +230,7 @@ impl Plugin for Papr {
                 let mut output = buffer
                     .iter_samples()
                     .flatten()
-                    .map(|s| Signal::new(*s as Scalar))
+                    .map(|s| Signal::new_scalar(*s as Scalar))
                     .collect::<Vec<_>>();
                 let mut out = BTreeMap::new();
                 let dac0 = graph
@@ -238,7 +240,9 @@ impl Plugin for Papr {
 
                 let ts = (0usize..buffer_len)
                     .map(|frame_idx| {
-                        Signal::new(self.audio_t as Scalar + frame_idx as Scalar / self.sample_rate)
+                        Signal::new_scalar(
+                            self.audio_t as Scalar + frame_idx as Scalar / self.sample_rate,
+                        )
                     })
                     .collect::<Vec<_>>();
                 let ins = BTreeMap::from_iter([(graph.node_id_by_name("t").unwrap(), &ts)]);
@@ -252,7 +256,7 @@ impl Plugin for Papr {
                 );
 
                 for (frame_idx, mut frame) in buffer.iter_samples().enumerate() {
-                    *frame.get_mut(0).unwrap() = out[&dac0][frame_idx].value() as f32;
+                    *frame.get_mut(0).unwrap() = out[&dac0][frame_idx].scalar_value() as f32;
                 }
                 self.audio_t += buffer_len as Scalar / self.sample_rate;
             }

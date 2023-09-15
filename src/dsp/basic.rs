@@ -33,7 +33,7 @@ impl DebugNode {
             NodeName::new(name),
             vec![Input::new(
                 "input".to_owned().as_ref(),
-                Some(Signal::new(0.0)),
+                Some(Signal::new_scalar(0.0)),
             )],
             vec![Output {
                 name: "out".to_owned(),
@@ -51,9 +51,9 @@ impl Processor for DebugNode {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        let t = inputs[1].value();
-        println!("{} = {} (t={t})", self.name, inputs[0].value());
-        outputs[0] = inputs[0];
+        let t = inputs[1].scalar_value();
+        println!("{} = {} (t={t})", self.name, inputs[0].scalar_value());
+        outputs[0] = inputs[0].clone();
         Ok(())
     }
 }
@@ -79,7 +79,7 @@ impl Processor for UiInput {
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(self.value);
+        outputs[0] = Signal::new_scalar(self.value);
         Ok(())
     }
 
@@ -154,8 +154,8 @@ impl Processor for UiOutput {
     ) -> Result<()> {
         match &mut self.widget {
             UiOutputWidget::Led { value } => {
-                *value = inputs[0].value();
-                outputs[0] = Signal::new(*value);
+                *value = inputs[0].scalar_value();
+                outputs[0] = Signal::new_scalar(*value);
             }
         }
         Ok(())
@@ -179,7 +179,7 @@ impl UiOutput {
 
         let (inputs, outputs) = match widget {
             UiOutputWidget::Led { value } => (
-                vec![Input::new("input", Some(Signal::new(value)))],
+                vec![Input::new("input", Some(Signal::new_scalar(value)))],
                 vec![Output {
                     name: "out".to_owned(),
                 }],
@@ -222,7 +222,7 @@ impl Processor for Constant {
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(self.value);
+        outputs[0] = Signal::new_scalar(self.value);
         Ok(())
     }
 }
@@ -244,7 +244,8 @@ macro_rules! impl_arith {
                 outputs: &mut [Signal],
             ) -> Result<()> {
                 use std::ops::$use;
-                outputs[0] = Signal::new(inputs[0].value().$op(inputs[1].value()));
+                outputs[0] =
+                    Signal::new_scalar(inputs[0].scalar_value().$op(inputs[1].scalar_value()));
                 Ok(())
             }
         }
@@ -272,7 +273,7 @@ impl Processor for Max {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(inputs[0].value().max(inputs[1].value()));
+        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().max(inputs[1].scalar_value()));
         Ok(())
     }
 }
@@ -292,7 +293,7 @@ impl Processor for Min {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(inputs[0].value().min(inputs[1].value()));
+        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().min(inputs[1].scalar_value()));
         Ok(())
     }
 }
@@ -311,7 +312,7 @@ impl Processor for Abs {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(inputs[0].value().abs());
+        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().abs());
         Ok(())
     }
 }
@@ -330,7 +331,7 @@ impl Processor for Exp {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(inputs[0].value().exp());
+        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().exp());
         Ok(())
     }
 }
@@ -349,7 +350,7 @@ impl Processor for Cosine {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(inputs[0].value().cos());
+        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().cos());
         Ok(())
     }
 }
@@ -368,7 +369,7 @@ impl Processor for Tanh {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(inputs[0].value().tanh());
+        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().tanh());
         Ok(())
     }
 }
@@ -388,7 +389,7 @@ impl Processor for Sine {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(Scalar::sin(inputs[0].value()));
+        outputs[0] = Signal::new_scalar(Scalar::sin(inputs[0].scalar_value()));
         Ok(())
     }
 }
@@ -408,7 +409,7 @@ impl ControlToAudio {
         let (tx, rx) = tokio::sync::watch::channel(0.0);
         let cn = Arc::new(Node::new(
             name.into(),
-            vec![Input::new("c", Some(Signal::new(0.0)))],
+            vec![Input::new("c", Some(Signal::new_scalar(0.0)))],
             vec![],
             ProcessorType::Builtin(Box::new(RwLock::new(ControlToAudioTx { tx: Some(tx) }))),
         ));
@@ -438,7 +439,7 @@ impl Processor for ControlToAudioTx {
         self.tx
             .as_ref()
             .ok_or(DspError::ChannelDisconnected)?
-            .send_replace(inputs[0].value());
+            .send_replace(inputs[0].scalar_value());
         Ok(())
     }
 }
@@ -455,7 +456,7 @@ impl Processor for ControlToAudioRx {
             .as_ref()
             .ok_or(DspError::ChannelDisconnected)?
             .borrow();
-        outputs[0] = Signal::new(self.value);
+        outputs[0] = Signal::new_scalar(self.value);
         Ok(())
     }
 }
@@ -486,7 +487,7 @@ impl AudioToControl {
         ));
         let an = Arc::new(Node::new(
             name.into(),
-            vec![Input::new("a", Some(Signal::new(0.0)))],
+            vec![Input::new("a", Some(Signal::new_scalar(0.0)))],
             vec![],
             ProcessorType::Builtin(Box::new(RwLock::new(AudioToControlTx { tx: Some(tx) }))),
         ));
@@ -505,7 +506,7 @@ impl Processor for AudioToControlTx {
         self.tx
             .as_ref()
             .ok_or(DspError::ChannelDisconnected)?
-            .send_replace(inputs[0].value());
+            .send_replace(inputs[0].scalar_value());
         Ok(())
     }
 }
@@ -522,7 +523,7 @@ impl Processor for AudioToControlRx {
             .as_ref()
             .ok_or(DspError::ChannelDisconnected)?
             .borrow();
-        outputs[0] = Signal::new(self.value);
+        outputs[0] = Signal::new_scalar(self.value);
         Ok(())
     }
 }
@@ -544,12 +545,12 @@ impl Processor for RisingEdge {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        if inputs[0].value() > self.c_last {
-            outputs[0] = Signal::new(1.0);
+        if inputs[0].scalar_value() > self.c_last {
+            outputs[0] = Signal::new_scalar(1.0);
         } else {
-            outputs[0] = Signal::new(0.0);
+            outputs[0] = Signal::new_scalar(0.0);
         }
-        self.c_last = inputs[0].value();
+        self.c_last = inputs[0].scalar_value();
         Ok(())
     }
 }
@@ -571,12 +572,12 @@ impl Processor for FallingEdge {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        if inputs[0].value() < self.c_last {
-            outputs[0] = Signal::new(1.0);
+        if inputs[0].scalar_value() < self.c_last {
+            outputs[0] = Signal::new_scalar(1.0);
         } else {
-            outputs[0] = Signal::new(0.0);
+            outputs[0] = Signal::new_scalar(0.0);
         }
-        self.c_last = inputs[0].value();
+        self.c_last = inputs[0].scalar_value();
         Ok(())
     }
 }
@@ -596,11 +597,11 @@ impl Processor for Clip {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new(
+        outputs[0] = Signal::new_scalar(
             inputs[0]
-                .value()
-                .max(inputs[1].value())
-                .min(inputs[2].value()),
+                .scalar_value()
+                .max(inputs[1].scalar_value())
+                .min(inputs[2].scalar_value()),
         );
         Ok(())
     }
@@ -620,10 +621,10 @@ impl Processor for If {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        if inputs[0].value() > 0.0 {
-            outputs[0] = inputs[1];
+        if inputs[0].scalar_value() > 0.0 {
+            outputs[0] = inputs[1].clone();
         } else {
-            outputs[0] = inputs[2];
+            outputs[0] = inputs[2].clone();
         }
         Ok(())
     }
@@ -646,9 +647,9 @@ macro_rules! impl_cmp {
                 outputs: &mut [Signal],
             ) -> Result<()> {
                 if inputs[0].$op(&inputs[1]) {
-                    outputs[0] = Signal::new(1.0);
+                    outputs[0] = Signal::new_scalar(1.0);
                 } else {
-                    outputs[0] = Signal::new(0.0);
+                    outputs[0] = Signal::new_scalar(0.0);
                 }
                 Ok(())
             }
@@ -677,10 +678,10 @@ macro_rules! impl_boolean {
                 inputs: &[Signal],
                 outputs: &mut [Signal],
             ) -> Result<()> {
-                if (inputs[0].value() > 0.0).$op(inputs[1].value() > 0.0) {
-                    outputs[0] = Signal::new(1.0);
+                if (inputs[0].scalar_value() > 0.0).$op(inputs[1].scalar_value() > 0.0) {
+                    outputs[0] = Signal::new_scalar(1.0);
                 } else {
-                    outputs[0] = Signal::new(0.0);
+                    outputs[0] = Signal::new_scalar(0.0);
                 }
                 Ok(())
             }
@@ -706,10 +707,10 @@ impl Processor for Not {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        if inputs[0].value() > 0.0 {
-            outputs[0] = Signal::new(0.0);
+        if inputs[0].scalar_value() > 0.0 {
+            outputs[0] = Signal::new_scalar(0.0);
         } else {
-            outputs[0] = Signal::new(1.0);
+            outputs[0] = Signal::new_scalar(1.0);
         }
         Ok(())
     }

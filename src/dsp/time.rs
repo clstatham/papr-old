@@ -19,15 +19,17 @@ impl Processor for Clock {
         inputs: &[super::Signal],
         outputs: &mut [super::Signal],
     ) -> Result<()> {
-        let t = inputs[Self::input_idx("t").ok_or(super::DspError::NoInputNamed("t".into()))?];
-        let period = inputs[0];
-        let width = inputs[1];
-        if period.value() == 0.0 {
-            outputs[0] = Signal::new(0.0);
-        } else if t.value() % period.value() < period.value() * width.value() {
-            outputs[0] = Signal::new(1.0);
+        let t = &inputs[Self::input_idx("t").ok_or(super::DspError::NoInputNamed("t".into()))?];
+        let period = &inputs[0];
+        let width = &inputs[1];
+        if period.scalar_value() == 0.0 {
+            outputs[0] = Signal::new_scalar(0.0);
+        } else if t.scalar_value() % period.scalar_value()
+            < period.scalar_value() * width.scalar_value()
+        {
+            outputs[0] = Signal::new_scalar(1.0);
         } else {
-            outputs[0] = Signal::new(0.0);
+            outputs[0] = Signal::new_scalar(0.0);
         }
         Ok(())
     }
@@ -55,7 +57,7 @@ impl Processor for Delay {
         // kinda a port of:
         // https://github.com/qbroquetas/IV-XDelay/blob/master/IvxDelay/Source/DelayProcessor.cpp
 
-        let delay_desired_secs = inputs[1].value();
+        let delay_desired_secs = inputs[1].scalar_value();
 
         self.delay_current =
             self.delay_current + 0.00005 * (delay_desired_secs - self.delay_current);
@@ -63,10 +65,10 @@ impl Processor for Delay {
 
         let sample_offset = self.delay_current * signal_rate.rate();
 
-        self.buf[self.write_head as usize] = inputs[0].value();
+        self.buf[self.write_head as usize] = inputs[0].scalar_value();
 
         // interpolate
-        outputs[0] = Signal::new({
+        outputs[0] = Signal::new_scalar({
             let mut trunc_read = (self.read_head as usize).min(self.buf.len() - 1);
             let sample0 = self.buf[trunc_read];
             let weight_sample1 = self.read_head - (trunc_read as Scalar);

@@ -33,7 +33,7 @@ impl Processor for GraphInput {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = inputs[0];
+        outputs[0] = inputs[0].clone();
         Ok(())
     }
 }
@@ -52,7 +52,7 @@ impl Processor for GraphOutput {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = inputs[0];
+        outputs[0] = inputs[0].clone();
         Ok(())
     }
 }
@@ -71,7 +71,7 @@ impl Processor for LetBinding {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = inputs[0];
+        outputs[0] = inputs[0].clone();
         Ok(())
     }
 }
@@ -92,10 +92,10 @@ impl Processor for Var {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        if inputs[1].value() > 0.0 {
-            self.value = inputs[0].value();
+        if inputs[1].scalar_value() > 0.0 {
+            self.value = inputs[0].scalar_value();
         }
-        outputs[0] = Signal::new(self.value);
+        outputs[0] = Signal::new_scalar(self.value);
         Ok(())
     }
 }

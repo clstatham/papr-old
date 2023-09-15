@@ -56,54 +56,74 @@ impl SignalRate {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
-pub struct Signal {
-    val: Scalar,
+#[derive(Clone, PartialEq, PartialOrd)]
+pub enum Signal {
+    Scalar(Scalar),
+    Symbol(String),
 }
 
 impl std::fmt::Debug for Signal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.val)
+        match self {
+            Signal::Scalar(val) => write!(f, "{:?}", val),
+            Signal::Symbol(val) => write!(f, "{:?}", val),
+        }
     }
 }
 
 impl Signal {
     #[inline(always)]
-    pub const fn new(val: Scalar) -> Self {
-        Self { val }
+    pub const fn new_scalar(val: Scalar) -> Self {
+        Self::Scalar(val)
     }
 
     #[inline(always)]
-    pub const fn value(&self) -> Scalar {
-        self.val
+    pub const fn scalar_value(&self) -> Scalar {
+        match self {
+            Self::Scalar(val) => *val,
+            Self::Symbol(_) => 0.0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn new_symbol(val: &str) -> Self {
+        Self::Symbol(val.to_string())
+    }
+
+    #[inline(always)]
+    pub fn symbol_value(&self) -> &str {
+        match self {
+            Self::Scalar(_) => "",
+            Self::Symbol(val) => val,
+        }
     }
 }
 
 impl std::ops::Add<Self> for Signal {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
-        Self::new(self.value() + rhs.value())
+        Self::new_scalar(self.scalar_value() + rhs.scalar_value())
     }
 }
 
 impl std::ops::Sub<Self> for Signal {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
-        Self::new(self.value() - rhs.value())
+        Self::new_scalar(self.scalar_value() - rhs.scalar_value())
     }
 }
 
 impl std::ops::Mul<Self> for Signal {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
-        Self::new(self.value() * rhs.value())
+        Self::new_scalar(self.scalar_value() * rhs.scalar_value())
     }
 }
 
 impl std::ops::Div<Self> for Signal {
     type Output = Self;
     fn div(self, rhs: Self) -> Self::Output {
-        Self::new(self.value() / rhs.value())
+        Self::new_scalar(self.scalar_value() / rhs.scalar_value())
     }
 }
 
@@ -147,11 +167,11 @@ pub trait Processor {
             audio_buffer_len = out.len();
             check
         }));
-        let mut inp = vec![Signal::new(0.0); inputs.len()];
-        let mut out = vec![Signal::new(0.0); outputs.len()];
+        let mut inp = vec![Signal::new_scalar(0.0); inputs.len()];
+        let mut out = vec![Signal::new_scalar(0.0); outputs.len()];
         for i in 0..audio_buffer_len {
             for (val, buf) in inp.iter_mut().zip(inputs) {
-                *val = buf[i];
+                *val = buf[i].clone();
             }
 
             self.process_sample(i, signal_rate, &inp, &mut out)?;
@@ -159,7 +179,7 @@ pub trait Processor {
             for (j, out_val) in out.iter().enumerate() {
                 outputs
                     .get_mut(j)
-                    .ok_or(DspError::NoOutputNamed(j.to_string()))?[i] = *out_val;
+                    .ok_or(DspError::NoOutputNamed(j.to_string()))?[i] = out_val.clone();
             }
         }
         Ok(())
@@ -183,8 +203,8 @@ impl SmoothControlSignal {
         let cosf = 2.0 - Scalar::cos(TAU * (2.0 / filter_time_samples as Scalar));
         let cb1 = cosf - Scalar::sqrt(cosf * cosf - 1.0);
         let mut this = Self {
-            current: initial_value.value(),
-            target: initial_value.value(),
+            current: initial_value.scalar_value(),
+            target: initial_value.scalar_value(),
             a0: 1.0 - cb1,
             b1: cb1,
             xv: 0.0,
@@ -194,20 +214,20 @@ impl SmoothControlSignal {
     }
 
     pub fn set_target(&mut self, new_value: Signal) {
-        self.target = new_value.value();
-        self.xv = self.a0 * new_value.value();
+        self.target = new_value.scalar_value();
+        self.xv = self.a0 * new_value.scalar_value();
     }
 
     pub fn next_value(&mut self) -> Signal {
         self.current = self.xv + (self.b1 * self.current);
-        Signal::new(self.current)
+        Signal::new_scalar(self.current)
     }
 
     pub fn current_value(&self) -> Signal {
-        Signal::new(self.current)
+        Signal::new_scalar(self.current)
     }
 
     pub fn target_value(&self) -> Signal {
-        Signal::new(self.target)
+        Signal::new_scalar(self.target)
     }
 }

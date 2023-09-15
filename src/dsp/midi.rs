@@ -19,8 +19,9 @@ impl Processor for MidiToFreq {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        let midi = inputs[0];
-        outputs[0] = Signal::new((2.0 as Scalar).powf((midi.value() - 69.0) / 12.0) * 440.0);
+        let midi = inputs[0].clone();
+        outputs[0] =
+            Signal::new_scalar((2.0 as Scalar).powf((midi.scalar_value() - 69.0) / 12.0) * 440.0);
         Ok(())
     }
 }

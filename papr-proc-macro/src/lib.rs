@@ -91,7 +91,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         .iter()
         .map(|inp| {
             quote! {
-                crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new(0.0)))
+                crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new_scalar(0.0)))
             }
         })
         .collect::<Punctuated<_, Comma>>();

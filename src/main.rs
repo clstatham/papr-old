@@ -1,4 +1,4 @@
-#![warn(clippy::unwrap_used, clippy::expect_used)]
+// #![warn(clippy::unwrap_used, clippy::expect_used)]
 #![allow(clippy::result_large_err)]
 use std::{path::PathBuf, time::Duration};
 

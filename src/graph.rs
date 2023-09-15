@@ -226,7 +226,7 @@ where
                 .iter()
                 .map(|idx| {
                     let node = &graph.digraph[*idx];
-                    Input::new(&node.name.0, node.inputs[0].default)
+                    Input::new(&node.name.0, node.inputs[0].default.clone())
                 })
                 .collect(),
             graph
@@ -401,7 +401,7 @@ where
     ) -> Result<()> {
         macro_rules! assign {
             ($a:expr, $b:expr) => {
-                $a[..$b.len()].copy_from_slice($b)
+                $a[..$b.len()].clone_from_slice($b)
             };
         }
 
@@ -414,7 +414,7 @@ where
         for (id, inp) in inputs {
             let inps = inputs_cache.entry(*id).or_insert(vec![
                 vec![
-                    Signal::new(0.0);
+                    Signal::new_scalar(0.0);
                     signal_rate.buffer_len()
                 ];
                 self.digraph[*id].inputs.len()
@@ -433,7 +433,9 @@ where
                     let out = {
                         outputs_cache.entry(edge.source()).or_insert(vec![
                             vec![
-                                Signal::new(0.0);
+                                Signal::new_scalar(
+                                    0.0
+                                );
                                 signal_rate
                                     .buffer_len()
                             ];
@@ -446,7 +448,7 @@ where
                     assign!(
                         inputs_cache.entry(node_id).or_insert(vec![
                             vec![
-                                Signal::new(0.0);
+                                Signal::new_scalar(0.0);
                                 signal_rate.buffer_len()
                             ];
                             self.digraph[node_id]
@@ -461,7 +463,7 @@ where
                 let inps =
                     inputs_cache.entry(node_id).or_insert(vec![
                         vec![
-                            Signal::new(0.0);
+                            Signal::new_scalar(0.0);
                             signal_rate.buffer_len()
                         ];
                         self.digraph[node_id].inputs.len()
@@ -481,7 +483,7 @@ where
                 let outs =
                     outputs_cache.entry(node_id).or_insert(vec![
                         vec![
-                            Signal::new(0.0);
+                            Signal::new_scalar(0.0);
                             signal_rate.buffer_len()
                         ];
                         self.digraph[node_id].outputs.len()
@@ -496,7 +498,7 @@ where
 
         // copy the cached (and now updated) output values into the mutable passed outputs
         for (out_name, out) in outputs.iter_mut() {
-            out.copy_from_slice(&outputs_cache[out_name][0]);
+            out.clone_from_slice(&outputs_cache[out_name][0]);
         }
         Ok(())
     }

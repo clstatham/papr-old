@@ -1109,9 +1109,9 @@ fn solve_graph(
     for inp in inputs.iter() {
         let input = Input {
             name: inp.id.0.to_owned(),
-            minimum: inp.minimum.map(Signal::new),
-            maximum: inp.maximum.map(Signal::new),
-            default: inp.default.map(Signal::new),
+            minimum: inp.minimum.map(Signal::new_scalar),
+            maximum: inp.maximum.map(Signal::new_scalar),
+            default: inp.default.map(Signal::new_scalar),
             is_ui: graph.id.0 == "Main" && inp.id.1 == Some(ParsedSignalRate::Control), // FIXME: hacky
             implicit: false,
         };
