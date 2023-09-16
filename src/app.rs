@@ -105,7 +105,11 @@ impl AudioContext {
             .unwrap();
         for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
             for (_c, sample) in frame.iter_mut().enumerate() {
-                *sample = T::from_sample(out[&dac0][frame_idx].scalar_value());
+                *sample = T::from_sample(
+                    out[&dac0][frame_idx]
+                        .scalar_value()
+                        .expect("Expected scalar value"),
+                );
             }
         }
     }
@@ -204,7 +208,6 @@ impl PaprRuntime {
     pub fn create_audio_context(
         #[cfg(target_os = "linux")] force_alsa: bool,
     ) -> Result<AudioContext> {
-        // if self.audio_cx.is_none() && self.out_file_name.is_none() {
         #[cfg(target_os = "linux")]
         let out_device = if force_alsa {
             log::info!("Initializing ALSA host.");
@@ -240,7 +243,7 @@ impl PaprRuntime {
 
             host.output_devices()
                 .unwrap()
-                .find(|d| d.name().unwrap().contains("Jack"))
+                .find(|d| d.name().unwrap().contains("JackRouter"))
                 .or_else(|| host.default_output_device())
                 .ok_or(RuntimeError::InvalidConfig(
                     "No output device available".into(),
@@ -287,7 +290,7 @@ impl PaprRuntime {
                 .ok_or(RuntimeError::InvalidConfig("No run_for specified".into()))?;
             let run_for_secs = (run_for as f64) / 1000.0;
             let run_for_samples = (run_for_secs * self.sample_rate) as usize;
-            let mut out_buf = vec![0.0; run_for_samples];
+            let mut out_buf = vec![0.0f32; run_for_samples];
             let mut sample_idx = 0;
             let channels = 1;
             let mut t = 0.0;
@@ -324,7 +327,10 @@ impl PaprRuntime {
                 )?;
                 for (frame_idx, frame) in output.chunks_mut(channels).enumerate() {
                     for (_c, sample) in frame.iter_mut().enumerate() {
-                        *sample = out[&dac0][frame_idx].scalar_value() as f32;
+                        *sample = out[&dac0][frame_idx]
+                            .scalar_value()
+                            .expect("Expected scalar value")
+                            as f32;
                     }
                 }
 

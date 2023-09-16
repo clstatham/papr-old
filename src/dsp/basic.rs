@@ -5,7 +5,7 @@ use std::{
 
 use eframe::egui::{Button, Checkbox, Slider, Ui};
 use miette::Result;
-use papr_proc_macro::node_constructor;
+use papr_proc_macro::node;
 
 use crate::{
     dsp::Signal,
@@ -51,8 +51,8 @@ impl Processor for DebugNode {
         inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        let t = inputs[1].scalar_value();
-        println!("{} = {} (t={t})", self.name, inputs[0].scalar_value());
+        let t = inputs[1].expect_scalar()?;
+        println!("{} = {:?} (t={t})", self.name, &inputs[0]);
         outputs[0] = inputs[0].clone();
         Ok(())
     }
@@ -154,7 +154,7 @@ impl Processor for UiOutput {
     ) -> Result<()> {
         match &mut self.widget {
             UiOutputWidget::Led { value } => {
-                *value = inputs[0].scalar_value();
+                *value = inputs[0].expect_scalar()?;
                 outputs[0] = Signal::new_scalar(*value);
             }
         }
@@ -229,7 +229,7 @@ impl Processor for Constant {
 
 macro_rules! impl_arith {
     ($typ:ident, $op:ident, $use:ident) => {
-        node_constructor! {
+        node! {
             pub struct $typ;
             in { a, b }
             out { out }
@@ -245,7 +245,7 @@ macro_rules! impl_arith {
             ) -> Result<()> {
                 use std::ops::$use;
                 outputs[0] =
-                    Signal::new_scalar(inputs[0].scalar_value().$op(inputs[1].scalar_value()));
+                    Signal::new_scalar(inputs[0].expect_scalar()?.$op(inputs[1].expect_scalar()?));
                 Ok(())
             }
         }
@@ -258,139 +258,73 @@ impl_arith!(Add, add, Add);
 impl_arith!(Sub, sub, Sub);
 impl_arith!(Rem, rem, Rem);
 
-node_constructor! {
+node! {
     pub struct Max;
     in { a, b }
     out { out }
-}
 
-impl Processor for Max {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().max(inputs[1].scalar_value()));
-        Ok(())
+    ~ {
+        out = a.max(*b);
     }
 }
 
-node_constructor! {
+node! {
     pub struct Min;
     in { a, b }
     out { out }
-}
 
-impl Processor for Min {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().min(inputs[1].scalar_value()));
-        Ok(())
+    ~ {
+        out = a.min(*b);
     }
 }
 
-node_constructor! {
+node! {
     pub struct Abs;
     in { input }
     out { out }
-}
 
-impl Processor for Abs {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().abs());
-        Ok(())
+    ~ {
+        out = input.abs();
     }
 }
 
-node_constructor! {
+node! {
     pub struct Exp;
     in { input }
     out { out }
-}
 
-impl Processor for Exp {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().exp());
-        Ok(())
+    ~ {
+        out = input.exp();
     }
 }
 
-node_constructor! {
+node! {
     pub struct Cosine;
     in { input }
     out { out }
-}
 
-impl Processor for Cosine {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().cos());
-        Ok(())
+    ~ {
+        out = input.cos();
     }
 }
 
-node_constructor! {
+node! {
     pub struct Tanh;
     in { input }
     out { out }
-}
 
-impl Processor for Tanh {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(inputs[0].scalar_value().tanh());
-        Ok(())
+    ~ {
+        out = input.tanh();
     }
 }
 
-node_constructor! {
+node! {
     pub struct Sine;
     in { input }
     out { out }
-}
 
-impl Processor for Sine {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(Scalar::sin(inputs[0].scalar_value()));
-        Ok(())
+    ~ {
+        out = input.sin();
     }
 }
 
@@ -439,7 +373,7 @@ impl Processor for ControlToAudioTx {
         self.tx
             .as_ref()
             .ok_or(DspError::ChannelDisconnected)?
-            .send_replace(inputs[0].scalar_value());
+            .send_replace(inputs[0].expect_scalar()?);
         Ok(())
     }
 }
@@ -506,7 +440,7 @@ impl Processor for AudioToControlTx {
         self.tx
             .as_ref()
             .ok_or(DspError::ChannelDisconnected)?
-            .send_replace(inputs[0].scalar_value());
+            .send_replace(inputs[0].expect_scalar()?);
         Ok(())
     }
 }
@@ -528,111 +462,67 @@ impl Processor for AudioToControlRx {
     }
 }
 
-node_constructor! {
+node! {
     pub struct RisingEdge {
         c_last: Scalar,
     }
     in { trigger }
     out { out }
-}
 
-impl Processor for RisingEdge {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        if inputs[0].scalar_value() > self.c_last {
-            outputs[0] = Signal::new_scalar(1.0);
+    ~ {
+        if *trigger > self.c_last {
+            out = 1.0;
         } else {
-            outputs[0] = Signal::new_scalar(0.0);
+            out = 0.0;
         }
-        self.c_last = inputs[0].scalar_value();
-        Ok(())
+        self.c_last = *trigger;
     }
 }
 
-node_constructor! {
+node! {
     pub struct FallingEdge {
         c_last: Scalar,
     }
     in { trigger }
     out { out }
-}
 
-impl Processor for FallingEdge {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        if inputs[0].scalar_value() < self.c_last {
-            outputs[0] = Signal::new_scalar(1.0);
+    ~ {
+        if *trigger < self.c_last {
+            out = 1.0;
         } else {
-            outputs[0] = Signal::new_scalar(0.0);
+            out = 0.0;
         }
-        self.c_last = inputs[0].scalar_value();
-        Ok(())
+        self.c_last = *trigger;
     }
 }
 
-node_constructor! {
+node! {
     pub struct Clip;
     in { input, low, high }
     out { out }
-}
 
-impl Processor for Clip {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(
-            inputs[0]
-                .scalar_value()
-                .max(inputs[1].scalar_value())
-                .min(inputs[2].scalar_value()),
-        );
-        Ok(())
+    ~ {
+        out = input.max(*low).min(*high);
     }
 }
 
-node_constructor! {
+node! {
     pub struct If;
     in { cmp, then, els }
     out { out }
-}
 
-impl Processor for If {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        if inputs[0].scalar_value() > 0.0 {
-            outputs[0] = inputs[1].clone();
+    ~ {
+        if *cmp > 0.0 {
+            out = *then;
         } else {
-            outputs[0] = inputs[2].clone();
+            out = *els;
         }
-        Ok(())
     }
 }
 
 macro_rules! impl_cmp {
     ($id:ident, $op:ident) => {
-        node_constructor! {
+        node! {
             pub struct $id;
             in { a, b }
             out { out }
@@ -664,7 +554,7 @@ impl_cmp!(Neq, ne);
 
 macro_rules! impl_boolean {
     ($id:ident, $op:ident) => {
-        node_constructor! {
+        node! {
             pub struct $id;
             in { a, b }
             out { out }
@@ -678,7 +568,7 @@ macro_rules! impl_boolean {
                 inputs: &[Signal],
                 outputs: &mut [Signal],
             ) -> Result<()> {
-                if (inputs[0].scalar_value() > 0.0).$op(inputs[1].scalar_value() > 0.0) {
+                if (inputs[0].expect_scalar()? > 0.0).$op(inputs[1].expect_scalar()? > 0.0) {
                     outputs[0] = Signal::new_scalar(1.0);
                 } else {
                     outputs[0] = Signal::new_scalar(0.0);
@@ -693,25 +583,16 @@ impl_boolean!(And, bitand);
 impl_boolean!(Or, bitor);
 impl_boolean!(Xor, bitxor);
 
-node_constructor! {
+node! {
     pub struct Not;
     in { input }
     out { out }
-}
 
-impl Processor for Not {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        if inputs[0].scalar_value() > 0.0 {
-            outputs[0] = Signal::new_scalar(0.0);
+    ~ {
+        if *input > 0.0 {
+            out = 0.0;
         } else {
-            outputs[0] = Signal::new_scalar(1.0);
+            out = 1.0;
         }
-        Ok(())
     }
 }

@@ -1,74 +1,39 @@
 use crate::{Scalar, PI, TAU};
 
 use miette::Result;
-use papr_proc_macro::node_constructor;
+use papr_proc_macro::node;
 
 use super::{DspError, Processor, Signal, SignalRate};
 
-node_constructor! {
+node! {
     pub struct FmSineOsc;
     in { amp, freq, fm_amt, fm }
     out { out }
-}
 
-impl Processor for FmSineOsc {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        let amp = &inputs[0];
-        let freq = &inputs[1];
-        let fm_amt = &inputs[2];
-        let t =
-            inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].scalar_value();
-        let fm = &inputs[3];
-
-        if freq.scalar_value() <= 0.0 {
+    ~ {
+        if *freq < 0.0 {
             return Ok(());
         }
 
-        outputs[0] = Signal::new_scalar(
-            Scalar::sin(
-                t * TAU * freq.scalar_value() + fm.scalar_value() * TAU * fm_amt.scalar_value(),
-            ) * amp.scalar_value(),
-        );
-        Ok(())
+        out = amp * Scalar::sin(t * TAU * freq + fm * TAU * fm_amt);
     }
 }
 
-node_constructor! {
+node! {
     pub struct SineOsc;
     in { amp, freq }
     out { out }
-}
 
-impl Processor for SineOsc {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        let amp = &inputs[0];
-        let freq = &inputs[1];
-
-        if freq.scalar_value() <= 0.0 {
+    ~ {
+        if *freq < 0.0 {
             return Ok(());
         }
 
-        let t =
-            inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].scalar_value();
-        outputs[0] =
-            Signal::new_scalar(Scalar::sin(t * TAU * freq.scalar_value()) * amp.scalar_value());
-        Ok(())
+        out = amp * Scalar::sin(t * TAU * freq);
     }
 }
 
-node_constructor! {
+node! {
     pub struct BlSawOsc {
         p: Scalar,
         /// SET TO 1.0 INITIALLY
@@ -77,26 +42,15 @@ node_constructor! {
     }
     in { amp, freq }
     out { out }
-}
 
-impl Processor for BlSawOsc {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        let amp = &inputs[0];
-        let freq = &inputs[1];
-
-        if freq.scalar_value() <= 0.0 {
+    ~ {
+        if *freq <= 0.0 {
             return Ok(());
         }
 
         // algorithm courtesy of https://www.musicdsp.org/en/latest/Synthesis/12-bandlimited-waveforms.html
 
-        let pmax = 0.5 * signal_rate.rate() / freq.scalar_value();
+        let pmax = 0.5 * signal_rate.rate() / *freq;
         let dc = -0.498 / pmax;
 
         self.p += self.dp;
@@ -113,55 +67,36 @@ impl Processor for BlSawOsc {
         }
         self.saw = 0.995 * self.saw + dc + x.sin() / x;
 
-        outputs[0] = Signal::new_scalar(self.saw * amp.scalar_value());
-        Ok(())
+        out = self.saw * amp;
     }
 }
 
 pub const BL_SQUARE_MAX_COEFF: usize = 48000 / (5 * 4);
 
-node_constructor! {
+node! {
     pub struct BlSquareOsc {
         coeff: [Scalar; BL_SQUARE_MAX_COEFF],
     }
     in { amp, freq, d }
     out { out }
-}
 
-impl Processor for BlSquareOsc {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        let t =
-            inputs[Self::input_idx("t").ok_or(DspError::NoInputNamed("t".into()))?].scalar_value();
-        let amp = inputs[0].scalar_value();
-        let freq = inputs[1].scalar_value();
-        let d = inputs[2].scalar_value();
-        let sr = signal_rate.rate();
-
-        if freq <= 0.0 {
+    ~ {
+        if *freq <= 0.0 {
             return Ok(());
         }
 
-        let n_harm = (sr / (freq * 4.0)) as usize;
-        self.coeff[0] = d - 0.5;
+        let n_harm = (signal_rate.rate() / (freq * 4.0)) as usize;
+        self.coeff[0] = *d - 0.5;
         for i in 1..n_harm + 1 {
-            self.coeff[i] = Scalar::sin(i as Scalar * d * PI) * 2.0 / (i as Scalar * PI);
+            self.coeff[i] = Scalar::sin(i as Scalar * *d * PI) * 2.0 / (i as Scalar * PI);
         }
         let theta = t * TAU * freq;
-        outputs[0] = Signal::new_scalar(
-            amp * (self
-                .coeff
-                .iter()
-                .take(n_harm + 1)
-                .enumerate()
-                .map(|(i, coeff)| coeff * Scalar::cos(i as Scalar * theta)))
-            .sum::<Scalar>(),
-        );
-        Ok(())
+        out = amp * (self
+            .coeff
+            .iter()
+            .take(n_harm + 1)
+            .enumerate()
+            .map(|(i, coeff)| coeff * Scalar::cos(i as Scalar * theta)))
+        .sum::<Scalar>();
     }
 }

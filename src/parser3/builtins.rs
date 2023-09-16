@@ -111,45 +111,35 @@ impl BuiltinNode {
     ) -> Result<Arc<Node>> {
         let node = match self {
             Self::Debug => crate::dsp::basic::DebugNode::create_node(name),
-            Self::Sine => crate::dsp::basic::Sine::create_node(name, 0.0),
-            Self::Cosine => crate::dsp::basic::Cosine::create_node(name, 0.0),
-            Self::Exp => crate::dsp::basic::Exp::create_node(name, 0.0),
-            Self::Tanh => crate::dsp::basic::Tanh::create_node(name, 0.0),
-            Self::Abs => crate::dsp::basic::Abs::create_node(name, 0.0),
-            Self::Not => crate::dsp::basic::Not::create_node(name, 0.0),
-            Self::FmSineOsc => {
-                crate::dsp::generators::FmSineOsc::create_node(name, 1.0, 440.0, 0.0, 0.0)
+            Self::Sine => crate::dsp::basic::Sine::create_node(name),
+            Self::Cosine => crate::dsp::basic::Cosine::create_node(name),
+            Self::Exp => crate::dsp::basic::Exp::create_node(name),
+            Self::Tanh => crate::dsp::basic::Tanh::create_node(name),
+            Self::Abs => crate::dsp::basic::Abs::create_node(name),
+            Self::Not => crate::dsp::basic::Not::create_node(name),
+            Self::FmSineOsc => crate::dsp::generators::FmSineOsc::create_node(name),
+            Self::SineOsc => crate::dsp::generators::SineOsc::create_node(name),
+            Self::BlSawOsc => crate::dsp::generators::BlSawOsc::create_node(name, 0.0, 1.0, 0.0),
+            Self::BlSquareOsc => {
+                crate::dsp::generators::BlSquareOsc::create_node(name, [0.0; BL_SQUARE_MAX_COEFF])
             }
-            Self::SineOsc => crate::dsp::generators::SineOsc::create_node(name, 1.0, 1.0),
-            Self::BlSawOsc => {
-                crate::dsp::generators::BlSawOsc::create_node(name, 0.0, 1.0, 0.0, 1.0, 440.0)
-            }
-            Self::BlSquareOsc => crate::dsp::generators::BlSquareOsc::create_node(
-                name,
-                [0.0; BL_SQUARE_MAX_COEFF],
-                0.0,
-                440.0,
-                0.5,
-            ),
-            Self::MidiToFreq => crate::dsp::midi::MidiToFreq::create_node(name, 0.0),
-            Self::Clock => crate::dsp::time::Clock::create_node(name, 1.0, 0.5),
+            Self::MidiToFreq => crate::dsp::midi::MidiToFreq::create_node(name),
+            Self::Clock => crate::dsp::time::Clock::create_node(name),
             Self::Delay => crate::dsp::time::Delay::create_node(
                 name,
                 vec![0.0; 480000], // TODO: don't hardcode
                 0.0,
                 0.0,
                 0.0,
-                1.0,
-                0.0,
             ),
             Self::NoteIn => crate::io::midi::NoteIn::create_node(name),
-            Self::RisingEdge => crate::dsp::basic::RisingEdge::create_node(name, 0.0, 0.0),
-            Self::FallingEdge => crate::dsp::basic::FallingEdge::create_node(name, 0.0, 0.0),
-            Self::Var => crate::dsp::graph_util::Var::create_node(name, 0.0, 0.0, 0.0),
-            Self::Max => crate::dsp::basic::Max::create_node(name, 0.0, 0.0),
-            Self::Min => crate::dsp::basic::Min::create_node(name, 0.0, 0.0),
-            Self::Clip => crate::dsp::basic::Clip::create_node(name, 0.0, 0.0, 0.0),
-            Self::If => crate::dsp::basic::If::create_node(name, 0.0, 0.0, 0.0),
+            Self::RisingEdge => crate::dsp::basic::RisingEdge::create_node(name, 0.0),
+            Self::FallingEdge => crate::dsp::basic::FallingEdge::create_node(name, 0.0),
+            Self::Var => crate::dsp::graph_util::Var::create_node(name, 0.0),
+            Self::Max => crate::dsp::basic::Max::create_node(name),
+            Self::Min => crate::dsp::basic::Min::create_node(name),
+            Self::Clip => crate::dsp::basic::Clip::create_node(name),
+            Self::If => crate::dsp::basic::If::create_node(name),
             Self::Sample => crate::dsp::samplers::Sample::create_node(
                 name,
                 creation_args[0].unwrap_string().into(),
@@ -184,10 +174,10 @@ impl BuiltinNode {
                 crate::dsp::basic::Constant::create_node(name, *creation_args[0].unwrap_scalar())
             }
             Self::Dac0 => unimplemented!(),
-            Self::Add => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
-            Self::Sub => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
-            Self::Mul => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
-            Self::Div => crate::dsp::basic::Add::create_node(name, 0.0, 0.0),
+            Self::Add => crate::dsp::basic::Add::create_node(name),
+            Self::Sub => crate::dsp::basic::Add::create_node(name),
+            Self::Mul => crate::dsp::basic::Add::create_node(name),
+            Self::Div => crate::dsp::basic::Add::create_node(name),
             Self::VariableInput => unimplemented!(),
         };
         Ok(node)

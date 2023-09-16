@@ -2,7 +2,7 @@ use eframe::egui::Ui;
 use miette::{Diagnostic, Result};
 use thiserror::Error;
 
-use crate::{Scalar, TAU};
+use crate::Scalar;
 
 pub mod basic;
 pub mod filters;
@@ -24,6 +24,12 @@ pub enum DspError {
     NoInputNamed(String),
     #[error("No output named {0}")]
     NoOutputNamed(String),
+    #[error("Expected scalar signal, got {0:?}")]
+    ExpectedScalar(Signal),
+    #[error("Expected array signal, got {0:?}")]
+    ExpectedArray(Signal),
+    #[error("Expected symbol signal, got {0:?}")]
+    ExpectedSymbol(Signal),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -56,10 +62,18 @@ impl SignalRate {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SignalType {
+    Scalar,
+    Symbol,
+    Array,
+}
+
 #[derive(Clone, PartialEq, PartialOrd)]
 pub enum Signal {
     Scalar(Scalar),
     Symbol(String),
+    Array(Vec<Signal>),
 }
 
 impl std::fmt::Debug for Signal {
@@ -67,21 +81,45 @@ impl std::fmt::Debug for Signal {
         match self {
             Signal::Scalar(val) => write!(f, "{:?}", val),
             Signal::Symbol(val) => write!(f, "{:?}", val),
+            Signal::Array(val) => write!(f, "{:?}", val),
         }
     }
 }
 
 impl Signal {
     #[inline(always)]
+    pub const fn is_scalar(&self) -> bool {
+        matches!(self, Self::Scalar(_))
+    }
+
+    #[inline(always)]
+    pub const fn is_symbol(&self) -> bool {
+        matches!(self, Self::Symbol(_))
+    }
+
+    #[inline(always)]
+    pub const fn is_array(&self) -> bool {
+        matches!(self, Self::Array(_))
+    }
+
+    #[inline(always)]
     pub const fn new_scalar(val: Scalar) -> Self {
         Self::Scalar(val)
     }
 
     #[inline(always)]
-    pub const fn scalar_value(&self) -> Scalar {
+    pub const fn scalar_value(&self) -> Option<Scalar> {
         match self {
-            Self::Scalar(val) => *val,
-            Self::Symbol(_) => 0.0,
+            Self::Scalar(val) => Some(*val),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn expect_scalar(&self) -> Result<Scalar> {
+        match self {
+            Self::Scalar(val) => Ok(*val),
+            _ => Err(DspError::ExpectedScalar(self.clone()).into()),
         }
     }
 
@@ -91,39 +129,40 @@ impl Signal {
     }
 
     #[inline(always)]
-    pub fn symbol_value(&self) -> &str {
+    pub fn symbol_value(&self) -> Option<&str> {
         match self {
-            Self::Scalar(_) => "",
-            Self::Symbol(val) => val,
+            Self::Symbol(val) => Some(val),
+            _ => None,
         }
     }
-}
 
-impl std::ops::Add<Self> for Signal {
-    type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        Self::new_scalar(self.scalar_value() + rhs.scalar_value())
+    #[inline(always)]
+    pub fn expect_symbol(&self) -> Result<&str> {
+        match self {
+            Self::Symbol(val) => Ok(val),
+            _ => Err(DspError::ExpectedSymbol(self.clone()).into()),
+        }
     }
-}
 
-impl std::ops::Sub<Self> for Signal {
-    type Output = Self;
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self::new_scalar(self.scalar_value() - rhs.scalar_value())
+    #[inline(always)]
+    pub fn new_array(val: Vec<Signal>) -> Self {
+        Self::Array(val)
     }
-}
 
-impl std::ops::Mul<Self> for Signal {
-    type Output = Self;
-    fn mul(self, rhs: Self) -> Self::Output {
-        Self::new_scalar(self.scalar_value() * rhs.scalar_value())
+    #[inline(always)]
+    pub fn array_value(&self) -> Option<&[Signal]> {
+        match self {
+            Self::Array(val) => Some(val),
+            _ => None,
+        }
     }
-}
 
-impl std::ops::Div<Self> for Signal {
-    type Output = Self;
-    fn div(self, rhs: Self) -> Self::Output {
-        Self::new_scalar(self.scalar_value() / rhs.scalar_value())
+    #[inline(always)]
+    pub fn expect_array(&self) -> Result<&[Signal]> {
+        match self {
+            Self::Array(val) => Ok(val),
+            _ => Err(DspError::ExpectedArray(self.clone()).into()),
+        }
     }
 }
 
@@ -187,47 +226,4 @@ pub trait Processor {
 
     #[allow(unused_variables)]
     fn ui_update(&mut self, ui: &mut Ui) {}
-}
-
-#[non_exhaustive]
-pub struct SmoothControlSignal {
-    current: Scalar,
-    target: Scalar,
-    a0: Scalar,
-    b1: Scalar,
-    xv: Scalar,
-}
-
-impl SmoothControlSignal {
-    pub fn new(initial_value: Signal, filter_time_samples: usize) -> Self {
-        let cosf = 2.0 - Scalar::cos(TAU * (2.0 / filter_time_samples as Scalar));
-        let cb1 = cosf - Scalar::sqrt(cosf * cosf - 1.0);
-        let mut this = Self {
-            current: initial_value.scalar_value(),
-            target: initial_value.scalar_value(),
-            a0: 1.0 - cb1,
-            b1: cb1,
-            xv: 0.0,
-        };
-        this.set_target(initial_value);
-        this
-    }
-
-    pub fn set_target(&mut self, new_value: Signal) {
-        self.target = new_value.scalar_value();
-        self.xv = self.a0 * new_value.scalar_value();
-    }
-
-    pub fn next_value(&mut self) -> Signal {
-        self.current = self.xv + (self.b1 * self.current);
-        Signal::new_scalar(self.current)
-    }
-
-    pub fn current_value(&self) -> Signal {
-        Signal::new_scalar(self.current)
-    }
-
-    pub fn target_value(&self) -> Signal {
-        Signal::new_scalar(self.target)
-    }
 }

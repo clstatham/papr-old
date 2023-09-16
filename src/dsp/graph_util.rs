@@ -6,7 +6,7 @@ use crate::{
 };
 
 use miette::Result;
-use papr_proc_macro::node_constructor;
+use papr_proc_macro::node;
 
 use super::{Processor, Signal, SignalRate};
 
@@ -38,64 +38,37 @@ impl Processor for GraphInput {
     }
 }
 
-node_constructor! {
+node! {
     pub struct GraphOutput;
     in { input }
     out { out }
-}
 
-impl Processor for GraphOutput {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = inputs[0].clone();
-        Ok(())
+    ~ {
+        out = *input;
     }
 }
 
-node_constructor! {
+node! {
     pub struct LetBinding;
     in { input }
     out { out }
-}
 
-impl Processor for LetBinding {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        outputs[0] = inputs[0].clone();
-        Ok(())
+    ~ {
+        out = *input;
     }
 }
 
-node_constructor! {
+node! {
     pub struct Var {
         value: Scalar,
     }
     in { input, set }
     out { out }
-}
 
-impl Processor for Var {
-    fn process_sample(
-        &mut self,
-        _buffer_idx: usize,
-        _signal_rate: SignalRate,
-        inputs: &[Signal],
-        outputs: &mut [Signal],
-    ) -> Result<()> {
-        if inputs[1].scalar_value() > 0.0 {
-            self.value = inputs[0].scalar_value();
+    ~ {
+        if *set > 0.0 {
+            self.value = *input;
         }
-        outputs[0] = Signal::new_scalar(self.value);
-        Ok(())
+        out = self.value;
     }
 }

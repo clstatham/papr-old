@@ -256,7 +256,8 @@ impl Plugin for Papr {
                     .unwrap();
 
                 for (frame_idx, mut frame) in buffer.iter_samples().enumerate() {
-                    *frame.get_mut(0).unwrap() = out[&dac0][frame_idx].scalar_value() as f32;
+                    *frame.get_mut(0).unwrap() =
+                        out[&dac0][frame_idx].expect_scalar().unwrap() as f32;
                 }
                 self.audio_t += buffer_len as Scalar / self.sample_rate;
             }

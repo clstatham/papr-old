@@ -54,7 +54,7 @@ impl Processor for Sample {
         outputs: &mut [Signal],
     ) -> Result<()> {
         let seek = &inputs[0];
-        let seek_samps = (seek.scalar_value() * signal_rate.rate()) as usize;
+        let seek_samps = (seek.expect_scalar()? * signal_rate.rate()) as usize;
 
         outputs[0] = Signal::new_scalar(self.buf[seek_samps]);
         outputs[1] = Signal::new_scalar(self.buf.len() as Scalar / signal_rate.rate());

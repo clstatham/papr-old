@@ -297,7 +297,7 @@ impl Graph {
             this.input_node_indices.push(idx);
         }
         for out in outputs {
-            let node = GraphOutput::create_node(&out.name, 0.0);
+            let node = GraphOutput::create_node(&out.name);
             let idx = this.add_node(node);
             this.node_indices_by_name.insert(out.name.to_owned(), idx);
             this.output_node_indices.push(idx);

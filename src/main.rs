@@ -82,7 +82,7 @@ struct Args {
 
 fn main() -> Result<()> {
     simple_logger::SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
+        .with_level(log::LevelFilter::Info)
         .init()
         .unwrap();
     log::trace!("Logger initialized.");

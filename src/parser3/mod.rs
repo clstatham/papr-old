@@ -742,18 +742,18 @@ fn solve_expr(
             let rhs = solve_expr(graph_id, rhs, super_ag, super_cg, known_graphs, None)?;
             // todo: give these nodes actual names
             let op = match infix_op {
-                ParsedInfixOp::Add => crate::dsp::basic::Add::create_node("+", 0.0, 0.0),
-                ParsedInfixOp::Sub => crate::dsp::basic::Sub::create_node("-", 0.0, 0.0),
-                ParsedInfixOp::Mul => crate::dsp::basic::Mul::create_node("*", 0.0, 0.0),
-                ParsedInfixOp::Div => crate::dsp::basic::Div::create_node("/", 0.0, 0.0),
-                ParsedInfixOp::Gt => crate::dsp::basic::Gt::create_node(">", 0.0, 0.0),
-                ParsedInfixOp::Lt => crate::dsp::basic::Lt::create_node("<", 0.0, 0.0),
-                ParsedInfixOp::Eq => crate::dsp::basic::Eq::create_node("==", 0.0, 0.0),
-                ParsedInfixOp::Neq => crate::dsp::basic::Div::create_node("!=", 0.0, 0.0),
-                ParsedInfixOp::And => crate::dsp::basic::And::create_node("&", 0.0, 0.0),
-                ParsedInfixOp::Or => crate::dsp::basic::Or::create_node("|", 0.0, 0.0),
-                ParsedInfixOp::Xor => crate::dsp::basic::Xor::create_node("^", 0.0, 0.0),
-                ParsedInfixOp::Rem => crate::dsp::basic::Rem::create_node("%", 0.0, 0.0),
+                ParsedInfixOp::Add => crate::dsp::basic::Add::create_node("+"),
+                ParsedInfixOp::Sub => crate::dsp::basic::Sub::create_node("-"),
+                ParsedInfixOp::Mul => crate::dsp::basic::Mul::create_node("*"),
+                ParsedInfixOp::Div => crate::dsp::basic::Div::create_node("/"),
+                ParsedInfixOp::Gt => crate::dsp::basic::Gt::create_node(">"),
+                ParsedInfixOp::Lt => crate::dsp::basic::Lt::create_node("<"),
+                ParsedInfixOp::Eq => crate::dsp::basic::Eq::create_node("=="),
+                ParsedInfixOp::Neq => crate::dsp::basic::Div::create_node("!="),
+                ParsedInfixOp::And => crate::dsp::basic::And::create_node("&"),
+                ParsedInfixOp::Or => crate::dsp::basic::Or::create_node("|"),
+                ParsedInfixOp::Xor => crate::dsp::basic::Xor::create_node("^"),
+                ParsedInfixOp::Rem => crate::dsp::basic::Rem::create_node("%"),
             };
             match (lhs.rate, rhs.rate) {
                 (ParsedSignalRate::Audio, ParsedSignalRate::Audio) => {
@@ -1167,7 +1167,7 @@ fn solve_graph(
                     let rate =
                         to.1.or(graph.id.1)
                             .ok_or_else(|| miette!("Parsing error: (graph `{}`): in `let` statement, couldn't determine rate of lhs ident `{}`", &graph.id.0, &to.0))?;
-                    let node = LetBinding::create_node(&to.0, 0.0);
+                    let node = LetBinding::create_node(&to.0);
                     let idx = match rate {
                         ParsedSignalRate::Audio => ag.add_node(node),
                         ParsedSignalRate::Control => cg.add_node(node),

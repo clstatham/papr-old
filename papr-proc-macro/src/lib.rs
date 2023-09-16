@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{
     braced,
     parse::{Parse, ParseStream},
@@ -9,10 +9,41 @@ use syn::{
     Ident, ItemStruct, Token,
 };
 
+struct TypedIdent {
+    ident: Ident,
+    ty: Option<Ident>,
+}
+
+impl Parse for TypedIdent {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let ident = input.parse()?;
+        let ty = if input.peek(Token![:]) {
+            input.parse::<Token![:]>()?;
+            Some(input.parse()?)
+        } else {
+            None
+        };
+        Ok(Self { ident, ty })
+    }
+}
+
+impl ToTokens for TypedIdent {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = &self.ident;
+        // let ty = &self.ty;
+        // if let Some(ty) = ty {
+        // tokens.extend(quote! { #ident: #ty });
+        // } else {
+        tokens.extend(quote! { #ident });
+        // }
+    }
+}
+
 struct NodeConstructorParser {
     struc: ItemStruct,
-    inputs: Punctuated<Ident, Comma>,
-    outputs: Punctuated<Ident, Comma>,
+    inputs: Punctuated<TypedIdent, Comma>,
+    outputs: Punctuated<TypedIdent, Comma>,
+    process_block: Option<syn::Block>,
 }
 
 impl Parse for NodeConstructorParser {
@@ -22,7 +53,7 @@ impl Parse for NodeConstructorParser {
         input.parse::<Token![in]>()?;
         let inputs;
         braced!(inputs in input);
-        let inputs = inputs.parse_terminated(Ident::parse, Token![,])?;
+        let inputs = inputs.parse_terminated(TypedIdent::parse, Token![,])?;
 
         match input.parse::<Ident>()?.to_string().as_str() {
             "out" => {}
@@ -30,32 +61,36 @@ impl Parse for NodeConstructorParser {
         };
         let outputs;
         braced!(outputs in input);
-        let outputs = outputs.parse_terminated(Ident::parse, Token![,])?;
+        let outputs = outputs.parse_terminated(TypedIdent::parse, Token![,])?;
+
+        let process_block = if input.peek(Token![~]) {
+            input.parse::<Token![~]>()?;
+            Some(input.parse()?)
+        } else {
+            None
+        };
 
         Ok(Self {
             struc,
             inputs,
             outputs,
+            process_block,
         })
     }
 }
 
 #[proc_macro]
-pub fn node_constructor(tokens: TokenStream) -> TokenStream {
+pub fn node(tokens: TokenStream) -> TokenStream {
     let parsed = parse_macro_input!(tokens as NodeConstructorParser);
 
     let NodeConstructorParser {
         struc,
         mut inputs,
         outputs,
+        process_block,
     } = parsed;
 
     let struc_name = &struc.ident;
-
-    let inputs_args = inputs
-        .iter()
-        .map(|inp| quote! { #inp: crate::Scalar })
-        .collect::<Punctuated<_, Comma>>();
 
     let fields_args = &struc
         .fields
@@ -76,7 +111,7 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         })
         .collect::<Punctuated<_, Comma>>();
 
-    inputs.push(syn::parse2::<Ident>(quote! { t }).unwrap());
+    inputs.push(syn::parse2::<TypedIdent>(quote! { t }).unwrap());
 
     let outs = outputs
         .iter()
@@ -90,22 +125,50 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
     let ins = inputs
         .iter()
         .map(|inp| {
-            quote! {
-                crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new_scalar(0.0)))
+            if let Some(ty) = &inp.ty {
+                quote! {
+                    crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::#ty(Default::default())))
+                }
+            } else {
+                quote! {
+                    crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new_scalar(0.0)))
+                }
             }
         })
         .collect::<Punctuated<_, Comma>>();
 
     let args = if fields_args.is_empty() {
-        quote! { #inputs_args }
+        quote! {}
     } else {
-        quote! { #fields_args, #inputs_args }
+        quote! { #fields_args }
     };
 
     let input_names_list = inputs
         .iter()
         .map(|inp| {
             quote! { stringify!(#inp) }
+        })
+        .collect::<Punctuated<_, Comma>>();
+
+    let input_types_list = inputs
+        .iter()
+        .map(|inp| {
+            if let Some(ty) = &inp.ty {
+                quote! { crate::dsp::SignalType::#ty }
+            } else {
+                quote! { crate::dsp::SignalType::Scalar }
+            }
+        })
+        .collect::<Punctuated<_, Comma>>();
+
+    let output_types_list = outputs
+        .iter()
+        .map(|inp| {
+            if let Some(ty) = &inp.ty {
+                quote! { crate::dsp::SignalType::#ty }
+            } else {
+                quote! { crate::dsp::SignalType::Scalar }
+            }
         })
         .collect::<Punctuated<_, Comma>>();
 
@@ -132,14 +195,104 @@ pub fn node_constructor(tokens: TokenStream) -> TokenStream {
         })
         .collect::<Punctuated<_, Comma>>();
 
+    let process_block = if let Some(process_block) = process_block {
+        let input_bindings = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, inp)| {
+                let ident = &inp.ident;
+                let ty = &inp.ty;
+                if let Some(ty) = ty {
+                    let ty = ty.to_string().to_lowercase();
+                    let expect = syn::parse_str::<syn::Path>(&format!("expect_{}", ty)).unwrap();
+                    quote! { let #ident = &inputs[#i].#expect()?; }
+                } else {
+                    quote! { let #ident = &inputs[#i].expect_scalar()?; }
+                }
+            })
+            .collect::<proc_macro2::TokenStream>();
+        let output_bindings = outputs
+            .iter()
+            .map(|out| {
+                let ident = &out.ident;
+                quote! { let mut #ident; }
+            })
+            .collect::<proc_macro2::TokenStream>();
+        let output_assignments = outputs
+            .iter()
+            .enumerate()
+            .map(|(i, out)| {
+                let ident = &out.ident;
+                let ty = &out.ty;
+                if let Some(ty) = ty {
+                    let ty = ty.to_string().to_lowercase();
+                    quote! { outputs[#i] = Signal::#ty(#ident); }
+                } else {
+                    quote! { outputs[#i] = Signal::Scalar(#ident); }
+                }
+            })
+            .collect::<proc_macro2::TokenStream>();
+        let block = quote! {
+            #[allow(unused_variables)]
+            #[allow(unused_mut)]
+            #[allow(unused_assignments)]
+            #[allow(unreachable_code)]
+            impl crate::dsp::Processor for #struc_name {
+                fn process_sample(
+                    &mut self,
+                    buffer_idx: usize,
+                    signal_rate: crate::dsp::SignalRate,
+                    inputs: &[crate::dsp::Signal],
+                    outputs: &mut [crate::dsp::Signal],
+                ) -> miette::Result<()> {
+                    #input_bindings
+                    #output_bindings
+                    #process_block
+                    #output_assignments
+                    Ok(())
+                }
+            }
+        };
+        block
+    } else {
+        quote! {}
+    };
+
     quote! {
         #[derive(Clone)]
         #struc
+
+        #process_block
 
         #[allow(unused_variables)]
         impl #struc_name {
             pub const INPUTS: &'static [&'static str] = &[#input_names_list];
             pub const OUTPUTS: &'static [&'static str] = &[#output_names_list];
+
+            pub const INPUT_TYPES: &'static [crate::dsp::SignalType] = &[#input_types_list];
+            pub const OUTPUT_TYPES: &'static [crate::dsp::SignalType] = &[#output_types_list];
+
+            pub fn validate_inputs(inputs: &[crate::dsp::Signal]) -> bool {
+                inputs.len() == Self::INPUTS.len() && inputs.iter().zip(Self::INPUT_TYPES.iter()).all(|(a, b)| {
+                    match (a, b) {
+                        (crate::dsp::Signal::Scalar(_), crate::dsp::SignalType::Scalar) => true,
+                        (crate::dsp::Signal::Array(_), crate::dsp::SignalType::Array) => true,
+                        (crate::dsp::Signal::Symbol(_), crate::dsp::SignalType::Symbol) => true,
+                        _ => false,
+                    }
+                })
+            }
+
+            pub fn validate_outputs(outputs: &[crate::dsp::Signal]) -> bool {
+                outputs.len() == Self::OUTPUTS.len() && outputs.iter().zip(Self::OUTPUT_TYPES.iter()).all(|(a, b)| {
+                    match (a, b) {
+                        (crate::dsp::Signal::Scalar(_), crate::dsp::SignalType::Scalar) => true,
+                        (crate::dsp::Signal::Array(_), crate::dsp::SignalType::Array) => true,
+                        (crate::dsp::Signal::Symbol(_), crate::dsp::SignalType::Symbol) => true,
+                        _ => false,
+                    }
+                })
+            }
 
             pub fn input_idx(name: &str) -> Option<usize> {
                 match name {
