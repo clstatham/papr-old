@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
-    braced,
+    braced, parenthesized,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
@@ -50,17 +50,13 @@ impl Parse for NodeConstructorParser {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let struc: ItemStruct = input.parse()?;
 
-        input.parse::<Token![in]>()?;
         let inputs;
-        braced!(inputs in input);
+        parenthesized!(inputs in input);
         let inputs = inputs.parse_terminated(TypedIdent::parse, Token![,])?;
 
-        match input.parse::<Ident>()?.to_string().as_str() {
-            "out" => {}
-            _ => return Err(input.error("expected `out`")),
-        };
+        input.parse::<Token![->]>()?;
         let outputs;
-        braced!(outputs in input);
+        parenthesized!(outputs in input);
         let outputs = outputs.parse_terminated(TypedIdent::parse, Token![,])?;
 
         let process_block = if input.peek(Token![~]) {
@@ -225,7 +221,6 @@ pub fn node(tokens: TokenStream) -> TokenStream {
                 let ident = &out.ident;
                 let ty = &out.ty;
                 if let Some(ty) = ty {
-                    let ty = ty.to_string().to_lowercase();
                     quote! { outputs[#i] = Signal::#ty(#ident); }
                 } else {
                     quote! { outputs[#i] = Signal::Scalar(#ident); }

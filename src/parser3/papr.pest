@@ -4,23 +4,20 @@ line_comment  = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" }
 block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 COMMENT       = _{ line_comment | block_comment }
 
-// keywords
-keyword = @{ "graph" | "let" }
-
 // operators
-add      = @{ "+" }
-sub      = @{ "-" }
-mul      = @{ "*" }
-div      = @{ "/" }
-gt       = @{ ">" }
-lt       = @{ "<" }
-eq       = @{ "==" }
-neq      = @{ "!=" }
-and      = @{ "&" }
-or       = @{ "|" }
-xor      = @{ "^" }
-rem      = @{ "%" }
-infix_op =  { add | sub | mul | div | gt | lt | eq | neq | and | or | xor | rem }
+add      =  { "+" }
+sub      =  { "-" }
+mul      =  { "*" }
+div      =  { "/" }
+gt       =  { ">" }
+lt       =  { "<" }
+eq       =  { "==" }
+neq      =  { "!=" }
+and      =  { "&" }
+or       =  { "|" }
+xor      =  { "^" }
+rem      =  { "%" }
+infix_op = _{ add | sub | mul | div | gt | lt | eq | neq | and | or | xor | rem }
 
 // signal rates
 audio_rate   = @{ "@" }
@@ -44,15 +41,15 @@ graph_name = { signal_rate? ~ graph_name_raw }
 import_stmt = { "import" ~ string }
 
 // calls
-creation_args = { "<" ~ (scalar | string)+ ~ ">" }
-call          = { graph_name ~ creation_args? ~ "(" ~ expr* ~ ")" }
+creation_args = { "<" ~ ((scalar | string) ~ ",")* ~ (scalar | string) ~ ">" }
+call          = { graph_name ~ creation_args? ~ "(" ~ (expr ~ ",")* ~ expr? ~ ")" }
 
 // exprs
-expr       = { scalar | call | ident | infix_expr }
-infix_expr = { "(" ~ expr ~ infix_op ~ expr ~ ")" }
+expr         =  { primary_expr ~ (infix_op ~ primary_expr)* }
+primary_expr = _{ "(" ~ expr ~ ")" | call | ident | scalar }
 
 // connections
-list           = { "[" ~ ident+ ~ "]" }
+list           = { "[" ~ (ident ~ ",")* ~ ident ~ "]" }
 connection_lhs = { list | ident }
 connection     = { connection_lhs ~ "=" ~ expr ~ ";" }
 
@@ -62,8 +59,8 @@ statement       = { let_statement | connection }
 statement_block = { "~" ~ "{" ~ statement* ~ "}" }
 
 // signatures
-inputs    = { "|" ~ ident* ~ "|" }
-outputs   = { "|" ~ ident* ~ "|" }
+inputs    = { "(" ~ (ident ~ ",")* ~ ident? ~ ")" }
+outputs   = { "(" ~ (ident ~ ",")* ~ ident? ~ ")" }
 signature = { inputs ~ "->" ~ outputs }
 
 // graphs

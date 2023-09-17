@@ -6,8 +6,7 @@ use super::Signal;
 
 node! {
     pub struct Clock;
-    in { period, width }
-    out { out }
+    (period, width) -> (out)
 
     ~ {
         if *period == 0.0 {
@@ -27,8 +26,7 @@ node! {
         write_head: Scalar,
         delay_current: Scalar,
     }
-    in { input, delay }
-    out { out }
+    (input, delay) -> (out)
 
     ~ {
         let delay_desired_secs = *delay;
@@ -55,13 +53,13 @@ node! {
             sample0 + weight_sample1 * (sample1 - sample0)
         };
 
-        self. write_head += 1.0;
+        self.write_head += 1.0;
         if self.write_head >=self. buf.len() as Scalar {
             self.write_head = 0.0;
         }
         self.read_head = self.write_head - sample_offset;
-        if self. read_head < 0.0 {
-            self. read_head += self.buf.len() as Scalar;
+        if self.read_head < 0.0 {
+            self.read_head += self.buf.len() as Scalar;
         }
     }
 }

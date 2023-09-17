@@ -231,8 +231,8 @@ macro_rules! impl_arith {
     ($typ:ident, $op:ident, $use:ident) => {
         node! {
             pub struct $typ;
-            in { a, b }
-            out { out }
+            (a, b) -> (out)
+
         }
 
         impl Processor for $typ {
@@ -260,8 +260,7 @@ impl_arith!(Rem, rem, Rem);
 
 node! {
     pub struct Max;
-    in { a, b }
-    out { out }
+   (a, b) -> (out)
 
     ~ {
         out = a.max(*b);
@@ -270,8 +269,7 @@ node! {
 
 node! {
     pub struct Min;
-    in { a, b }
-    out { out }
+    (a, b) -> (out)
 
     ~ {
         out = a.min(*b);
@@ -280,8 +278,7 @@ node! {
 
 node! {
     pub struct Abs;
-    in { input }
-    out { out }
+    (input) -> (out)
 
     ~ {
         out = input.abs();
@@ -290,8 +287,7 @@ node! {
 
 node! {
     pub struct Exp;
-    in { input }
-    out { out }
+    (input) -> (out)
 
     ~ {
         out = input.exp();
@@ -300,8 +296,7 @@ node! {
 
 node! {
     pub struct Cosine;
-    in { input }
-    out { out }
+    (input) -> (out)
 
     ~ {
         out = input.cos();
@@ -310,8 +305,7 @@ node! {
 
 node! {
     pub struct Tanh;
-    in { input }
-    out { out }
+    (input) -> (out)
 
     ~ {
         out = input.tanh();
@@ -320,8 +314,7 @@ node! {
 
 node! {
     pub struct Sine;
-    in { input }
-    out { out }
+    (input) -> (out)
 
     ~ {
         out = input.sin();
@@ -466,8 +459,7 @@ node! {
     pub struct RisingEdge {
         c_last: Scalar,
     }
-    in { trigger }
-    out { out }
+    (trigger) -> (out)
 
     ~ {
         if *trigger > self.c_last {
@@ -483,8 +475,7 @@ node! {
     pub struct FallingEdge {
         c_last: Scalar,
     }
-    in { trigger }
-    out { out }
+    (trigger) -> (out)
 
     ~ {
         if *trigger < self.c_last {
@@ -498,8 +489,7 @@ node! {
 
 node! {
     pub struct Clip;
-    in { input, low, high }
-    out { out }
+    (input, low, high) -> (out)
 
     ~ {
         out = input.max(*low).min(*high);
@@ -508,8 +498,7 @@ node! {
 
 node! {
     pub struct If;
-    in { cmp, then, els }
-    out { out }
+    (cmp, then, els) -> (out)
 
     ~ {
         if *cmp > 0.0 {
@@ -524,24 +513,14 @@ macro_rules! impl_cmp {
     ($id:ident, $op:ident) => {
         node! {
             pub struct $id;
-            in { a, b }
-            out { out }
-        }
+            (a, b) -> (out)
 
-        impl Processor for $id {
-            fn process_sample(
-                &mut self,
-                _buffer_idx: usize,
-                _signal_rate: SignalRate,
-                inputs: &[Signal],
-                outputs: &mut [Signal],
-            ) -> Result<()> {
-                if inputs[0].$op(&inputs[1]) {
-                    outputs[0] = Signal::new_scalar(1.0);
+            ~ {
+                if a.$op(b) {
+                    out = 1.0;
                 } else {
-                    outputs[0] = Signal::new_scalar(0.0);
+                    out = 0.0;
                 }
-                Ok(())
             }
         }
     };
@@ -556,24 +535,14 @@ macro_rules! impl_boolean {
     ($id:ident, $op:ident) => {
         node! {
             pub struct $id;
-            in { a, b }
-            out { out }
-        }
+            (a, b) -> (out)
 
-        impl Processor for $id {
-            fn process_sample(
-                &mut self,
-                _buffer_idx: usize,
-                _signal_rate: SignalRate,
-                inputs: &[Signal],
-                outputs: &mut [Signal],
-            ) -> Result<()> {
-                if (inputs[0].expect_scalar()? > 0.0).$op(inputs[1].expect_scalar()? > 0.0) {
-                    outputs[0] = Signal::new_scalar(1.0);
+            ~ {
+                if (*a > 0.0).$op(*b > 0.0) {
+                    out = 1.0;
                 } else {
-                    outputs[0] = Signal::new_scalar(0.0);
+                    out = 0.0;
                 }
-                Ok(())
             }
         }
     };
@@ -585,8 +554,7 @@ impl_boolean!(Xor, bitxor);
 
 node! {
     pub struct Not;
-    in { input }
-    out { out }
+    (input) -> (out)
 
     ~ {
         if *input > 0.0 {

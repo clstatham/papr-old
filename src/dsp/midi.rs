@@ -6,8 +6,7 @@ use super::Signal;
 
 node! {
     pub struct MidiToFreq;
-    in { m }
-    out { f }
+    (m) -> (f)
 
     ~ {
         f = (2.0 as Scalar).powf((m - 69.0) / 12.0) * 440.0;

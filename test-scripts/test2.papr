@@ -1,7 +1,7 @@
 graph Main {
-    || -> |@dac0|
+    () -> (@dac0)
     ~ {
-        let [@s @len] = @Sample<"test.wav">((@t % @len));
+        let [@s, @len] = @Sample<"test.wav">(@t % @len);
         @dac0 = @s;
     }
 }

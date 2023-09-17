@@ -1,8 +1,0 @@
-
-            graph Main {
-                |@var0 @var1 @var2 #var3 #var4 #var5| -> |@dac0|
-                ~ {
-                    @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 #Tanh @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 = = = @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 = = = @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 = = = @dac0 @dac0 @dac0 @Sin @dac0 @dac0 @dac0 [ #Delay = @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 SquareOsc @dac0 = = = = @dac0 @dac0 @dac0 @dac0 @SineOsc @dac0 @dac0 @dac0 @dac0 = = = = @dac0 @dac0 @dac0 @dac0 Sin @Abs @dac0 @dac0 @dac0 @dac0 @dac0 = = @dac0 @dac0 @dac0 & @dac0 @dac0 @dac0 = #Redge @Exp @dac0 #Exp @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 = @Min = @dac0 @dac0 @dac0 Sin ] @dac0 @dac0 @dac0 = @dac0 @dac0 @dac0 = @dac0 @dac0 @dac0 @Exp Not @Cos == @dac0 @dac0 @dac0 @Fedge @dac0 @dac0 @dac0 @dac0 @dac0 = = = = @dac0 @dac0 @Not If @dac0 @dac0 @var1 ) @dac0 @dac0 @dac0 @dac0 @dac0 #var4 = @Sin @dac0 @dac0 @dac0 @dac0 @dac0 @dac0 @Delay @var0 @dac0 @dac0 @dac0 Not @dac0 @dac0 @dac0 @Not @dac0 @dac0 @dac0 @dac0 @dac0 & @dac0 @dac0 @dac0 @Sin @var1 = = @dac0 @dac0
-                }
-            }
-            

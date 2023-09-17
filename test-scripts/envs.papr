@@ -1,9 +1,9 @@
 graph Denv {
-    |gate decay| -> |out|
+    (gate, decay) -> (out)
     ~ {
         let reset = Redge(gate);
-        let t_trig = Var(t reset);
-        let dif = (t - t_trig);
-        out = (Max(0 ((decay - dif) / decay)) * gate);
+        let t_trig = Var(t, reset);
+        let dif = t - t_trig;
+        out = Max(0, (decay - dif) / decay) * gate;
     }
 }

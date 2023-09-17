@@ -7,8 +7,7 @@ use super::{DspError, Processor, Signal, SignalRate};
 
 node! {
     pub struct FmSineOsc;
-    in { amp, freq, fm_amt, fm }
-    out { out }
+    (amp, freq, fm_amt, fm) -> (out)
 
     ~ {
         if *freq < 0.0 {
@@ -21,8 +20,7 @@ node! {
 
 node! {
     pub struct SineOsc;
-    in { amp, freq }
-    out { out }
+    (amp, freq) -> (out)
 
     ~ {
         if *freq < 0.0 {
@@ -40,8 +38,7 @@ node! {
         dp: Scalar,
         saw: Scalar,
     }
-    in { amp, freq }
-    out { out }
+    (amp, freq) -> (out)
 
     ~ {
         if *freq <= 0.0 {
@@ -77,8 +74,7 @@ node! {
     pub struct BlSquareOsc {
         coeff: [Scalar; BL_SQUARE_MAX_COEFF],
     }
-    in { amp, freq, d }
-    out { out }
+    (amp, freq, d) -> (out)
 
     ~ {
         if *freq <= 0.0 {

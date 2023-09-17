@@ -1,7 +1,12 @@
 use std::{collections::BTreeMap, fs::File, io::Read, path::Path, sync::Arc};
 
 use miette::{miette, Context, Diagnostic, Result, SourceOffset};
-use pest::{error::ErrorVariant, Parser, Position};
+use pest::{
+    error::ErrorVariant,
+    iterators::Pairs,
+    pratt_parser::{Assoc, Op, PrattParser},
+    Parser, Position,
+};
 use pest_derive::Parser;
 use thiserror::Error;
 
@@ -348,7 +353,7 @@ pub fn parse_call(src: &str, inp: Pair<Rule>) -> Result<ParsedCall> {
         }
         let mut args = vec![];
         for arg in inner {
-            args.push(parse_expr(src, arg)?);
+            args.push(parse_expr(src, arg.into_inner())?);
         }
         Ok(ParsedCall {
             callee,
@@ -367,77 +372,81 @@ pub fn parse_call(src: &str, inp: Pair<Rule>) -> Result<ParsedCall> {
     }
 }
 
-pub fn parse_expr(src: &str, inp: Pair<Rule>) -> Result<ParsedExpr> {
-    if inp.as_rule() == Rule::expr {
-        let inner = inp.into_inner().next().unwrap();
-        match inner.as_rule() {
-            Rule::scalar => Ok(ParsedExpr::Constant(parse_scalar(src, inner)?)),
-            Rule::ident => Ok(ParsedExpr::Ident(parse_ident(src, inner)?)),
-            Rule::call => Ok(ParsedExpr::Call(parse_call(src, inner)?)),
-            Rule::infix_expr => Ok(ParsedExpr::Infix(parse_infix_expr(src, inner)?)),
-            _ => unreachable!("BUG: Internal parsing error: failed to parse expr"),
-        }
-    } else {
-        Err(ParseError::new_from_pos(
-            src,
-            ErrorVariant::CustomError {
-                message: "Expected expression".to_owned(),
-            },
-            inp.as_span().start_pos(),
-        )
-        .into())
-    }
+pub fn parse_expr(src: &str, inp: Pairs<Rule>) -> Result<ParsedExpr> {
+    let pratt = PrattParser::new()
+        .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
+        .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
+        .op(Op::infix(Rule::rem, Assoc::Left))
+        .op(Op::infix(Rule::gt, Assoc::Left) | Op::infix(Rule::lt, Assoc::Left))
+        .op(Op::infix(Rule::eq, Assoc::Left) | Op::infix(Rule::neq, Assoc::Left))
+        .op(Op::infix(Rule::and, Assoc::Left))
+        .op(Op::infix(Rule::or, Assoc::Left))
+        .op(Op::infix(Rule::xor, Assoc::Left));
+
+    pratt
+        .map_primary(|primary| match primary.as_rule() {
+            Rule::ident => Ok(ParsedExpr::Ident(parse_ident(src, primary)?)),
+            Rule::call => Ok(ParsedExpr::Call(parse_call(src, primary)?)),
+            Rule::scalar => Ok(ParsedExpr::Constant(parse_scalar(src, primary)?)),
+            Rule::expr => parse_expr(src, primary.into_inner()),
+            rule => unreachable!("BUG: Internal parsing error: failed to parse expr: {rule:?}"),
+        })
+        .map_infix(|lhs, op, rhs| {
+            let infix_op = parse_infix_op(src, op)?;
+            Ok(ParsedExpr::Infix(ParsedInfixExpr {
+                lhs: Box::new(lhs?),
+                infix_op,
+                rhs: Box::new(rhs?),
+            }))
+        })
+        .parse(inp)
 }
 
-pub fn parse_infix_expr(src: &str, inp: Pair<Rule>) -> Result<ParsedInfixExpr> {
-    if inp.as_rule() == Rule::infix_expr {
-        let mut inner = inp.into_inner();
-        let lhs = parse_expr(src, inner.next().unwrap())?;
-        let infix_op = parse_infix_op(src, inner.next().unwrap())?;
-        let rhs = parse_expr(src, inner.next().unwrap())?;
-        Ok(ParsedInfixExpr {
-            lhs: Box::new(lhs),
-            infix_op,
-            rhs: Box::new(rhs),
-        })
-    } else {
-        Err(ParseError::new_from_pos(
-            src,
-            ErrorVariant::CustomError {
-                message: "Expected infix expression".to_owned(),
-            },
-            inp.as_span().start_pos(),
-        )
-        .into())
-    }
-}
+// pub fn parse_infix_expr(src: &str, inp: Pair<Rule>) -> Result<ParsedInfixExpr> {
+//     if inp.as_rule() == Rule::infix_expr {
+//         let mut inner = inp.into_inner();
+//         let lhs = parse_expr(src, inner.next().unwrap())?;
+//         let infix_op = parse_infix_op(src, inner.next().unwrap())?;
+//         let rhs = parse_expr(src, inner.next().unwrap())?;
+//         Ok(ParsedInfixExpr {
+//             lhs: Box::new(lhs),
+//             infix_op,
+//             rhs: Box::new(rhs),
+//         })
+//     } else {
+//         Err(ParseError::new_from_pos(
+//             src,
+//             ErrorVariant::CustomError {
+//                 message: "Expected infix expression".to_owned(),
+//             },
+//             inp.as_span().start_pos(),
+//         )
+//         .into())
+//     }
+// }
 
 pub fn parse_infix_op(src: &str, inp: Pair<Rule>) -> Result<ParsedInfixOp> {
-    if inp.as_rule() == Rule::infix_op {
-        match inp.as_str() {
-            "+" => Ok(ParsedInfixOp::Add),
-            "-" => Ok(ParsedInfixOp::Sub),
-            "*" => Ok(ParsedInfixOp::Mul),
-            "/" => Ok(ParsedInfixOp::Div),
-            "&" => Ok(ParsedInfixOp::And),
-            "|" => Ok(ParsedInfixOp::Or),
-            "^" => Ok(ParsedInfixOp::Xor),
-            "==" => Ok(ParsedInfixOp::Eq),
-            "!=" => Ok(ParsedInfixOp::Neq),
-            ">" => Ok(ParsedInfixOp::Gt),
-            "<" => Ok(ParsedInfixOp::Lt),
-            "%" => Ok(ParsedInfixOp::Rem),
-            _ => unreachable!("BUG: Internal parsing error: failed to parse infix op"),
-        }
-    } else {
-        Err(ParseError::new_from_pos(
+    match inp.as_str() {
+        "+" => Ok(ParsedInfixOp::Add),
+        "-" => Ok(ParsedInfixOp::Sub),
+        "*" => Ok(ParsedInfixOp::Mul),
+        "/" => Ok(ParsedInfixOp::Div),
+        "&" => Ok(ParsedInfixOp::And),
+        "|" => Ok(ParsedInfixOp::Or),
+        "^" => Ok(ParsedInfixOp::Xor),
+        "==" => Ok(ParsedInfixOp::Eq),
+        "!=" => Ok(ParsedInfixOp::Neq),
+        ">" => Ok(ParsedInfixOp::Gt),
+        "<" => Ok(ParsedInfixOp::Lt),
+        "%" => Ok(ParsedInfixOp::Rem),
+        _ => Err(ParseError::new_from_pos(
             src,
             ErrorVariant::CustomError {
                 message: "Expected infix operator".to_owned(),
             },
             inp.as_span().start_pos(),
         )
-        .into())
+        .into()),
     }
 }
 
@@ -474,8 +483,7 @@ pub fn parse_connection(src: &str, inp: Pair<Rule>) -> Result<ParsedConnection> 
         } else {
             unreachable!()
         };
-        let expr = inner.next().unwrap();
-        let expr = parse_expr(src, expr)?;
+        let expr = parse_expr(src, inner)?;
         Ok(ParsedConnection { lhs, rhs: expr })
     } else {
         Err(ParseError::new_from_pos(

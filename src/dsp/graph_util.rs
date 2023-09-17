@@ -40,8 +40,7 @@ impl Processor for GraphInput {
 
 node! {
     pub struct GraphOutput;
-    in { input }
-    out { out }
+    (input) -> (out)
 
     ~ {
         out = *input;
@@ -50,8 +49,7 @@ node! {
 
 node! {
     pub struct LetBinding;
-    in { input }
-    out { out }
+    (input) -> (out)
 
     ~ {
         out = *input;
@@ -62,8 +60,7 @@ node! {
     pub struct Var {
         value: Scalar,
     }
-    in { input, set }
-    out { out }
+    (input, set) -> (out)
 
     ~ {
         if *set > 0.0 {
