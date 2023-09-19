@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
-    braced, parenthesized,
+    parenthesized,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
@@ -127,7 +127,7 @@ pub fn node(tokens: TokenStream) -> TokenStream {
                 }
             } else {
                 quote! {
-                    crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::new_scalar(0.0)))
+                    crate::graph::Input::new(stringify!(#inp), Some(crate::dsp::Signal::Scalar(0.0)))
                 }
             }
         })

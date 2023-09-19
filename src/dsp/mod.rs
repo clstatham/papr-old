@@ -73,7 +73,7 @@ pub enum SignalType {
 pub enum Signal {
     Scalar(Scalar),
     Symbol(String),
-    Array(Vec<Signal>),
+    Array(Vec<Scalar>),
 }
 
 impl std::fmt::Debug for Signal {
@@ -103,11 +103,6 @@ impl Signal {
     }
 
     #[inline(always)]
-    pub const fn new_scalar(val: Scalar) -> Self {
-        Self::Scalar(val)
-    }
-
-    #[inline(always)]
     pub const fn scalar_value(&self) -> Option<Scalar> {
         match self {
             Self::Scalar(val) => Some(*val),
@@ -121,11 +116,6 @@ impl Signal {
             Self::Scalar(val) => Ok(*val),
             _ => Err(DspError::ExpectedScalar(self.clone()).into()),
         }
-    }
-
-    #[inline(always)]
-    pub fn new_symbol(val: &str) -> Self {
-        Self::Symbol(val.to_string())
     }
 
     #[inline(always)]
@@ -145,12 +135,7 @@ impl Signal {
     }
 
     #[inline(always)]
-    pub fn new_array(val: Vec<Signal>) -> Self {
-        Self::Array(val)
-    }
-
-    #[inline(always)]
-    pub fn array_value(&self) -> Option<&[Signal]> {
+    pub fn array_value(&self) -> Option<&[Scalar]> {
         match self {
             Self::Array(val) => Some(val),
             _ => None,
@@ -158,7 +143,7 @@ impl Signal {
     }
 
     #[inline(always)]
-    pub fn expect_array(&self) -> Result<&[Signal]> {
+    pub fn expect_array(&self) -> Result<&[Scalar]> {
         match self {
             Self::Array(val) => Ok(val),
             _ => Err(DspError::ExpectedArray(self.clone()).into()),
@@ -185,7 +170,7 @@ pub trait Processor {
         inputs: &[Vec<Signal>],
         outputs: &mut [Vec<Signal>],
     ) -> Result<()> {
-        let mut audio_buffer_len = if let Some(len) = inputs
+        let mut buffer_len = if let Some(len) = inputs
             .iter()
             .next()
             .or_else(|| outputs.iter().next())
@@ -197,18 +182,18 @@ pub trait Processor {
             return Ok(());
         };
         assert!(inputs.iter().all(|inp| {
-            let check = inp.len() == audio_buffer_len;
-            audio_buffer_len = inp.len();
+            let check = inp.len() == buffer_len;
+            buffer_len = inp.len();
             check
         }));
         assert!(outputs.iter().all(|out| {
-            let check = out.len() == audio_buffer_len;
-            audio_buffer_len = out.len();
+            let check = out.len() == buffer_len;
+            buffer_len = out.len();
             check
         }));
-        let mut inp = vec![Signal::new_scalar(0.0); inputs.len()];
-        let mut out = vec![Signal::new_scalar(0.0); outputs.len()];
-        for i in 0..audio_buffer_len {
+        let mut inp = vec![Signal::Scalar(0.0); inputs.len()];
+        let mut out = vec![Signal::Scalar(0.0); outputs.len()];
+        for i in 0..buffer_len {
             for (val, buf) in inp.iter_mut().zip(inputs) {
                 *val = buf[i].clone();
             }

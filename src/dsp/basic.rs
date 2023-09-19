@@ -33,7 +33,7 @@ impl DebugNode {
             NodeName::new(name),
             vec![Input::new(
                 "input".to_owned().as_ref(),
-                Some(Signal::new_scalar(0.0)),
+                Some(Signal::Scalar(0.0)),
             )],
             vec![Output {
                 name: "out".to_owned(),
@@ -79,7 +79,7 @@ impl Processor for UiInput {
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(self.value);
+        outputs[0] = Signal::Scalar(self.value);
         Ok(())
     }
 
@@ -155,7 +155,7 @@ impl Processor for UiOutput {
         match &mut self.widget {
             UiOutputWidget::Led { value } => {
                 *value = inputs[0].expect_scalar()?;
-                outputs[0] = Signal::new_scalar(*value);
+                outputs[0] = Signal::Scalar(*value);
             }
         }
         Ok(())
@@ -179,7 +179,7 @@ impl UiOutput {
 
         let (inputs, outputs) = match widget {
             UiOutputWidget::Led { value } => (
-                vec![Input::new("input", Some(Signal::new_scalar(value)))],
+                vec![Input::new("input", Some(Signal::Scalar(value)))],
                 vec![Output {
                     name: "out".to_owned(),
                 }],
@@ -222,7 +222,7 @@ impl Processor for Constant {
         _inputs: &[Signal],
         outputs: &mut [Signal],
     ) -> Result<()> {
-        outputs[0] = Signal::new_scalar(self.value);
+        outputs[0] = Signal::Scalar(self.value);
         Ok(())
     }
 }
@@ -245,7 +245,7 @@ macro_rules! impl_arith {
             ) -> Result<()> {
                 use std::ops::$use;
                 outputs[0] =
-                    Signal::new_scalar(inputs[0].expect_scalar()?.$op(inputs[1].expect_scalar()?));
+                    Signal::Scalar(inputs[0].expect_scalar()?.$op(inputs[1].expect_scalar()?));
                 Ok(())
             }
         }
@@ -336,7 +336,7 @@ impl ControlToAudio {
         let (tx, rx) = tokio::sync::watch::channel(0.0);
         let cn = Arc::new(Node::new(
             name.into(),
-            vec![Input::new("c", Some(Signal::new_scalar(0.0)))],
+            vec![Input::new("c", Some(Signal::Scalar(0.0)))],
             vec![],
             ProcessorType::Builtin(Box::new(RwLock::new(ControlToAudioTx { tx: Some(tx) }))),
         ));
@@ -383,7 +383,7 @@ impl Processor for ControlToAudioRx {
             .as_ref()
             .ok_or(DspError::ChannelDisconnected)?
             .borrow();
-        outputs[0] = Signal::new_scalar(self.value);
+        outputs[0] = Signal::Scalar(self.value);
         Ok(())
     }
 }
@@ -414,7 +414,7 @@ impl AudioToControl {
         ));
         let an = Arc::new(Node::new(
             name.into(),
-            vec![Input::new("a", Some(Signal::new_scalar(0.0)))],
+            vec![Input::new("a", Some(Signal::Scalar(0.0)))],
             vec![],
             ProcessorType::Builtin(Box::new(RwLock::new(AudioToControlTx { tx: Some(tx) }))),
         ));
@@ -450,7 +450,7 @@ impl Processor for AudioToControlRx {
             .as_ref()
             .ok_or(DspError::ChannelDisconnected)?
             .borrow();
-        outputs[0] = Signal::new_scalar(self.value);
+        outputs[0] = Signal::Scalar(self.value);
         Ok(())
     }
 }

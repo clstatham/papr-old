@@ -414,7 +414,7 @@ where
         for (id, inp) in inputs {
             let inps = inputs_cache.entry(*id).or_insert(vec![
                 vec![
-                    Signal::new_scalar(0.0);
+                    Signal::Scalar(0.0);
                     signal_rate.buffer_len()
                 ];
                 self.digraph[*id].inputs.len()
@@ -433,9 +433,7 @@ where
                     let out = {
                         outputs_cache.entry(edge.source()).or_insert(vec![
                             vec![
-                                Signal::new_scalar(
-                                    0.0
-                                );
+                                Signal::Scalar(0.0);
                                 signal_rate
                                     .buffer_len()
                             ];
@@ -448,7 +446,7 @@ where
                     assign!(
                         inputs_cache.entry(node_id).or_insert(vec![
                             vec![
-                                Signal::new_scalar(0.0);
+                                Signal::Scalar(0.0);
                                 signal_rate.buffer_len()
                             ];
                             self.digraph[node_id]
@@ -463,7 +461,7 @@ where
                 let inps =
                     inputs_cache.entry(node_id).or_insert(vec![
                         vec![
-                            Signal::new_scalar(0.0);
+                            Signal::Scalar(0.0);
                             signal_rate.buffer_len()
                         ];
                         self.digraph[node_id].inputs.len()
@@ -483,7 +481,7 @@ where
                 let outs =
                     outputs_cache.entry(node_id).or_insert(vec![
                         vec![
-                            Signal::new_scalar(0.0);
+                            Signal::Scalar(0.0);
                             signal_rate.buffer_len()
                         ];
                         self.digraph[node_id].outputs.len()

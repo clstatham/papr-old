@@ -24,12 +24,6 @@ macro_rules! test_parse_many {
     };
 }
 
-macro_rules! test_parse_fail {
-    ($rule:ident, $input:expr) => {
-        PaprParser::parse(Rule::$rule, $input).unwrap_err()
-    };
-}
-
 test_parse_many! {
     test_parse_scalar_1 => test_parse!(parse_scalar, scalar, "1234567890"),
     test_parse_scalar_2 => test_parse!(parse_scalar, scalar, "1234567890.1234567890"),

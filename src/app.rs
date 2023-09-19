@@ -85,11 +85,11 @@ impl AudioContext {
         let dac0 = graph
             .node_id_by_name("dac0")
             .expect("Expected `Main` graph to have at least `dac0` for outputs");
-        let mut dac0_vec = vec![Signal::new_scalar(0.0); buffer_len];
+        let mut dac0_vec = vec![Signal::Scalar(0.0); buffer_len];
         out.insert(dac0, &mut dac0_vec);
         // }
         let ts = (0usize..buffer_len)
-            .map(|frame_idx| Signal::new_scalar(t as Scalar + frame_idx as Scalar / sample_rate))
+            .map(|frame_idx| Signal::Scalar(t as Scalar + frame_idx as Scalar / sample_rate))
             .collect::<Vec<_>>();
 
         let ins = BTreeMap::from_iter([(graph.node_id_by_name("t").unwrap(), &ts)]);
@@ -300,12 +300,12 @@ impl PaprRuntime {
                 let mut out = BTreeMap::new();
                 // for c in 0..channels {
                 let dac0 = audio_graph.node_id_by_name("dac0")?;
-                let mut dac0_vec = vec![Signal::new_scalar(0.0); buffer_len];
+                let mut dac0_vec = vec![Signal::Scalar(0.0); buffer_len];
                 out.insert(dac0, &mut dac0_vec);
                 // }
                 let ts = (0usize..buffer_len)
                     .map(|frame_idx| {
-                        Signal::new_scalar(t as Scalar + frame_idx as Scalar / self.sample_rate)
+                        Signal::Scalar(t as Scalar + frame_idx as Scalar / self.sample_rate)
                     })
                     .collect::<Vec<_>>();
                 let ins = BTreeMap::from_iter([(audio_graph.node_id_by_name("t")?, &ts)]);
@@ -423,7 +423,7 @@ impl PaprRuntime {
                                     sample_rate: control_rate,
                                     buffer_len: 1,
                                 },
-                                &BTreeMap::from_iter([(t_idx, &vec![Signal::new_scalar(t); 1])]),
+                                &BTreeMap::from_iter([(t_idx, &vec![Signal::Scalar(t); 1])]),
                                 &mut BTreeMap::default(),
                             )
                             .map_err(|e| {

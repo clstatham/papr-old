@@ -4,7 +4,7 @@ import "envs.papr"
 graph Main {
     () -> (@dac0)
     ~ {
-        let #fm_amt = #Slider<0 1, 1.0>();
+        let #fm_amt = #Slider<0, 1, 1.0>();
         let #fm_mul = #Slider<0.25, 8, 1.0>();
         let #decay0 = #Slider<0.1, 2.0, 1.0>();
         let #decay1 = #Slider<0.1, 2.0, 1.0>();

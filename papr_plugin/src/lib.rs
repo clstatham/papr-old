@@ -107,7 +107,7 @@ impl Papr {
                                     sample_rate: control_rate,
                                     buffer_len: 1,
                                 },
-                                &BTreeMap::from_iter([(t_idx, &vec![Signal::new_scalar(t); 1])]),
+                                &BTreeMap::from_iter([(t_idx, &vec![Signal::Scalar(t); 1])]),
                                 &mut BTreeMap::default(),
                             )
                             .unwrap();
@@ -185,11 +185,11 @@ impl Plugin for Papr {
     fn process(
         &mut self,
         buffer: &mut Buffer,
-        aux: &mut AuxiliaryBuffers,
-        context: &mut impl ProcessContext<Self>,
+        _aux: &mut AuxiliaryBuffers,
+        _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         let buffer_len = buffer.samples();
-        let mut next_event = context.next_event();
+        // let mut next_event = context.next_event();
 
         if let Some(reset_switch) = self.reset_switch.as_ref() {
             if let Ok(()) = reset_switch.try_recv() {
@@ -228,7 +228,7 @@ impl Plugin for Papr {
                 let mut output = buffer
                     .iter_samples()
                     .flatten()
-                    .map(|s| Signal::new_scalar(*s as Scalar))
+                    .map(|s| Signal::Scalar(*s as Scalar))
                     .collect::<Vec<_>>();
                 let mut out = BTreeMap::new();
                 let dac0 = graph
@@ -238,7 +238,7 @@ impl Plugin for Papr {
 
                 let ts = (0usize..buffer_len)
                     .map(|frame_idx| {
-                        Signal::new_scalar(
+                        Signal::Scalar(
                             self.audio_t as Scalar + frame_idx as Scalar / self.sample_rate,
                         )
                     })

@@ -31,7 +31,7 @@ impl Sample {
             .collect();
         Ok(Arc::new(Node::new(
             NodeName::new(name),
-            vec![Input::new("seek", Some(Signal::new_scalar(0.0)))],
+            vec![Input::new("seek", Some(Signal::Scalar(0.0)))],
             vec![
                 Output {
                     name: "out".to_owned(),
@@ -56,8 +56,8 @@ impl Processor for Sample {
         let seek = &inputs[0];
         let seek_samps = (seek.expect_scalar()? * signal_rate.rate()) as usize;
 
-        outputs[0] = Signal::new_scalar(self.buf[seek_samps]);
-        outputs[1] = Signal::new_scalar(self.buf.len() as Scalar / signal_rate.rate());
+        outputs[0] = Signal::Scalar(self.buf[seek_samps]);
+        outputs[1] = Signal::Scalar(self.buf.len() as Scalar / signal_rate.rate());
         Ok(())
     }
 }

@@ -1,9 +1,8 @@
 use crate::{Scalar, PI, TAU};
 
-use miette::Result;
 use papr_proc_macro::node;
 
-use super::{DspError, Processor, Signal, SignalRate};
+use super::Signal;
 
 node! {
     pub struct FmSineOsc;
