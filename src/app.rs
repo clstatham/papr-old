@@ -121,7 +121,7 @@ impl AudioContext {
         let mut sample_clock = 0 as Scalar;
         let err_fn = |err| log::error!("Error occurred on stream: {err}");
 
-        let channels = 1;
+        let channels = config.channels as usize;
         let sample_rate = config.sample_rate.0 as Scalar;
         let stream = self
             .out_device
@@ -354,7 +354,7 @@ impl PaprRuntime {
                 RuntimeError::Io(e)
             })?;
         } else {
-            let sample_rate = self.sample_rate;
+            // let sample_rate = self.sample_rate;
             std::thread::Builder::new()
                 .name("PAPR Audio".into())
                 .spawn(move || {
@@ -364,20 +364,20 @@ impl PaprRuntime {
                     )
                     .unwrap();
 
-                    let config = cpal::StreamConfig {
-                        channels: cpal::ChannelCount::from(1u16),
-                        sample_rate: cpal::SampleRate(sample_rate as u32),
-                        buffer_size: cpal::BufferSize::Default,
-                    };
-                    // let config = audio_cx
-                    //     .out_device
-                    //     .default_output_config()
-                    //     .map_err(|e| {
-                    //         log::error!("Failed to get default output config: {}", e);
-                    //         RuntimeError::CpalConfig(e)
-                    //     })
-                    //     .unwrap()
-                    //     .config();
+                    // let config = cpal::StreamConfig {
+                    //     channels: cpal::ChannelCount::from(1u16),
+                    //     sample_rate: cpal::SampleRate(sample_rate as u32),
+                    //     buffer_size: cpal::BufferSize::Default,
+                    // };
+                    let config = audio_cx
+                        .out_device
+                        .default_output_config()
+                        .map_err(|e| {
+                            log::error!("Failed to get default output config: {}", e);
+                            RuntimeError::CpalConfig(e)
+                        })
+                        .unwrap()
+                        .config();
                     log::info!(
                         "Output device: {}",
                         audio_cx

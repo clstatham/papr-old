@@ -18,8 +18,8 @@ const POLYPHONY: usize = 1;
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum MidiError {
-    #[error("MIDI error: {0}")]
-    Connect(#[from] midir::ConnectError<MidiInput>),
+    // #[error("MIDI error: {0}")]
+    // Connect(#[from] midir::ConnectError<MidiInput>),
     #[error("MIDI error: {0}")]
     Init(#[from] midir::InitError),
     #[error("MIDI error: MIDI channel not initialized")]
@@ -62,7 +62,7 @@ impl MidiContext {
                 },
                 (),
             )
-            .map_err(MidiError::Connect)?;
+            .unwrap(); // must unwrap here since alsa stuff doesn't impl Send
         MIDI_CHAN.call_once(|| rx);
         Ok(Self { _conn_in })
     }
