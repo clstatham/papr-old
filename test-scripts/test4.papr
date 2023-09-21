@@ -1,0 +1,12 @@
+graph Main {
+    () -> (@dac0)
+    ~ {
+        let #amp = #Slider<0, 1, 0.1>();
+        let #cutoff = #Slider<20, 24000, 1000>();
+        let #resonance = #Slider<0, 0.99, 0.10>();
+
+        let @osc = @SawOsc(#amp, 440.0);
+        let @filter = @Ladder(@osc, #cutoff, #resonance);
+        @dac0 = @filter;
+    }
+}

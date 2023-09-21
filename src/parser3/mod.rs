@@ -1189,7 +1189,7 @@ fn solve_graph(
                 };
                 let rhs = solve_expr(id, &stmt.rhs, &mut ag, &mut cg, known_graphs, lhs_ident)?;
                 assert!(
-                    !(rhs.ag_idx.is_some() && rhs.cg_idx.is_some()),
+                    rhs.ag_idx.is_some() ^ rhs.cg_idx.is_some(),
                     "todo: exprs using both graphs"
                 );
 

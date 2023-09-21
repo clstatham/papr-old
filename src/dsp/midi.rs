@@ -2,8 +2,6 @@ use papr_proc_macro::node;
 
 use crate::Scalar;
 
-use super::Signal;
-
 node! {
     pub struct MidiToFreq;
     (m) -> (f)

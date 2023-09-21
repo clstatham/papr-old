@@ -41,6 +41,7 @@ impl ToTokens for TypedIdent {
 
 struct NodeConstructorParser {
     struc: ItemStruct,
+    oversample: bool,
     inputs: Punctuated<TypedIdent, Comma>,
     outputs: Punctuated<TypedIdent, Comma>,
     process_block: Option<syn::Block>,
@@ -48,6 +49,7 @@ struct NodeConstructorParser {
 
 impl Parse for NodeConstructorParser {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let oversample = input.parse::<Token![@]>().is_ok();
         let struc: ItemStruct = input.parse()?;
 
         let inputs;
@@ -67,6 +69,7 @@ impl Parse for NodeConstructorParser {
         };
 
         Ok(Self {
+            oversample,
             struc,
             inputs,
             outputs,
@@ -80,6 +83,7 @@ pub fn node(tokens: TokenStream) -> TokenStream {
     let parsed = parse_macro_input!(tokens as NodeConstructorParser);
 
     let NodeConstructorParser {
+        oversample: oversampling,
         struc,
         mut inputs,
         outputs,
@@ -221,9 +225,9 @@ pub fn node(tokens: TokenStream) -> TokenStream {
                 let ident = &out.ident;
                 let ty = &out.ty;
                 if let Some(ty) = ty {
-                    quote! { outputs[#i] = Signal::#ty(#ident); }
+                    quote! { outputs[#i] = crate::dsp::Signal::#ty(#ident); }
                 } else {
-                    quote! { outputs[#i] = Signal::Scalar(#ident); }
+                    quote! { outputs[#i] = crate::dsp::Signal::Scalar(#ident); }
                 }
             })
             .collect::<proc_macro2::TokenStream>();
@@ -251,6 +255,12 @@ pub fn node(tokens: TokenStream) -> TokenStream {
         block
     } else {
         quote! {}
+    };
+
+    let node_finalize = if oversampling {
+        quote! { crate::dsp::oversampling::Oversample2x::create_node(n) }
+    } else {
+        quote! { n }
     };
 
     quote! {
@@ -307,13 +317,14 @@ pub fn node(tokens: TokenStream) -> TokenStream {
             #[allow(clippy::too_many_arguments)]
             pub fn create_node(name: &str, #args) -> std::sync::Arc<crate::graph::Node> {
                 let this = Box::new(std::sync::RwLock::new(Self { #fields }));
-                let an = std::sync::Arc::new(crate::graph::Node::new(
+                let n = crate::graph::Node::new(
                     crate::graph::NodeName::new(name),
                     vec![#ins],
                     vec![#outs],
                     crate::graph::ProcessorType::Builtin(this),
-                ));
-                an
+                );
+                let n = std::sync::Arc::new(n);
+                #node_finalize
             }
         }
     }

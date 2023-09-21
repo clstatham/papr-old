@@ -55,6 +55,7 @@ thiserror = "1.0.46"
 pest = "2.7.2"
 pest_derive = { version = "2.7.2", features = ["grammar-extras"] }
 simple_logger = "4.2.0"
+rand = "0.8.5"
 
 [profile.release]
 # debug = true

@@ -89,7 +89,7 @@ impl AudioContext {
         out.insert(dac0, &mut dac0_vec);
         // }
         let ts = (0usize..buffer_len)
-            .map(|frame_idx| Signal::Scalar(t as Scalar + frame_idx as Scalar / sample_rate))
+            .map(|frame_idx| Signal::Scalar(t + frame_idx as Scalar / sample_rate))
             .collect::<Vec<_>>();
 
         let ins = BTreeMap::from_iter([(graph.node_id_by_name("t").unwrap(), &ts)]);
@@ -131,7 +131,6 @@ impl AudioContext {
                     // println!("data.len(): {}", data.len());
                     // println!("channels: {}", channels);
                     // println!("sample_rate: {}", sample_rate);
-                    sample_clock += (data.len() as Scalar / channels as Scalar) / sample_rate;
                     // println!("sample_clock: {}", sample_clock);
                     Self::write_data(
                         sample_rate as Scalar,
@@ -140,6 +139,7 @@ impl AudioContext {
                         channels,
                         sample_clock,
                     );
+                    sample_clock += (data.len() as Scalar / channels as Scalar) / sample_rate;
                 },
                 err_fn,
                 None,

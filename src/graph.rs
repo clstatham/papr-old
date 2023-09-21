@@ -267,7 +267,6 @@ where
     node_indices_by_name: BTreeMap<String, NodeIndex>,
     pub input_node_indices: Vec<NodeIndex>,
     pub output_node_indices: Vec<NodeIndex>,
-    pub partitions: Vec<Vec<NodeIndex>>,
 }
 
 impl Graph {
@@ -287,7 +286,6 @@ impl Graph {
             node_indices_by_name: BTreeMap::default(),
             input_node_indices: Vec::default(),
             output_node_indices: Vec::default(),
-            partitions: Vec::default(),
         };
 
         for inp in inputs {
@@ -323,7 +321,6 @@ where
         let name = node.name.to_owned();
         let idx = self.digraph.add_node(node);
         self.node_indices_by_name.insert(name.to_string(), idx);
-        self.repartition();
         idx
     }
 
@@ -334,52 +331,7 @@ where
         connection: Connection,
     ) -> EdgeIndex {
         let idx = self.digraph.add_edge(source, sink, connection);
-        self.repartition();
         idx
-    }
-
-    fn repartition(&mut self) {
-        self.partitions.clear();
-
-        let starts = self.digraph.externals(Direction::Incoming);
-        let mut bfs_stack: VecDeque<NodeIndex> = VecDeque::new();
-        let mut bfs_visited = BTreeSet::default();
-        if let Ok(id) = self.node_id_by_name("t") {
-            bfs_stack.push_back(id);
-        }
-        for node in starts {
-            if !bfs_stack.contains(&node) {
-                bfs_stack.push_back(node);
-            }
-        }
-        for node in self.input_node_indices.iter() {
-            if !bfs_stack.contains(node) {
-                bfs_stack.push_back(*node);
-            }
-        }
-
-        self.partitions.push(bfs_stack.clone().into());
-
-        loop {
-            let mut next_layer = Vec::new();
-            while let Some(node) = bfs_stack.pop_front() {
-                if !bfs_visited.contains(&node) {
-                    bfs_visited.insert(node);
-                    for edge in self.digraph.edges_directed(node, Direction::Outgoing) {
-                        if !next_layer.contains(&edge.target())
-                            && !bfs_visited.contains(&edge.target())
-                        {
-                            next_layer.push(edge.target());
-                        }
-                    }
-                }
-            }
-            if next_layer.is_empty() {
-                break;
-            }
-            self.partitions.push(next_layer.clone());
-            bfs_stack = next_layer.into();
-        }
     }
 
     pub fn node_id_by_name(&self, name: &str) -> Result<NodeIndex> {
@@ -424,75 +376,82 @@ where
         let mut outputs_cache = BTreeMap::default();
 
         // walk the BFS...
-        for layer in self.partitions.clone().iter() {
-            for node_id in layer.iter().copied() {
-                // for each incoming connection into the visited node:
-                // - grab the cached outputs from earlier in the graph
-                // - copy them to the input cache of the currently visited node
-                for edge in self.digraph.edges_directed(node_id, Direction::Incoming) {
-                    let out = {
-                        outputs_cache.entry(edge.source()).or_insert(vec![
-                            vec![
-                                Signal::Scalar(0.0);
-                                signal_rate
-                                    .buffer_len()
-                            ];
-                            self.digraph
-                                [edge.source()]
+        let mut bfs = Bfs::new(&self.digraph, self.node_id_by_name("t")?);
+        for node in self.digraph.externals(Direction::Incoming) {
+            if !bfs.stack.contains(&node) {
+                bfs.stack.push_back(node);
+            }
+        }
+        // for layer in self.partitions.clone().iter() {
+        while let Some(node_id) = bfs.next(&self.digraph) {
+            // println!(
+            //     "visiting node {} ({})",
+            //     node_id.index(),
+            //     self.digraph[node_id].name
+            // );
+
+            // for each incoming connection into the visited node:
+            // - grab the cached outputs from earlier in the graph
+            // - copy them to the input cache of the currently visited node
+            for edge in self.digraph.edges_directed(node_id, Direction::Incoming) {
+                let out = {
+                    outputs_cache.entry(edge.source()).or_insert(vec![
+                        vec![
+                            Signal::Scalar(0.0);
+                            signal_rate.buffer_len()
+                        ];
+                        self.digraph[edge.source()]
                             .outputs
                             .len()
-                        ])
-                    };
-                    assign!(
-                        inputs_cache.entry(node_id).or_insert(vec![
-                            vec![
-                                Signal::Scalar(0.0);
-                                signal_rate.buffer_len()
-                            ];
-                            self.digraph[node_id]
-                                .inputs
-                                .len()
-                        ])[edge.weight().sink_input],
-                        &out[edge.weight().source_output]
-                    );
-                }
-
-                // create a copy of the inputs from the cache (necessary because we mutably borrow `self` in the next step)
-                let inps =
+                    ])
+                };
+                assign!(
                     inputs_cache.entry(node_id).or_insert(vec![
                         vec![
                             Signal::Scalar(0.0);
                             signal_rate.buffer_len()
                         ];
                         self.digraph[node_id].inputs.len()
-                    ]);
-
-                // manually copy over `t` since it's implicit
-                assign!(
-                    inps[self.digraph[node_id]
-                        .input_named("t")
-                        .ok_or(GraphError::Dsp(crate::dsp::DspError::NoInputNamed(
-                            "t".into()
-                        )))?],
-                    inputs[&self.node_id_by_name("t")?]
+                    ])[edge.weight().sink_input],
+                    &out[edge.weight().source_output]
                 );
-
-                // let out_cache = { self.digraph[node_id].outputs_cache.read().unwrap().clone() };
-                let outs =
-                    outputs_cache.entry(node_id).or_insert(vec![
-                        vec![
-                            Signal::Scalar(0.0);
-                            signal_rate.buffer_len()
-                        ];
-                        self.digraph[node_id].outputs.len()
-                    ]);
-
-                // run the processing logic for this node, which will store its results directly in our output cache
-                self.digraph[node_id]
-                    .processor
-                    .process_buffer(signal_rate, inps, outs)?;
             }
+
+            // create a copy of the inputs from the cache (necessary because we mutably borrow `self` in the next step)
+            let inps =
+                inputs_cache.entry(node_id).or_insert(vec![
+                    vec![
+                        Signal::Scalar(0.0);
+                        signal_rate.buffer_len()
+                    ];
+                    self.digraph[node_id].inputs.len()
+                ]);
+
+            // manually copy over `t` since it's implicit
+            assign!(
+                inps[self.digraph[node_id]
+                    .input_named("t")
+                    .ok_or(GraphError::Dsp(crate::dsp::DspError::NoInputNamed(
+                        "t".into()
+                    )))?],
+                inputs[&self.node_id_by_name("t")?]
+            );
+
+            let outs =
+                outputs_cache.entry(node_id).or_insert(vec![
+                    vec![
+                        Signal::Scalar(0.0);
+                        signal_rate.buffer_len()
+                    ];
+                    self.digraph[node_id].outputs.len()
+                ]);
+
+            // run the processing logic for this node, which will store its results directly in our output cache
+            self.digraph[node_id]
+                .processor
+                .process_buffer(signal_rate, inps, outs)?;
         }
+        // }
 
         // copy the cached (and now updated) output values into the mutable passed outputs
         for (out_name, out) in outputs.iter_mut() {
@@ -536,30 +495,4 @@ impl Processor for Graph {
         );
         self.process_graph(signal_rate, &inputs, &mut outputs)
     }
-}
-
-#[macro_export]
-macro_rules! dual_graphs {
-    {
-        $name:expr;
-        $audio_buffer_len:expr;
-        @in {$($audio_inputs:literal = $ai_default_values:expr)*}
-        @out {$($audio_outputs:literal)*}
-        #in {$($control_inputs:literal = $ci_default_values:expr)*}
-        #out {$($control_outputs:literal)*}
-    } => {
-        {
-            let a_outs = vec![$(($crate::graph::Output { name: $audio_outputs.to_owned() })),*];
-            let c_outs = vec![$(($crate::graph::Output { name: $control_outputs.to_owned() })),*];
-            let a_ins = vec![$(($crate::graph::Input::new($audio_inputs, Some($crate::dsp::Signal::new($ai_default_values))))),*];
-            let c_ins = vec![$(($crate::graph::Input::new($control_inputs, Some($crate::dsp::Signal::new($ci_default_values))))),*];
-            let ag = $crate::graph::Graph::new(Some($crate::graph::NodeName::new($name)), $crate::dsp::SignalRate::Audio, $audio_buffer_len, a_ins, a_outs);
-            let cg = $crate::graph::Graph::new(Some($crate::graph::NodeName::new($name)), $crate::dsp::SignalRate::Control, $audio_buffer_len, c_ins, c_outs);
-            (ag, cg)
-        }
-    };
-}
-
-pub trait CreateNodes {
-    fn create_node() -> (Arc<Node>, Arc<Node>);
 }

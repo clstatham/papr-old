@@ -37,6 +37,8 @@ pub enum BuiltinNode {
     If,
     Not,
     Sample,
+    Noise,
+    Ladder,
 
     // UI nodes
     Slider,
@@ -80,6 +82,8 @@ impl BuiltinNode {
             "If" => Some(BuiltinNode::If),
             "Not" => Some(BuiltinNode::Not),
             "Sample" => Some(BuiltinNode::Sample),
+            "Noise" => Some(BuiltinNode::Noise),
+            "Ladder" => Some(BuiltinNode::Ladder),
 
             // UI nodes
             "Slider" => Some(BuiltinNode::Slider),
@@ -144,6 +148,13 @@ impl BuiltinNode {
                 name,
                 creation_args[0].unwrap_string().into(),
             )?,
+            Self::Noise => crate::dsp::generators::WhiteNoiseOsc::create_node(name),
+            Self::Ladder => crate::dsp::filters::MoogLadder::create_node(
+                name, [0.0; 4], [0.0; 3], [0.0; 6], 0.0, 0.0, 0.0,
+            ),
+            // Self::Ladder => {
+            //     crate::dsp::filters::DummyFilter::create_node(name, vec![0.0; 128].into())
+            // }
 
             // UI nodes
             Self::Slider => crate::dsp::basic::UiInput::create_node(
@@ -154,7 +165,6 @@ impl BuiltinNode {
                     maximum: *creation_args[1].unwrap_scalar(),
                 },
             ),
-
             Self::Button => crate::dsp::basic::UiInput::create_node(
                 name,
                 *creation_args[0].unwrap_scalar(),
@@ -165,19 +175,19 @@ impl BuiltinNode {
                 *creation_args[0].unwrap_scalar(),
                 UiInputWidget::Toggle,
             ),
-
             Self::Led => {
                 crate::dsp::basic::UiOutput::create_node(name, UiOutputWidget::Led { value: 0.0 })
             }
 
+            // not actually creatable nodes
             Self::Constant => {
                 crate::dsp::basic::Constant::create_node(name, *creation_args[0].unwrap_scalar())
             }
             Self::Dac0 => unimplemented!(),
             Self::Add => crate::dsp::basic::Add::create_node(name),
-            Self::Sub => crate::dsp::basic::Add::create_node(name),
-            Self::Mul => crate::dsp::basic::Add::create_node(name),
-            Self::Div => crate::dsp::basic::Add::create_node(name),
+            Self::Sub => crate::dsp::basic::Sub::create_node(name),
+            Self::Mul => crate::dsp::basic::Mul::create_node(name),
+            Self::Div => crate::dsp::basic::Div::create_node(name),
             Self::VariableInput => unimplemented!(),
         };
         Ok(node)

@@ -2,8 +2,6 @@ use crate::{Scalar, PI, TAU};
 
 use papr_proc_macro::node;
 
-use super::Signal;
-
 node! {
     pub struct FmSineOsc;
     (amp, freq, fm_amt, fm) -> (out)
@@ -93,5 +91,14 @@ node! {
             .enumerate()
             .map(|(i, coeff)| coeff * Scalar::cos(i as Scalar * theta)))
         .sum::<Scalar>();
+    }
+}
+
+node! {
+    pub struct WhiteNoiseOsc;
+    (amp) -> (out)
+
+    ~ {
+        out = amp * (2.0 * rand::random::<Scalar>() - 1.0);
     }
 }

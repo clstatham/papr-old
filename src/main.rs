@@ -56,7 +56,7 @@ struct Args {
     control_rate: u64,
 
     /// The desired audio sample rate to request (in samples per second)
-    #[arg(short, long, default_value_t = 44100, value_name = "HERTZ")]
+    #[arg(short, long, default_value_t = 48000, value_name = "HERTZ")]
     sample_rate: u64,
 
     /// The MIDI input port id to use
