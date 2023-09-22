@@ -164,7 +164,13 @@ impl Plugin for Papr {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate as Scalar;
-        let mut rt = PaprRuntime::new(buffer_config.sample_rate as Scalar, 1000.0, None, None);
+        let mut rt = PaprRuntime::new(
+            buffer_config.sample_rate as Scalar,
+            1000.0,
+            None,
+            None,
+            None,
+        );
         rt.init();
         self.rt = Some(rt);
         // self.reload();

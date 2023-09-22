@@ -4,8 +4,6 @@ use papr_proc_macro::node;
 
 use crate::{Scalar, PI};
 
-use super::SignalRate;
-
 const THERMAL: Scalar = 0.000025;
 
 node! {

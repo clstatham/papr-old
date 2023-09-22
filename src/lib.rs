@@ -17,3 +17,14 @@ cfg_if::cfg_if! {
         pub const TAU: f32 = std::f32::consts::TAU;
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, clap::ValueEnum)]
+pub enum AudioBackend {
+    Jack,
+    #[cfg(target_os = "linux")]
+    Alsa,
+    #[cfg(target_os = "windows")]
+    Wasapi,
+    #[cfg(target_os = "windows")]
+    Asio,
+}

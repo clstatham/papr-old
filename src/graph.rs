@@ -1,11 +1,8 @@
-use std::{
-    collections::VecDeque,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 use miette::{Diagnostic, Result};
 use petgraph::{dot::Dot, prelude::*};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::dsp::{
@@ -330,8 +327,7 @@ where
         sink: NodeIndex,
         connection: Connection,
     ) -> EdgeIndex {
-        let idx = self.digraph.add_edge(source, sink, connection);
-        idx
+        self.digraph.add_edge(source, sink, connection)
     }
 
     pub fn node_id_by_name(&self, name: &str) -> Result<NodeIndex> {

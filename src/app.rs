@@ -29,7 +29,7 @@ use crate::{
     dsp::{DspError, Signal, SignalRate},
     graph::{Graph, Node},
     io::midi::MidiContext,
-    Scalar,
+    AudioBackend, Scalar,
 };
 
 #[derive(Debug, Error, Diagnostic)]
@@ -55,7 +55,7 @@ pub enum RuntimeError {
     #[error("CPAL error: {0}")]
     CpalConfig(#[from] cpal::DefaultStreamConfigError),
     #[error("Host unavailable: {0}")]
-    HostUnavailable(#[from] cpal::HostUnavailable),
+    HostUnavailable(String),
     #[error("Error shutting down control thread")]
     CannotShutdownControlThread,
     #[error("Script path required")]
@@ -163,6 +163,7 @@ pub struct PaprRuntime {
     status_text: String,
     out_file_name: Option<PathBuf>,
     run_for: Option<u64>,
+    backend: Option<AudioBackend>,
 }
 
 impl PaprRuntime {
@@ -171,6 +172,7 @@ impl PaprRuntime {
         control_rate: Scalar,
         out_file_name: Option<PathBuf>,
         run_for: Option<u64>,
+        backend: Option<AudioBackend>,
     ) -> Self {
         Self {
             audio_graph: None,
@@ -183,6 +185,7 @@ impl PaprRuntime {
             status_text: "Welcome to PAPR! Runtime is off.".into(),
             out_file_name,
             run_for,
+            backend,
         }
     }
 
@@ -205,54 +208,38 @@ impl PaprRuntime {
         Ok(())
     }
 
-    pub fn create_audio_context(
-        #[cfg(target_os = "linux")] force_alsa: bool,
-    ) -> Result<AudioContext> {
-        #[cfg(target_os = "linux")]
-        let out_device = if force_alsa {
-            log::info!("Initializing ALSA host.");
-            let host = cpal::host_from_id(cpal::HostId::Alsa)
-                .expect("PaprApp::init(): no ALSA host available");
-            host.default_output_device()
-                .ok_or(RuntimeError::InvalidConfig(
-                    "No output device available".into(),
-                ))?
-        } else {
-            log::info!("Initializing JACK host.");
-            let host = cpal::host_from_id(cpal::HostId::Jack)
-                .expect("PaprApp::init(): no JACK host available");
-            host.default_output_device()
-                .ok_or(RuntimeError::InvalidConfig(
-                    "No output device available".into(),
-                ))?
+    pub fn create_audio_context(backend: Option<AudioBackend>) -> Result<AudioContext> {
+        let host = match backend {
+            Some(AudioBackend::Jack) => *cpal::available_hosts()
+                .iter()
+                .find(|h| h.name() == "jack")
+                .ok_or(RuntimeError::HostUnavailable("jack".into()))?,
+            #[cfg(target_os = "linux")]
+            Some(AudioBackend::Alsa) => *cpal::available_hosts()
+                .iter()
+                .find(|h| h.name() == "alsa")
+                .ok_or(RuntimeError::HostUnavailable("alsa".into()))?,
+            #[cfg(target_os = "windows")]
+            Some(AudioBackend::Wasapi) => *cpal::available_hosts()
+                .iter()
+                .find(|h| h.name() == "wasapi")
+                .ok_or(RuntimeError::HostUnavailable("wasapi".into()))?,
+            #[cfg(target_os = "windows")]
+            Some(AudioBackend::Asio) => *cpal::available_hosts()
+                .iter()
+                .find(|h| h.name() == "asio")
+                .ok_or(RuntimeError::HostUnavailable("asio".into()))?,
+            None => cpal::default_host().id(),
         };
+        let host = cpal::host_from_id(host).map_err(|e| {
+            log::error!("Failed to get host: {}", e);
+            RuntimeError::HostUnavailable(e.to_string())
+        })?;
 
-        #[cfg(target_os = "windows")]
-        let out_device = {
-            log::info!("Initializing ASIO host.");
-            let host =
-                cpal::host_from_id(cpal::HostId::Asio).map_err(RuntimeError::HostUnavailable)?;
-
-            println!("Available output devices:");
-            for device in host.output_devices().unwrap() {
-                println!(
-                    "  {}",
-                    device.name().unwrap_or_else(|_| "(unknown)".to_string())
-                );
-            }
-
-            host.output_devices()
-                .unwrap()
-                .find(|d| d.name().unwrap().contains("JackRouter"))
-                .or_else(|| host.default_output_device())
-                .ok_or(RuntimeError::InvalidConfig(
-                    "No output device available".into(),
-                ))?
-            // host.default_output_device()
-            //     .ok_or(RuntimeError::InvalidConfig(
-            //         "No output device available".into(),
-            //     ))?
-        };
+        let out_device = host.default_output_device().ok_or_else(|| {
+            log::error!("Failed to get default output device");
+            RuntimeError::HostUnavailable("No output device found".into())
+        })?;
 
         Ok(AudioContext {
             out_device,
@@ -355,14 +342,11 @@ impl PaprRuntime {
             })?;
         } else {
             // let sample_rate = self.sample_rate;
+            let backend = self.backend;
             std::thread::Builder::new()
                 .name("PAPR Audio".into())
                 .spawn(move || {
-                    let mut audio_cx = Self::create_audio_context(
-                        #[cfg(target_os = "linux")]
-                        false,
-                    )
-                    .unwrap();
+                    let mut audio_cx = Self::create_audio_context(backend).unwrap();
 
                     // let config = cpal::StreamConfig {
                     //     channels: cpal::ChannelCount::from(1u16),

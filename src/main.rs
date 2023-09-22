@@ -2,13 +2,13 @@
 #![allow(clippy::result_large_err)]
 use std::{path::PathBuf, time::Duration};
 
-use app::PaprApp;
 use clap::Parser;
 use eframe::{egui::Visuals, NativeOptions};
 use miette::{Diagnostic, Result};
 use thiserror::Error;
 
-use crate::app::PaprRuntime;
+use app::{PaprApp, PaprRuntime};
+use papr_lib::AudioBackend;
 
 pub mod app;
 #[macro_use]
@@ -63,9 +63,9 @@ struct Args {
     #[arg(short, long, default_value_t = 0, value_name = "PORT")]
     midi_port: usize,
 
-    /// On Linux, Force ALSA as the audio backend, instead of JACK
-    #[arg(long, default_value_t = false)]
-    force_alsa: bool,
+    /// The audio backend to use
+    #[arg(long, default_value = None)]
+    backend: Option<AudioBackend>,
 
     /// Don't start the GUI and instead run the loaded script with default input values
     #[arg(long, default_value_t = false)]
@@ -96,6 +96,7 @@ fn main() -> Result<()> {
             args.control_rate as Scalar,
             args.out_path.clone(),
             Some(args.run_for),
+            args.backend,
         );
         let mut app = PaprApp::new(rt);
         app.init_midi()?;
@@ -131,6 +132,7 @@ fn main() -> Result<()> {
                     args.control_rate as Scalar,
                     None,
                     None,
+                    args.backend,
                 );
                 let mut app = PaprApp::new(rt);
                 if let Some(script_path) = args.script_path.as_ref() {
